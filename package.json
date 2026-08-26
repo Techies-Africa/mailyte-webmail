@@ -1,0 +1,41 @@
+{
+  "name": "mailyte-webmail",
+  "version": "0.1.0",
+  "private": false,
+  "license": "AGPL-3.0-or-later",
+  "description": "A self-hostable webmail client for any Mailyte-compatible mail server.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Techies-Africa/mailyte-webmail.git"
+  },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@tiptap/extension-link": "^3.30.2",
+    "@tiptap/extension-placeholder": "^3.30.2",
+    "@tiptap/react": "^3.30.2",
+    "@tiptap/starter-kit": "^3.30.2",
+    "date-fns": "^4.1.0",
+    "dompurify": "^3.4.14",
+    "framer-motion": "^12.18.1",
+    "lucide-react": "^0.511.0",
+    "next": "^16.1.6",
+    "next-themes": "^0.4.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.6",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3"
+  }
+}

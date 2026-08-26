@@ -1,0 +1,87 @@
+@tailwind base;
+
+@tailwind components;
+
+@tailwind utilities;
+
+:root {
+  --foreground: 0 0% 100%;
+  --foreground: 20 14.3% 4.1%;
+  --muted: 60 4.8% 95.9%;
+  --muted-foreground: 25 5.3% 44.7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 20 14.3% 4.1%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14.3% 4.1%;
+  --border: 20 5.9% 90%;
+  --input: 20 5.9% 90%;
+  --primary: 43 85% 50%; /* Darker shade of yellow: #DBA500 */
+  --primary-foreground: 0 0% 10%;
+  --secondary: 230 100% 55%; /* Secondary blue */
+  --secondary-foreground: 0 0% 100%;
+  --accent: 0 92% 67%; /* Accent red */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 43 85% 50%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 240 10% 4%; /* 121212 - Dark mode background */
+  --foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --primary: 43 85% 50%; /* Same darker yellow, preserved in dark mode */
+  --primary-foreground: 240 10% 3.9%;
+  --secondary: 230 100% 55%;
+  --secondary-foreground: 0 0% 100%;
+  --accent: 0 92% 67%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --ring: 43 85% 50%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  /* Text selection.
+   *
+   * There was no ::selection rule at all, so selecting text used the browser
+   * default -- which replaces the *background* and leaves the text its
+   * original colour. On muted copy (`text-gray-500`, `text-muted-foreground`)
+   * that lands grey-on-blue at roughly 1.5:1, so highlighting a sentence to
+   * copy it made it harder to read, not easier. Worse on the helper text under
+   * form fields, which is exactly the text people select to copy.
+   *
+   * Setting BOTH properties is the fix: colour must be declared alongside
+   * background or the original text colour survives and the contrast is
+   * whatever it happens to be.
+   *
+   * Primary is the same yellow in light and dark, and primary-foreground is
+   * near-black in both, so one pairing covers both themes at ~9:1 -- well past
+   * WCAG AA. It also reads as deliberate rather than as the browser's default
+   * blue sitting oddly against a yellow-accented UI. */
+  ::selection {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+
+  ::-moz-selection {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+}

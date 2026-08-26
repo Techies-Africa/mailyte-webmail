@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Never commit a deployment's own configuration. MAILBOX_API_BASE_URL is read
+# at run time precisely so it does not belong in the repo or the image.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
