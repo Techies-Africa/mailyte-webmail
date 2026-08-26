@@ -19,7 +19,18 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
+# HOSTNAME=0.0.0.0 is REQUIRED, not cosmetic.
+#
+# Next.js standalone's server.js binds to process.env.HOSTNAME, and Docker sets
+# HOSTNAME to the container ID. The server then listens ONLY on the container's
+# own IP -- not on loopback -- so the HEALTHCHECK below (which probes
+# 127.0.0.1) fails forever and the container is marked unhealthy.
+#
+# That is worse than a cosmetic status: Traefik's Docker provider EXCLUDES
+# unhealthy containers, so it never creates a router and every request returns
+# 404 from Traefik with no error anywhere. Confirmed live -- the container
+# served fine on its own IP the whole time.
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 # Runs unprivileged: this process terminates HTTP and proxies mail traffic,
 # so it has no reason to be root.
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001

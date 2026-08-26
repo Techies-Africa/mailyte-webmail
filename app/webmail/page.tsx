@@ -105,6 +105,11 @@ export default function WebmailInboxPage() {
   const [openMessage, setOpenMessage] = useState<WebmailMessage | null>(null);
   const [thread, setThread] = useState<WebmailListItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Until the first authenticated request comes back, we do not know whether
+  // there is a session at all. Rendering the mailbox before then meant a
+  // signed-out visitor saw the full interface, then "not logged in", then a
+  // redirect -- looking briefly as though someone else's mail had loaded.
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +159,8 @@ export default function WebmailInboxPage() {
   const inTrash = activeFolderMeta?.role === 'trash';
 
   const handleUnauthorized = useCallback(() => {
+    // Deliberately does NOT set sessionChecked: the gate stays closed so the
+    // mailbox never paints on the way out to the login page.
     router.push('/webmail/login');
   }, [router]);
 
@@ -189,6 +196,9 @@ export default function WebmailInboxPage() {
         .map(toListItem)
         .filter((m) => (isStarredView ? m.isStarred : true));
 
+      // The request was accepted, so a valid session exists -- only now is
+      // it safe to paint the mailbox.
+      setSessionChecked(true);
       setMessages(items);
       setTotal(isStarredView ? items.length : result.data.total);
       setOffset(pageOffset);
@@ -715,6 +725,18 @@ export default function WebmailInboxPage() {
     if (!openMessage && mode !== 'compose') return;
     setCompose({ open: true, mode, replyTo: openMessage ?? undefined });
   };
+
+  // Nothing of the mailbox renders until the session is confirmed. Painting it
+  // first meant a signed-out visitor saw the whole interface, then "not logged
+  // in", then a redirect -- which reads as though someone else's mail had
+  // loaded and then been snatched away.
+  if (!sessionChecked) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-white dark:bg-gray-900">
+        <p className="text-sm text-gray-500">Loading your mailbox…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-white dark:bg-gray-900">
