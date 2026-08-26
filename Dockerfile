@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -28,7 +26,17 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
+# Port contract: app bind port == EXPOSE == container side of the compose
+# mapping == healthcheck probe port. All four are 3000.
 EXPOSE 3000
-# Set at run time, no rebuild needed.
+
+# Set at run time, no rebuild needed -- this is the whole reason it is not
+# a NEXT_PUBLIC_ value.
 ENV MAILBOX_API_BASE_URL="http://api:8080/api/v1"
+
+# Socket probe, never pgrep: pgrep is absent from these images and would
+# yield exit 127 forever, so the container would never report healthy.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
+  CMD node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
+
 CMD ["node", "server.js"]
