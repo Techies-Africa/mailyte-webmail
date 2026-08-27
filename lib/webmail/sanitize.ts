@@ -172,11 +172,17 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
 
   // --- url() inside <style> blocks ---------------------------------------
   for (const styleTag of Array.from(clean.querySelectorAll('style'))) {
-    const rewritten = rewriteRemoteCssUrls(styleTag.textContent ?? '', allowRemoteImages);
-    if (rewritten.changed) {
-      styleTag.textContent = rewritten.css;
-      if (!allowRemoteImages) blockedCount += rewritten.count;
-    }
+    // Fonts and imported stylesheets are stripped OUTRIGHT, in both modes --
+    // they are remote fetches a sender controls (a tracking vector exactly
+    // like an image), they are not covered by "Show images", and routing
+    // them through the image proxy just made them die noisily (502s, "GIF
+    // is not a font" OTS errors) instead of quietly. Mail renders in
+    // fallback fonts either way; stripping the rules is the silent version
+    // of the same outcome.
+    const withoutFonts = stripFontRules(styleTag.textContent ?? '');
+    const rewritten = rewriteRemoteCssUrls(withoutFonts, allowRemoteImages);
+    styleTag.textContent = rewritten.css;
+    if (rewritten.changed && !allowRemoteImages) blockedCount += rewritten.count;
   }
 
   // --- links -------------------------------------------------------------
@@ -206,6 +212,13 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
     : '';
 
   return { html: headStyles + (body ? body.innerHTML : clean.innerHTML), blockedCount };
+}
+
+function stripFontRules(css: string): string {
+  return css
+    .replace(/@import[^;{]+;?/gi, '')
+    // @font-face bodies never contain nested braces, so [^}]* is exact.
+    .replace(/@font-face\s*\{[^}]*\}/gi, '');
 }
 
 function rewriteRemoteCssUrls(
