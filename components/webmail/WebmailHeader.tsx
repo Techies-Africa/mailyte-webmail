@@ -1,6 +1,7 @@
 import { Menu, RefreshCw, Search, LogOut, Settings, Sun, Moon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
+import { brand } from '@/lib/webmail/brand';
 
 type WebmailHeaderProps = {
   email: string;
@@ -55,10 +56,24 @@ export default function WebmailHeader({
             </button>
           )}
 
-          <a href="/" className="flex items-center gap-2 min-w-0" aria-label="Mailyte webmail">
-            <img src="/logo-mark.png" alt="" className="h-7 w-auto object-contain shrink-0" />
+          {/* The mark ships in public/. It was referenced but never
+              committed, so it 404'd on every load and the header showed a
+              bare wordmark. The name comes from brand.name so a self-hoster
+              can rename the app without editing this file; it was hardcoded
+              to "Mailyte", which made NEXT_PUBLIC_BRAND_NAME do nothing
+              here. Replacing public/logo-mark.png rebrands the mark. */}
+          <a
+            href="/"
+            className="flex items-center gap-2 min-w-0"
+            aria-label={`${brand.name} webmail`}
+          >
+            <img
+              src="/logo-mark.png"
+              alt=""
+              className="h-7 w-auto object-contain shrink-0"
+            />
             <span className="text-lg font-semibold text-gray-900 dark:text-gray-100 hidden sm:block">
-              Mailyte
+              {brand.name}
             </span>
           </a>
         </div>
