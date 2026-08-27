@@ -95,6 +95,35 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   );
 }
 
+/**
+ * Which optional features this deployment's server actually has.
+ *
+ * `ai`, `rules`, `forwarding` and `vacation` depend on configuration the
+ * server may not have -- an AI endpoint, a Sieve master credential -- so the
+ * client asks rather than assumes. Nothing called this before, which is why
+ * "AI Write" appeared on a deployment with no AI configured and failed with a
+ * retry-flavoured error every time it was pressed.
+ *
+ * Keys are a published contract for self-hosters: add, never rename.
+ */
+export interface ApiCapabilities {
+  email_address: string;
+  capabilities: {
+    mail: boolean;
+    send: boolean;
+    settings: boolean;
+    two_factor: boolean;
+    rules: boolean;
+    forwarding: boolean;
+    vacation: boolean;
+    ai: boolean;
+  };
+}
+
+export function getCapabilities(onUnauthorized: () => void) {
+  return call<ApiCapabilities>('/api/webmail/capabilities', undefined, onUnauthorized);
+}
+
 /** Real folders with unread counts and the uid_next change token (P2/P4). */
 export function listFolders(onUnauthorized: () => void) {
   return call<ApiFolder[]>('/api/webmail/folders', undefined, onUnauthorized);

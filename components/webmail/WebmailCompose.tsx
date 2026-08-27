@@ -46,7 +46,15 @@ type WebmailComposeProps = {
   onClose: () => void;
   onSent: () => void;
   onSend: (payload: ComposePayload) => Promise<SendResult>;
-  onAiWrite: (instruction: string, existingBody: string) => Promise<string>;
+  /**
+   * Absent when the server reports no AI endpoint (GET
+   * /mailbox/capabilities). The control is then not rendered at all rather
+   * than rendered and failing -- a deployment with no AI configured used to
+   * show this button and answer "Could not generate a draft. Please try
+   * again.", which describes a temporary fault rather than a feature that was
+   * never available.
+   */
+  onAiWrite?: (instruction: string, existingBody: string) => Promise<string>;
   /**
    * Persist the draft, returning the id it was saved as. Called on a timer
    * and on close; omitted only where there is nowhere to save to.
@@ -286,6 +294,7 @@ export default function WebmailCompose({
   const generateAIContent = async () => {
     setIsGeneratingAI(true);
     try {
+      if (!onAiWrite) return;
       const generated = await onAiWrite(aiPrompt, draft.body);
       // Remount the editor around the generated body: the AI writer replaces
       // the whole document, which is the one case where reaching past
@@ -526,7 +535,9 @@ export default function WebmailCompose({
                 dirtyRef.current = true;
                 setDraft((prev) => ({ ...prev, body: html }));
               }}
+              // Not rendered at all when the server has no AI endpoint.
               toolbarExtra={
+                onAiWrite ? (
                 <button
                   onClick={() => setShowAiPrompt(true)}
                   className="flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-800/30 hover:bg-blue-200 dark:hover:bg-blue-700/30 text-blue-700 dark:text-blue-300 rounded-md text-sm"
@@ -534,6 +545,7 @@ export default function WebmailCompose({
                   <Sparkles size={14} />
                   <span>AI Write</span>
                 </button>
+                ) : undefined
               }
             />
           </div>
@@ -636,7 +648,7 @@ export default function WebmailCompose({
         </>
       )}
 
-      {showAiPrompt && (
+      {showAiPrompt && onAiWrite && (
         <div className="absolute inset-0 bg-black/50 z-10 flex items-center justify-center">
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-[500px] max-w-full">
             <h3 className="text-lg font-medium mb-4 flex items-center">

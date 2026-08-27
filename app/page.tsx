@@ -47,9 +47,11 @@ import {
   discardDraft as apiDiscardDraft,
   listContacts,
   getSettings,
+  getCapabilities,
   createFolder as apiCreateFolder,
   logout as apiLogout,
 } from '@/lib/webmail/client';
+import type { ApiCapabilities } from '@/lib/webmail/client';
 import {
   FALLBACK_FOLDERS,
   foldersFingerprint,
@@ -182,6 +184,17 @@ export default function WebmailInboxPage() {
   } | null>(null);
   const [contacts, setContacts] = useState<WebmailContact[]>([]);
   const [settings, setSettings] = useState<WebmailSettings | null>(null);
+
+  /**
+   * Optional features this server has, from GET /mailbox/capabilities.
+   *
+   * `null` until the answer arrives, and every optional control treats null
+   * as "not available". That ordering matters: defaulting to available would
+   * flash a button on load and remove it a moment later, which is worse than
+   * it appearing once the server has spoken.
+   */
+  const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
+  const aiAvailable = capabilities?.ai === true;
   // The last folder fingerprint the list was built from. The poll compares
   // against this and reloads only on a real change.
   const syncTokenRef = useRef<string>('');
@@ -298,6 +311,11 @@ export default function WebmailInboxPage() {
     });
     void getSettings(handleUnauthorized).then((result) => {
       if (result.success) setSettings(toSettings(result.data));
+    });
+    // What this server can actually do. Optional features are hidden until it
+    // says otherwise -- see the aiAvailable note where the state is declared.
+    void getCapabilities(handleUnauthorized).then((result) => {
+      if (result.success) setCapabilities(result.data.capabilities);
     });
   }, [handleUnauthorized]);
 
@@ -1033,8 +1051,8 @@ export default function WebmailInboxPage() {
                 onComposeWithBody={(body) =>
                   setCompose({ open: true, mode: 'compose', initialBody: body })
                 }
-                onAiWrite={aiWrite}
-                onSummarize={summarize}
+                onAiWrite={aiAvailable ? aiWrite : undefined}
+                onSummarize={aiAvailable ? summarize : undefined}
               />
             )}
           </div>
@@ -1097,7 +1115,7 @@ export default function WebmailInboxPage() {
             void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
           }}
           onSend={send}
-          onAiWrite={aiWrite}
+          onAiWrite={aiAvailable ? aiWrite : undefined}
           onSaveDraft={saveDraft}
           onDiscardDraft={discardDraft}
           existingDraftId={compose.draftId}

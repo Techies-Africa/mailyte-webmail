@@ -44,8 +44,17 @@ type WebmailMessageViewProps = {
   onReplyAll: () => void;
   onForward: () => void;
   onComposeWithBody: (body: string) => void;
-  onAiWrite: (instruction: string, existingBody: string) => Promise<string>;
-  onSummarize: () => Promise<string>;
+  /**
+   * Absent when the server reports no AI endpoint (GET
+   * /mailbox/capabilities). The control is then not rendered at all rather
+   * than rendered and failing -- a deployment with no AI configured used to
+   * show this button and answer "Could not generate a draft. Please try
+   * again.", which describes a temporary fault rather than a feature that was
+   * never available.
+   */
+  onAiWrite?: (instruction: string, existingBody: string) => Promise<string>;
+  /** Absent when the server reports no AI endpoint -- same rule as onAiWrite. */
+  onSummarize?: () => Promise<string>;
 };
 
 function formatBytes(bytes: number): string {
@@ -174,13 +183,17 @@ export default function WebmailMessageView({
         </div>
 
         <div className="flex items-center mt-3 gap-2">
-          <button
-            onClick={() => setShowAiWriter(true)}
-            className="flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-800/30 hover:bg-blue-200 dark:hover:bg-blue-700/30 text-blue-700 dark:text-blue-300 rounded-md text-sm"
-          >
-            <Sparkles size={14} />
-            <span>AI Email Writer</span>
-          </button>
+          {/* Only when the server reports an AI endpoint. */}
+          {onAiWrite && (
+            <button
+              onClick={() => setShowAiWriter(true)}
+              className="flex items-center gap-1 px-3 py-1 bg-blue-100 dark:bg-blue-800/30 hover:bg-blue-200 dark:hover:bg-blue-700/30 text-blue-700 dark:text-blue-300 rounded-md text-sm"
+            >
+              <Sparkles size={14} />
+              <span>AI Email Writer</span>
+            </button>
+          )}
+          {onSummarize && (
           <button
             onClick={() => setShowThreadSummary(true)}
             className="flex items-center gap-1 px-3 py-1 bg-violet-100 dark:bg-violet-800/30 hover:bg-violet-200 dark:hover:bg-violet-700/30 text-violet-700 dark:text-violet-300 rounded-md text-sm"
@@ -188,6 +201,7 @@ export default function WebmailMessageView({
             <Hash size={14} />
             <span>Thread Summary</span>
           </button>
+          )}
         </div>
       </div>
 
@@ -354,19 +368,23 @@ export default function WebmailMessageView({
         folders={folders}
       />
 
-      <AiWriterModal
-        isOpen={showAiWriter}
-        onClose={() => setShowAiWriter(false)}
-        onGenerate={(prompt) => onAiWrite(prompt, '')}
-        onApply={onComposeWithBody}
-      />
+      {onAiWrite && (
+        <AiWriterModal
+          isOpen={showAiWriter}
+          onClose={() => setShowAiWriter(false)}
+          onGenerate={(prompt) => onAiWrite(prompt, '')}
+          onApply={onComposeWithBody}
+        />
+      )}
 
-      <ThreadSummaryModal
-        isOpen={showThreadSummary}
-        onClose={() => setShowThreadSummary(false)}
-        thread={thread.length > 0 ? thread : [message]}
-        onSummarize={onSummarize}
-      />
+      {onSummarize && (
+        <ThreadSummaryModal
+          isOpen={showThreadSummary}
+          onClose={() => setShowThreadSummary(false)}
+          thread={thread.length > 0 ? thread : [message]}
+          onSummarize={onSummarize}
+        />
+      )}
     </div>
   );
 }
