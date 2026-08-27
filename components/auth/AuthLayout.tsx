@@ -56,7 +56,7 @@ export default function AuthLayout({
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       {/* Left — branded value panel (content centered as one balanced column) */}
-      <div className="relative hidden overflow-hidden border-r border-border bg-card md:flex md:w-1/2 md:flex-col md:items-center md:justify-center md:p-12">
+      <div className="relative hidden overflow-hidden border-r border-border bg-card md:flex md:w-1/2 md:flex-col md:items-center md:justify-start md:p-12">
         {/* backdrop: soft gradient (light) + gold glow + subtle grid (dark) */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/10" />
@@ -64,20 +64,28 @@ export default function AuthLayout({
           <div className="absolute inset-0 hidden bg-[linear-gradient(to_right,hsl(var(--border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border))_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_70%_60%_at_30%_20%,#000_50%,transparent_100%)] opacity-50 dark:block" />
         </div>
 
-        {/* Logo — anchored top-left */}
-        <Link href="/" className="absolute left-12 top-12 z-10 flex items-center gap-2">
-          <span
-                aria-hidden
-                className="h-9 aspect-square rounded-lg bg-primary/15 text-primary grid place-items-center font-bold"
-              >
-                {brand.mark}
-              </span>
+        {/* Brand — in the flow, not absolutely positioned.
+            It was `absolute left-12 top-12` inside a column that centres its
+            content vertically, so on a tall window the centred block rose
+            past that fixed offset and the headline printed straight through
+            the wordmark. Sitting above the content in the same column it
+            cannot collide at any height: the column starts its children at
+            the top, and the block below takes `my-auto` so it centres in
+            whatever height is left over. */}
+        <Link
+          href="/"
+          className="relative z-10 flex w-full max-w-lg shrink-0 items-center gap-2"
+        >
+          <img src="/logo-mark.png" alt="" className="h-9 w-auto object-contain shrink-0" />
           <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight text-foreground">
             {brand.name}
           </span>
         </Link>
 
-        <div className="relative w-full max-w-lg">
+        {/* my-auto, with the brand above it in normal flow: the brand keeps
+            its place at the top and this block centres in whatever height is
+            left, at any window size. */}
+        <div className="relative my-auto w-full max-w-lg">
           {/* Headline */}
           <h2 className="font-[family-name:var(--font-display)] text-4xl font-bold leading-[1.1] tracking-tight text-foreground">
             {panelHeadline}
@@ -109,12 +117,7 @@ export default function AuthLayout({
         <div className="mx-auto w-full max-w-md">
           {/* Mobile brand */}
           <Link href="/" className="mb-8 flex items-center gap-2 md:hidden">
-            <span
-                aria-hidden
-                className="h-8 aspect-square rounded-lg bg-primary/15 text-primary grid place-items-center font-bold"
-              >
-                {brand.mark}
-              </span>
+            <img src="/logo-mark.png" alt="" className="h-8 w-auto object-contain shrink-0" />
             <span className="font-[family-name:var(--font-display)] text-lg font-bold tracking-tight text-foreground">
               {brand.name}
             </span>

@@ -47,6 +47,13 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# public/ is NOT part of the standalone output and has to be copied
+# explicitly. Without this line every file served from the site root 404s in
+# the container while working perfectly in `next dev` -- which is why the
+# header's logo was missing in production but fine locally. The favicon hid
+# the problem: app/favicon.ico is compiled into the route output, so it
+# returned 200 from the same image that could not find /logo-mark.png.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 USER nextjs
 # Port contract: app bind port == EXPOSE == container side of the compose
 # mapping == healthcheck probe port. All four are 3000.
