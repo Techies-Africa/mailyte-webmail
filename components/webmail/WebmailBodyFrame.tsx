@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTheme } from 'next-themes';
 import { ImageOff } from 'lucide-react';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
 import type { WebmailAttachment } from './types';
@@ -21,12 +20,29 @@ import type { WebmailAttachment } from './types';
 // SS7.1) -- the sandbox stops script executing, the sanitiser stops it being
 // in the document at all. Two independent layers, which is what "defence in
 // depth" was supposed to mean when only the iframe existed.
-function emailSafeReset(isDark: boolean) {
+/**
+ * Message bodies always render light, whatever theme the app is in.
+ *
+ * This used to follow the app theme and set `color: #e5e7eb` on the body in
+ * dark mode. HTML mail is authored against a light background and paints its
+ * own -- a white card, a table with a white cell -- but usually leaves the
+ * text colour to be inherited. So the email supplied white, we supplied
+ * near-white text, and the message came out almost invisible: the only
+ * legible parts were the few words the sender had coloured explicitly.
+ *
+ * Nothing here can know which of the sender's colours were meant to sit on a
+ * light background and which would survive inversion, so the safe answer is
+ * not to try. Every major mail client renders HTML mail on white in dark mode
+ * for the same reason. `color-scheme: light` stops the browser dark-styling
+ * form controls and scrollbars inside the frame too.
+ */
+function emailSafeReset() {
   return `<style>
-  html, body { max-width: 100%; overflow-x: hidden; background: ${isDark ? '#1f2937' : '#ffffff'}; color: ${isDark ? '#e5e7eb' : '#111827'}; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  :root { color-scheme: light; }
+  html, body { max-width: 100%; overflow-x: hidden; background: #ffffff; color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
-  img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed ${isDark ? '#4b5563' : '#d1d5db'}; border-radius: 2px; }
+  img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
 </style>`;
 }
 
@@ -53,7 +69,6 @@ export default function WebmailBodyFrame({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [height, setHeight] = useState(150);
-  const { resolvedTheme } = useTheme();
 
   const sanitized = useMemo(
     () => sanitizeEmailHtml(html, { attachments, attachmentHref, allowRemoteImages }),
@@ -73,7 +88,7 @@ export default function WebmailBodyFrame({
       sandbox="allow-same-origin"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
-      srcDoc={emailSafeReset(resolvedTheme === 'dark') + sanitized.html}
+      srcDoc={emailSafeReset() + sanitized.html}
       onLoad={() => {
         const doc = iframeRef.current?.contentWindow?.document;
         if (!doc?.documentElement) return;
@@ -90,7 +105,7 @@ export default function WebmailBodyFrame({
         resizeObserverRef.current = observer;
       }}
       style={{ height }}
-      className={`w-full border-0 bg-white dark:bg-gray-800 rounded ${className ?? ''}`}
+      className={`w-full border-0 bg-white rounded ${className ?? ''}`}
     />
   );
 }

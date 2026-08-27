@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import WebmailSidebar, { STARRED_VIEW } from '@/components/webmail/WebmailSidebar';
 import WebmailHeader from '@/components/webmail/WebmailHeader';
+import WebmailSkeleton from '@/components/webmail/WebmailSkeleton';
 import WebmailList from '@/components/webmail/WebmailList';
 import WebmailToolbar from '@/components/webmail/WebmailToolbar';
 import WebmailMessageView from '@/components/webmail/WebmailMessageView';
@@ -808,11 +809,7 @@ export default function WebmailInboxPage() {
   // in", then a redirect -- which reads as though someone else's mail had
   // loaded and then been snatched away.
   if (!sessionChecked) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-white dark:bg-gray-900">
-        <p className="text-sm text-gray-500">Loading your mailbox…</p>
-      </div>
-    );
+    return <WebmailSkeleton />;
   }
 
   return (

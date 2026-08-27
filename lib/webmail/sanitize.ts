@@ -67,7 +67,20 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
     // dangerous positions as part of its default profile.
     ALLOW_DATA_ATTR: false,
     RETURN_DOM: true,
-    WHOLE_DOCUMENT: false,
+    // Parse the message as a whole document, not a body fragment.
+    //
+    // WHOLE_DOCUMENT was false, which makes DOMPurify treat the input as body
+    // content and throw away <head> -- and <head> is exactly where HTML mail
+    // puts its <style> block. Every rule the sender wrote was dropped before
+    // it reached the page: headings lost their weight, list markers and
+    // padding disappeared, and the message rendered as a wall of unstyled
+    // text. The <style> handling further down was already written for this
+    // and simply never had anything to find.
+    //
+    // Safe to keep: DOMPurify sanitises CSS as well as markup, and the loop
+    // below rewrites every remote url() inside <style> to the placeholder
+    // when images are blocked -- so styles cannot smuggle in a read receipt.
+    WHOLE_DOCUMENT: true,
   }) as unknown as HTMLElement;
 
   let blockedCount = 0;
@@ -154,7 +167,24 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
     anchor.setAttribute('rel', 'noopener noreferrer nofollow');
   }
 
-  return { html: clean.innerHTML, blockedCount };
+  // Serialise as a fragment, not a document.
+  //
+  // With WHOLE_DOCUMENT the sanitised result is an <html> element, so
+  // clean.innerHTML would be "<head>…</head><body>…</body>". That gets
+  // concatenated after the reset stylesheet in WebmailBodyFrame, giving the
+  // iframe a stylesheet followed by a head and a body -- invalid nesting that
+  // browsers then silently rearrange. Lift the head's <style> blocks out and
+  // emit them ahead of the body's own markup instead: same CSS, same order,
+  // and the output stays a fragment exactly as callers expect.
+  const head = clean.querySelector('head');
+  const body = clean.querySelector('body');
+  const headStyles = head
+    ? Array.from(head.querySelectorAll('style'))
+        .map((el) => el.outerHTML)
+        .join('')
+    : '';
+
+  return { html: headStyles + (body ? body.innerHTML : clean.innerHTML), blockedCount };
 }
 
 function stripRemoteCssUrls(css: string): { css: string; count: number; changed: boolean } {
