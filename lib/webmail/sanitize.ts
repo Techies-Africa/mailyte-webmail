@@ -30,6 +30,19 @@ const PLACEHOLDER_PIXEL =
 const REMOTE_URL = /^(https?:)?\/\//i;
 const CSS_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
 
+/**
+ * Remote images are never rendered directly, even after the reader opts in —
+ * they are fetched through our own image proxy. Two reasons, both real:
+ * senders who serve mail assets with `Cross-Origin-Resource-Policy:
+ * same-origin` (Anthropic does) make the browser refuse a direct <img> no
+ * matter what we do, and a direct load hands the sender the reader's IP
+ * address. The proxy fixes both at once.
+ */
+function proxiedImageUrl(url: string): string {
+  const absolute = url.startsWith('//') ? `https:${url}` : url;
+  return `/api/webmail/image-proxy?url=${encodeURIComponent(absolute)}`;
+}
+
 export interface SanitizeOptions {
   /** The message's own attachments, so cid: references can be resolved. */
   attachments?: WebmailAttachment[];
@@ -116,45 +129,53 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
       continue;
     }
 
-    if (REMOTE_URL.test(src) && !allowRemoteImages) {
-      // The original URL is deliberately NOT kept anywhere in the output.
-      // "Show images" re-runs this function over the untouched original
-      // HTML, so stashing the address in a data- attribute would buy
-      // nothing and would leave the tracking URL sitting in the rendered
-      // document -- which is the thing being blocked.
-      img.setAttribute('src', PLACEHOLDER_PIXEL);
-      img.setAttribute('data-blocked', 'true');
-      blockedCount += 1;
+    if (REMOTE_URL.test(src)) {
+      if (allowRemoteImages) {
+        // Never load a remote image directly even when allowed -- see
+        // proxiedImageUrl for why (CORP-blocking senders + reader IP).
+        img.setAttribute('src', proxiedImageUrl(src));
+      } else {
+        // The original URL is deliberately NOT kept anywhere in the output.
+        // "Show images" re-runs this function over the untouched original
+        // HTML, so stashing the address in a data- attribute would buy
+        // nothing and would leave the tracking URL sitting in the rendered
+        // document -- which is the thing being blocked.
+        img.setAttribute('src', PLACEHOLDER_PIXEL);
+        img.setAttribute('data-blocked', 'true');
+        blockedCount += 1;
+      }
     }
   }
 
   // --- the legacy `background` attribute ---------------------------------
   for (const el of Array.from(clean.querySelectorAll('[background]'))) {
     const value = el.getAttribute('background') ?? '';
-    if (REMOTE_URL.test(value) && !allowRemoteImages) {
-      el.removeAttribute('background');
-      blockedCount += 1;
+    if (REMOTE_URL.test(value)) {
+      if (allowRemoteImages) {
+        el.setAttribute('background', proxiedImageUrl(value));
+      } else {
+        el.removeAttribute('background');
+        blockedCount += 1;
+      }
     }
   }
 
   // --- url() inside inline style attributes ------------------------------
-  if (!allowRemoteImages) {
-    for (const el of Array.from(clean.querySelectorAll('[style]'))) {
-      const style = el.getAttribute('style') ?? '';
-      const stripped = stripRemoteCssUrls(style);
-      if (stripped.changed) {
-        el.setAttribute('style', stripped.css);
-        blockedCount += stripped.count;
-      }
+  for (const el of Array.from(clean.querySelectorAll('[style]'))) {
+    const style = el.getAttribute('style') ?? '';
+    const rewritten = rewriteRemoteCssUrls(style, allowRemoteImages);
+    if (rewritten.changed) {
+      el.setAttribute('style', rewritten.css);
+      if (!allowRemoteImages) blockedCount += rewritten.count;
     }
+  }
 
-    // --- url() inside <style> blocks -------------------------------------
-    for (const styleTag of Array.from(clean.querySelectorAll('style'))) {
-      const stripped = stripRemoteCssUrls(styleTag.textContent ?? '');
-      if (stripped.changed) {
-        styleTag.textContent = stripped.css;
-        blockedCount += stripped.count;
-      }
+  // --- url() inside <style> blocks ---------------------------------------
+  for (const styleTag of Array.from(clean.querySelectorAll('style'))) {
+    const rewritten = rewriteRemoteCssUrls(styleTag.textContent ?? '', allowRemoteImages);
+    if (rewritten.changed) {
+      styleTag.textContent = rewritten.css;
+      if (!allowRemoteImages) blockedCount += rewritten.count;
     }
   }
 
@@ -187,12 +208,17 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions = {}): 
   return { html: headStyles + (body ? body.innerHTML : clean.innerHTML), blockedCount };
 }
 
-function stripRemoteCssUrls(css: string): { css: string; count: number; changed: boolean } {
+function rewriteRemoteCssUrls(
+  css: string,
+  allowRemoteImages: boolean,
+): { css: string; count: number; changed: boolean } {
   let count = 0;
   const next = css.replace(CSS_URL, (match, _quote, url: string) => {
     if (!REMOTE_URL.test(url)) return match;
     count += 1;
-    return `url("${PLACEHOLDER_PIXEL}")`;
+    return allowRemoteImages
+      ? `url("${proxiedImageUrl(url)}")`
+      : `url("${PLACEHOLDER_PIXEL}")`;
   });
 
   return { css: next, count, changed: count > 0 };
