@@ -19,6 +19,17 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
+
+# Links the published image to this repository on GHCR.
+#
+# Without it the container package can end up with no linked repository, and
+# then the repo's GITHUB_TOKEN has no write access to its own package -- the
+# release fails at the very last step with
+# "denied: permission_denied: write_package", after a clean build. Asserting
+# it on every push keeps the association from drifting again.
+LABEL org.opencontainers.image.source="https://github.com/Techies-Africa/mailyte-webmail"
+LABEL org.opencontainers.image.description="A self-hostable webmail client for any Mailyte-compatible mail server."
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 # HOSTNAME=0.0.0.0 is REQUIRED, not cosmetic.
 #
 # Next.js standalone's server.js binds to process.env.HOSTNAME, and Docker sets
