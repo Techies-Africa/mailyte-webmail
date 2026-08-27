@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Check } from 'lucide-react';
 import WebmailSidebar, { STARRED_VIEW } from '@/components/webmail/WebmailSidebar';
 import WebmailHeader from '@/components/webmail/WebmailHeader';
 import WebmailSkeleton from '@/components/webmail/WebmailSkeleton';
@@ -150,7 +150,18 @@ export default function WebmailInboxPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * The banner under the toolbar.
+   *
+   * `tone` exists because this had one appearance -- amber, with a Dismiss
+   * button -- which is right for "something needs your attention" and wrong
+   * for "your message was sent". A confirmation styled as a warning reads as
+   * a problem, and one that waits to be dismissed turns every send into a
+   * small chore.
+   */
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'warning' } | null>(
+    null,
+  );
   // `search` is what's typed; `activeSearch` is what the server was asked
   // for. Keeping them apart is what makes search a submit rather than a
   // keystroke-per-request against IMAP.
@@ -417,6 +428,15 @@ export default function WebmailInboxPage() {
     [handleUnauthorized, activeFolder],
   );
 
+  // A confirmation is worth seeing once, not worth clearing by hand. The
+  // warning tone is left alone: it says the Sent copy may be missing, which
+  // the reader should acknowledge rather than have vanish while they look away.
+  useEffect(() => {
+    if (notice?.tone !== 'success') return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // --- Back / Forward -------------------------------------------------------
   // pushUrlState changes the address bar without telling React, so the reader
   // navigating through history has to be applied to state here.
@@ -623,8 +643,28 @@ export default function WebmailInboxPage() {
       // The message is away either way. When the Sent copy has not landed
       // yet the API has queued a retry, and saying so beats a bare "Sent"
       // over an empty Sent folder (F4).
+      //
+      // The success branch is NOT optional. Confirmation used to appear only
+      // in the degraded case, so an ordinary send -- the overwhelmingly
+      // common one -- produced no feedback at all: the window closed and
+      // nothing said the message had gone. The undo toast covers this only
+      // when undo-send is on, and it is off by default, so most sends were
+      // silent. Turning off *undo* is not a request to turn off *telling me
+      // it worked*.
       if (result.data && result.data.filed_to_sent === false) {
-        setNotice('Sent — filing to your Sent folder is still in progress.');
+        setNotice({
+          text: 'Sent — filing to your Sent folder is still in progress.',
+          tone: 'warning',
+        });
+      } else {
+        const recipients = splitAddresses(payload.to);
+        const who =
+          recipients.length === 1
+            ? recipients[0]
+            : `${recipients[0]} and ${recipients.length - 1} other${
+                recipients.length === 2 ? '' : 's'
+              }`;
+        setNotice({ text: `Message sent to ${who}`, tone: 'success' });
       }
       void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
       void loadFolders();
@@ -857,14 +897,28 @@ export default function WebmailInboxPage() {
           )}
 
           {notice && (
-            <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-300 flex items-center justify-between gap-3">
-              <span>{notice}</span>
-              <button
-                onClick={() => setNotice(null)}
-                className="underline underline-offset-2 flex-shrink-0"
-              >
-                Dismiss
-              </button>
+            <div
+              role="status"
+              aria-live="polite"
+              className={`px-4 py-2 text-sm flex items-center justify-between gap-3 ${
+                notice.tone === 'success'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                  : 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300'
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                {notice.tone === 'success' && <Check size={15} className="shrink-0" />}
+                <span className="truncate">{notice.text}</span>
+              </span>
+              {/* Only the warning needs dismissing; the success clears itself. */}
+              {notice.tone === 'warning' && (
+                <button
+                  onClick={() => setNotice(null)}
+                  className="underline underline-offset-2 flex-shrink-0"
+                >
+                  Dismiss
+                </button>
+              )}
             </div>
           )}
 
