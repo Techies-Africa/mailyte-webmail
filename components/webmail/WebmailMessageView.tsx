@@ -124,9 +124,17 @@ export default function WebmailMessageView({
   const allowRemoteImages = senderAllowed || showImagesOnce;
 
   // A different message starts blocked again -- "show once" means once.
+  //
+  // blockedImages is deliberately NOT reset here. React runs child effects
+  // before parent effects, so WebmailBodyFrame reports the new message's
+  // real count first and a reset in this (parent) effect then clobbered it
+  // back to 0 -- on mount and on every message. The "N images blocked --
+  // Show images" bar therefore never rendered at all: readers saw the
+  // dashed placeholder boxes with no way to load the images and no
+  // explanation. The frame re-reports whenever its sanitised output
+  // changes, so the count tracks the current message without any reset.
   useEffect(() => {
     setShowImagesOnce(false);
-    setBlockedImages(0);
   }, [message.id]);
 
   const handleBlockedCount = useCallback((count: number) => setBlockedImages(count), []);
