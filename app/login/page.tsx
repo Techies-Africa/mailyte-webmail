@@ -44,7 +44,7 @@ export default function WebmailLoginPage() {
       // Non-sensitive display info only -- the session token itself lives
       // in an HttpOnly cookie the login route just set, never here.
       sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify(data.email_account));
-      router.push('/webmail');
+      router.push('/');
     } catch {
       setError('Could not reach the server. Please try again.');
     } finally {

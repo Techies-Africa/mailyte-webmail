@@ -10,6 +10,10 @@ import {
   Folder,
   Plus,
   FolderPlus,
+  Users,
+  Tag,
+  Newspaper,
+  Bell,
 } from 'lucide-react';
 import type { WebmailFolder } from './types';
 
@@ -40,6 +44,26 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 // custom folders alphabetically. The mail server hands folders back in IMAP
 // LIST order, which is arbitrary.
 const ROLE_ORDER = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'trash'];
+
+/**
+ * Folders the server files mail into on its own, via the global Sieve script.
+ *
+ * IMAP gives them no role, so they used to sort in among the reader's own
+ * folders under a plain "Folders" heading -- and mail routed here looked
+ * exactly like mail that never arrived. They get their own labelled group so
+ * that anything filed away is visibly filed somewhere.
+ *
+ * Notifications is listed even though the server no longer routes to it:
+ * messages filed there before that changed are still in the mailbox, and a
+ * folder holding real mail must not disappear from the sidebar.
+ */
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  Social: <Users size={18} />,
+  Promotions: <Tag size={18} />,
+  Updates: <Newspaper size={18} />,
+  Notifications: <Bell size={18} />,
+};
+const CATEGORY_ORDER = ['Social', 'Promotions', 'Updates', 'Notifications'];
 
 function sortFolders(folders: WebmailFolder[]): WebmailFolder[] {
   return [...folders].sort((a, b) => {
@@ -85,7 +109,13 @@ export default function WebmailSidebar({
 
   const sorted = sortFolders(folders);
   const roleFolders = sorted.filter((f) => f.role !== null);
-  const customFolders = sorted.filter((f) => f.role === null);
+  // Server-filed categories are pulled out of the reader's own folders and
+  // shown in CATEGORY_ORDER, which reads better than alphabetical here.
+  const categoryFolders = CATEGORY_ORDER.map((name) =>
+    sorted.find((f) => f.role === null && f.name === name),
+  ).filter((f): f is WebmailFolder => Boolean(f));
+  const categoryNames = new Set(categoryFolders.map((f) => f.name));
+  const customFolders = sorted.filter((f) => f.role === null && !categoryNames.has(f.name));
 
   const row = (
     key: string,
@@ -148,6 +178,29 @@ export default function WebmailSidebar({
           () => onFolderChange(STARRED_VIEW),
         )}
       </div>
+
+      {/* Categories the server files into on delivery. Directly under the
+          system folders, not buried with the reader's own, because mail can
+          land here without them ever having chosen it. */}
+      {categoryFolders.length > 0 && (
+        <div className="mt-4">
+          <div className="px-3 py-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              Categories
+            </span>
+          </div>
+          {categoryFolders.map((f) =>
+            row(
+              f.id,
+              CATEGORY_ICONS[f.name] ?? <Folder size={18} />,
+              f.name,
+              f.unreadEmails,
+              activeFolder === f.name,
+              () => onFolderChange(f.name),
+            ),
+          )}
+        </div>
+      )}
 
       {(customFolders.length > 0 || onCreateFolder) && (
         <div className="mt-4">

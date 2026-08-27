@@ -55,7 +55,7 @@ export default function WebmailHeader({
             </button>
           )}
 
-          <a href="/webmail" className="flex items-center gap-2 min-w-0" aria-label="Mailyte webmail">
+          <a href="/" className="flex items-center gap-2 min-w-0" aria-label="Mailyte webmail">
             <img src="/logo-mark.png" alt="" className="h-7 w-auto object-contain shrink-0" />
             <span className="text-lg font-semibold text-gray-900 dark:text-gray-100 hidden sm:block">
               Mailyte

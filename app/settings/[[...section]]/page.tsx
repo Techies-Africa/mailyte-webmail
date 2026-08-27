@@ -41,7 +41,7 @@ export default function WebmailSettingsPage() {
   const ActiveComponent = active.component;
 
   const handleUnauthorized = useCallback(() => {
-    router.push('/webmail/login');
+    router.push('/login');
   }, [router]);
 
   const loadSettings = useCallback(async () => {
@@ -71,18 +71,18 @@ export default function WebmailSettingsPage() {
   const goTo = (id: string) => {
     if (!confirmLeave()) return;
     setDirty({});
-    router.push(id === SETTINGS_SECTIONS[0].id ? '/webmail/settings' : `/webmail/settings/${id}`);
+    router.push(id === SETTINGS_SECTIONS[0].id ? '/settings' : `/settings/${id}`);
   };
 
   const backToMail = () => {
     if (!confirmLeave()) return;
-    router.push('/webmail');
+    router.push('/');
   };
 
   const signOut = async () => {
     await apiLogout();
     sessionStorage.removeItem('mailyte_mailbox_display');
-    router.push('/webmail/login');
+    router.push('/login');
   };
 
   return (

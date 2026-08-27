@@ -24,6 +24,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
+  async redirects() {
+    // The app used to live under /webmail, which on a host already called
+    // webmail.example.com read as webmail.example.com/webmail. It is served
+    // from the root now; these keep old bookmarks, and any link already sent
+    // to someone, working.
+    return [
+      { source: '/webmail', destination: '/', permanent: true },
+      { source: '/webmail/:path*', destination: '/:path*', permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
