@@ -16,6 +16,17 @@ import type { WebmailAttachment } from './types';
 // browsers guard against needs both flags together; withholding
 // `allow-scripts` means no script in the frame ever runs.
 //
+// `allow-popups allow-popups-to-escape-sandbox` exist for the reader's sake:
+// the sanitiser rewrites every link to target="_blank", and without
+// `allow-popups` the sandbox silently swallows exactly those clicks -- every
+// button and link in every message was dead, with no error anywhere.
+// `allow-popups-to-escape-sandbox` keeps the opened tab from inheriting this
+// frame's sandbox (an inherited no-scripts sandbox renders most sites
+// broken-blank). Still withheld: `allow-scripts` (nothing executes in the
+// frame, so no script can call window.open -- only a real user click on a
+// link opens anything) and `allow-top-navigation` (a message can never
+// navigate the mail client itself away).
+//
 // As of M-C the HTML is also run through DOMPurify before it gets here (PRD
 // SS7.1) -- the sandbox stops script executing, the sanitiser stops it being
 // in the document at all. Two independent layers, which is what "defence in
@@ -85,7 +96,7 @@ export default function WebmailBodyFrame({
     <iframe
       ref={iframeRef}
       title="Message content"
-      sandbox="allow-same-origin"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
       srcDoc={emailSafeReset() + sanitized.html}
