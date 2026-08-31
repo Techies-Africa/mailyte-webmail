@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TextSelection } from '@tiptap/pm/state';
+import { Selection, TextSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import {
   Bold,
@@ -162,9 +162,32 @@ export default function WebmailEditor({
   // Focus at the start, above any quoted text -- the same behaviour the old
   // editor needed explicit range juggling for. Runs once, on the editor
   // becoming available: re-running it would move the caret mid-typing.
+  //
+  // NOT `editor.commands.focus('start')`. TipTap's focus command has an
+  // Android/iOS branch that calls view.dom.focus() synchronously INSIDE the
+  // command, before the command manager dispatches the command's own
+  // transaction. On Chrome for Android that focus re-enters ProseMirror
+  // (focus + selectionchange -> DOMObserver flush), which can move the
+  // state on underneath the still-pending transaction; ProseMirror then
+  // throws "RangeError: Applying a mismatched transaction" out of this
+  // effect, and React hands the whole page to the error boundary. That was
+  // Reply on a phone: the quoted message made a document the flush had
+  // something to say about, a blank New message did not.
+  //
+  // Dispatching a fresh selection first and focusing the view afterwards
+  // leaves no pending transaction for the focus to invalidate. And the caret
+  // position is a courtesy, so a failure here is logged, never thrown -- an
+  // editor that opens with the caret in the wrong place is usable; an error
+  // page is not.
   useEffect(() => {
     if (!editor) return;
-    editor.commands.focus('start');
+    try {
+      const { state, view } = editor;
+      view.dispatch(state.tr.setSelection(Selection.atStart(state.doc)));
+      view.focus();
+    } catch (error) {
+      console.warn('Could not focus the editor', error);
+    }
   }, [editor]);
 
   if (!editor) {
@@ -346,6 +369,14 @@ function ToolButton({
     <button
       type="button"
       onClick={onClick}
+      // Keep focus in the editor when a toolbar button is pressed. Every
+      // handler here runs `chain().focus()...`, and with the editor already
+      // focused TipTap's focus command returns before its Android-only
+      // view.dom.focus() -- the re-entrant call behind "Applying a
+      // mismatched transaction" (see the mount effect). It also keeps the
+      // selection the formatting is meant to apply to, which is what every
+      // editor toolbar does.
+      onMouseDown={(e) => e.preventDefault()}
       title={label}
       aria-label={label}
       aria-pressed={mark ? active : undefined}
