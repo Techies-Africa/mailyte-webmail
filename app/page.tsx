@@ -857,9 +857,40 @@ export default function WebmailInboxPage() {
     !compose.open,
   );
 
+  /**
+   * The signature a new message starts with (PRD C3).
+   *
+   * The Laravel API appended the signature server-side at send time. The
+   * standalone mail server never did, and nothing here did either, so a
+   * saved signature went nowhere: the setting stored fine and no message
+   * ever carried it. Seeding the editor is also the better behaviour -- the
+   * signature is visible and editable in the window, as in every other
+   * client, instead of appearing for the first time in Sent.
+   *
+   * Two empty paragraphs above it leave room to write (the editor focuses
+   * at the start). In a reply the block sits ABOVE the quotation, with the
+   * reply text, rather than under it where nobody reads. Resumed drafts and
+   * an undone send restore their own body and are deliberately not seeded
+   * again -- the signature is already in there.
+   */
+  const signatureSeed = useCallback(
+    (mode: ComposeMode): string => {
+      const html = settings?.signatureHtml.trim() ?? '';
+      if (!html) return '';
+      if ((mode === 'reply' || mode === 'replyAll') && !settings?.signatureOnReply) return '';
+      return `<p></p><p></p>${html}`;
+    },
+    [settings],
+  );
+
   const openCompose = (mode: ComposeMode) => {
     if (!openMessage && mode !== 'compose') return;
-    setCompose({ open: true, mode, replyTo: openMessage ?? undefined });
+    setCompose({
+      open: true,
+      mode,
+      replyTo: openMessage ?? undefined,
+      initialBody: signatureSeed(mode) || undefined,
+    });
   };
 
   // Nothing of the mailbox renders until the session is confirmed. Painting it
@@ -1049,7 +1080,11 @@ export default function WebmailInboxPage() {
                 onReplyAll={() => openCompose('replyAll')}
                 onForward={() => openCompose('forward')}
                 onComposeWithBody={(body) =>
-                  setCompose({ open: true, mode: 'compose', initialBody: body })
+                  setCompose({
+                    open: true,
+                    mode: 'compose',
+                    initialBody: body + signatureSeed('compose'),
+                  })
                 }
                 onAiWrite={aiAvailable ? aiWrite : undefined}
                 onSummarize={aiAvailable ? summarize : undefined}

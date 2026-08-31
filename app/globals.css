@@ -84,4 +84,21 @@
     background-color: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
   }
+
+  /* Pictures in the compose and signature editors (TipTap's .ProseMirror).
+   *
+   * The reading pane already clamps images to the frame width; the editor
+   * had no rule at all, so a pasted screenshot rendered at its natural
+   * width and pushed the 700px compose window into a horizontal scroll.
+   * A selected picture gets the same outline the rest of the UI uses for
+   * focus, so it is clear what Delete will remove. */
+  .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .ProseMirror img.ProseMirror-selectednode {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
 }

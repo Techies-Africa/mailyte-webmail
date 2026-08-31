@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
+import { TextSelection } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import {
   Bold,
   Italic,
@@ -16,7 +19,9 @@ import {
   Redo2,
   Heading2,
   Unlink,
+  ImagePlus,
 } from 'lucide-react';
+import { ACCEPTED_IMAGE_TYPES, imageFileToDataUrl, isAcceptedImage } from '@/lib/webmail/images';
 
 /**
  * The compose editor (PRD C1).
@@ -30,6 +35,14 @@ import {
  * Links use a small inline prompt rather than window.prompt(): the native
  * dialog is modal to the whole browser, unstyleable, and blocked outright in
  * some embedded contexts.
+ *
+ * Pictures go INTO the document, as data: URIs -- inserted from the toolbar,
+ * pasted, or dropped. The contentEditable this replaced did that for free
+ * (a browser pastes an image into an editable region as an <img>); TipTap
+ * keeps only the nodes it is told about, so without the Image node every
+ * pasted picture vanished silently and the only way to get one into a
+ * message was Attach, which sends it as a file rather than showing it in
+ * the body. A signature banner, in particular, has to be in the body.
  */
 
 type WebmailEditorProps = {
@@ -49,6 +62,37 @@ export default function WebmailEditor({
 }: WebmailEditorProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Insert image files at the selection (or at `pos`, for a drop), one
+   * node per file. Written against the ProseMirror view rather than the
+   * TipTap command chain so the toolbar button, paste and drop share one
+   * path -- the paste/drop hooks below are handed a view, not an editor.
+   *
+   * Each file is converted (and scaled, if large) before it is inserted, so
+   * a refusal names the file and leaves the document untouched.
+   */
+  const insertFiles = async (view: EditorView, files: File[], pos?: number) => {
+    if (files.length === 0) return;
+    setImageError(null);
+
+    if (pos !== undefined) {
+      view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(pos))));
+    }
+
+    for (const file of files) {
+      try {
+        const src = await imageFileToDataUrl(file);
+        const node = view.state.schema.nodes.image.create({ src, alt: file.name });
+        view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView());
+      } catch (error) {
+        setImageError(error instanceof Error ? error.message : 'Could not insert the image.');
+      }
+    }
+    view.focus();
+  };
 
   const editor = useEditor({
     // Next renders this on the client only; TipTap warns loudly otherwise.
@@ -56,6 +100,13 @@ export default function WebmailEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
+        // StarterKit v3 bundles Link itself. Left on, the explicit Link
+        // below registers a second copy -- TipTap warns "Duplicate extension
+        // names found: ['link']" -- and every link plugin (autolink, paste,
+        // click) runs twice. This one is configured with the outgoing-mail
+        // scheme allowlist; the bundled default is not, so it is the one
+        // that goes.
+        link: false,
       }),
       Link.configure({
         openOnClick: false,
@@ -66,6 +117,16 @@ export default function WebmailEditor({
         protocols: ['http', 'https', 'mailto', 'tel'],
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       }),
+      Image.configure({
+        // Inline, so a logo can sit beside a name in a signature rather than
+        // forcing its own block.
+        inline: true,
+        // data: is the whole mechanism -- see the note at the top. A stored
+        // signature comes back from the server as data: too, and without this
+        // the extension refuses to parse it and the picture disappears from
+        // the settings editor.
+        allowBase64: true,
+      }),
       Placeholder.configure({ placeholder }),
     ],
     content: initialHtml,
@@ -74,6 +135,25 @@ export default function WebmailEditor({
         class:
           'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[12rem] px-3 py-2',
         'aria-label': 'Message body',
+      },
+      // A screenshot on the clipboard arrives as a file, not as HTML.
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter(isAcceptedImage);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void insertFiles(view, files);
+        return true;
+      },
+      // `moved` is a drag of content already inside the editor, which
+      // ProseMirror handles itself.
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(isAcceptedImage);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const dropped = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        void insertFiles(view, files, dropped?.pos);
+        return true;
       },
     },
     onUpdate: ({ editor: instance }) => onChange(instance.getHTML()),
@@ -162,6 +242,22 @@ export default function WebmailEditor({
             <Unlink size={15} />
           </ToolButton>
         )}
+        <ToolButton editor={editor} label="Insert image" onClick={() => imageInputRef.current?.click()}>
+          <ImagePlus size={15} />
+        </ToolButton>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES}
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            // Reset so re-picking the same file fires change again.
+            e.target.value = '';
+            void insertFiles(editor.view, files);
+          }}
+        />
 
         <Divider />
 
@@ -199,6 +295,21 @@ export default function WebmailEditor({
             className="text-sm px-2 py-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
           >
             Cancel
+          </button>
+        </div>
+      )}
+
+      {imageError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300"
+        >
+          <span className="flex-1">{imageError}</span>
+          <button
+            onClick={() => setImageError(null)}
+            className="text-xs px-2 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/40"
+          >
+            Dismiss
           </button>
         </div>
       )}

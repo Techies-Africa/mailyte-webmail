@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Star, Paperclip, Archive, Trash2, CornerUpLeft, FileEdit } from 'lucide-react';
-import { differenceInCalendarDays, format, isThisYear, isToday } from 'date-fns';
+import { differenceInCalendarDays, format, isThisYear, isToday, isValid } from 'date-fns';
 import type { WebmailListItem } from './types';
 
 /**
@@ -48,6 +48,10 @@ type WebmailListProps = {
  * down a column.
  */
 function listDate(date: Date): string {
+  // date-fns' format() THROWS on an invalid Date, and one message with an
+  // unparseable Date header would take the whole list down with it. Show
+  // nothing for that row instead -- see lib/webmail/dates.ts.
+  if (!isValid(date)) return '';
   if (isToday(date)) return format(date, 'HH:mm');
   if (differenceInCalendarDays(new Date(), date) < 7) return format(date, 'EEE');
   if (isThisYear(date)) return format(date, 'd MMM');

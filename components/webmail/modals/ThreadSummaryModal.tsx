@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { X, Hash, RefreshCcw, Copy, Check } from 'lucide-react';
 import type { WebmailListItem } from '../types';
+import { formatDateTime } from '@/lib/webmail/dates';
 
 type ThreadSummaryModalProps = {
   isOpen: boolean;
@@ -122,11 +123,15 @@ export default function ThreadSummaryModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Started</span>
-                      <span className="font-medium">{oldest?.timestamp.toLocaleString()}</span>
+                      <span className="font-medium">
+                        {oldest ? formatDateTime(oldest.timestamp) : '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Latest</span>
-                      <span className="font-medium">{newest?.timestamp.toLocaleString()}</span>
+                      <span className="font-medium">
+                        {newest ? formatDateTime(newest.timestamp) : '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">People</span>

@@ -11,6 +11,7 @@ import {
   type ApiSession,
   type ApiTwoFactorEnrolment,
 } from '@/lib/webmail/client';
+import { formatDateTime } from '@/lib/webmail/dates';
 
 /**
  * Two-factor and sign-in history for the mailbox holder (PRD S3).
@@ -244,7 +245,10 @@ export default function WebmailSecuritySection({
             <li key={session.id} className="py-2 flex items-center justify-between gap-3 text-sm">
               <div className="min-w-0">
                 <div className="text-gray-700 dark:text-gray-300">
-                  {session.signed_in_at ? new Date(session.signed_in_at).toLocaleString() : '—'}
+                  {/* date-fns, never a bare toLocaleString(): that threw on a
+                      phone with a malformed default locale and this whole
+                      page became Next's error screen. lib/webmail/dates.ts. */}
+                  {session.signed_in_at ? formatDateTime(new Date(session.signed_in_at)) : '—'}
                   {session.current && <span className="ml-2 text-xs text-primary">this device</span>}
                 </div>
                 <div className="text-xs text-gray-500 truncate">

@@ -14,12 +14,13 @@ server that implements the same mailbox API.
 
 - Read, search, and organise mail. Search runs **on the server**, over message
   bodies, so a word buried deep in an email is findable.
-- Compose with a rich-text editor, attachments, and drafts stored as real
-  messages in your Drafts folder — every other client on the account can see
-  and continue them.
+- Compose with a rich-text editor, inline pictures (inserted, pasted or
+  dropped), attachments, and drafts stored as real messages in your Drafts
+  folder — every other client on the account can see and continue them.
 - Folders, flags, threading, and move/trash.
 - Filter rules, mail forwarding, and a vacation responder, compiled to Sieve.
-- Signature, display density, and an optional undo-send window.
+- Signature (rich text, with pictures), display density, and an optional
+  undo-send window.
 - Optional two-factor authentication on webmail sign-in.
 - Optional AI compose and thread summary, against any OpenAI-compatible
   endpoint you point it at.
@@ -84,7 +85,10 @@ Choices worth knowing about, because they constrain contributions:
 - **Remote images are blocked by default**, with a per-sender allow. Loading
   them silently tells a sender when, and roughly where, a message was opened.
 - **Signatures are sanitised on the way in**, against an allowlist. A
-  signature is HTML the server later attaches to outgoing mail.
+  signature is HTML the server later attaches to outgoing mail. The one
+  `data:` URI it admits is a base64 raster image on `<img src>` — how the
+  editor embeds a picture — and on send the server turns those into
+  Content-ID parts, because Gmail and Outlook will not render `data:` images.
 - **Attachments always download**, never render inline, and are served with
   `X-Content-Type-Options: nosniff`. An HTML attachment rendered in the app's
   own origin is stored XSS.

@@ -7,6 +7,7 @@
 // subjects stacked up as "Re: Re: Re:"; and a forward printed the literal
 // string "[Original Recipients]" into the message body.
 
+import { formatQuoteDate } from '@/lib/webmail/dates';
 import type { ComposeMode, WebmailMessage, WebmailParticipant } from './types';
 
 export function formatParticipant(p: WebmailParticipant): string {
@@ -78,7 +79,10 @@ function escapeHtml(value: string): string {
  * exactly the E5 bug.
  */
 export function quotedBody(mode: ComposeMode, message: WebmailMessage): string {
-  const when = message.timestamp.toLocaleString();
+  // date-fns, not toLocaleString(): the bare form threw on a phone with a
+  // malformed default locale and took the whole page down on Reply. See
+  // lib/webmail/dates.ts.
+  const when = formatQuoteDate(message.timestamp);
 
   if (mode === 'reply' || mode === 'replyAll') {
     const who = escapeHtml(formatParticipant({ name: message.from, email: message.fromEmail }));

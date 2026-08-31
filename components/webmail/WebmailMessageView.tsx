@@ -16,6 +16,7 @@ import {
 import type { WebmailAttachment, WebmailFolder, WebmailListItem, WebmailMessage } from './types';
 import WebmailBodyFrame, { BlockedImagesBar } from './WebmailBodyFrame';
 import { allowImageSender, isImageSenderAllowed } from '@/lib/webmail/sanitize';
+import { formatDateTime, formatShortDateTime } from '@/lib/webmail/dates';
 import ConfirmModal from './modals/ConfirmModal';
 import MoveEmailModal from './modals/MoveEmailModal';
 import AiWriterModal from './modals/AiWriterModal';
@@ -242,13 +243,9 @@ export default function WebmailMessageView({
                   )}
                 </div>
                 <div className="text-sm text-gray-500 whitespace-nowrap">
-                  {message.timestamp.toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: 'numeric',
-                    hour12: true,
-                  })}
+                  {/* Same "Aug 25, 8:24 AM" as before, from date-fns rather
+                      than Intl -- see lib/webmail/dates.ts. */}
+                  {formatShortDateTime(message.timestamp)}
                 </div>
               </div>
             </div>
@@ -308,7 +305,7 @@ export default function WebmailMessageView({
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-sm truncate">{m.from}</span>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {m.timestamp.toLocaleString()}
+                      {formatDateTime(m.timestamp)}
                     </span>
                   </div>
                   {m.preview && (

@@ -10,6 +10,7 @@ import type {
 } from './types';
 import WebmailEditor from './WebmailEditor';
 import WebmailRecipientInput from './WebmailRecipientInput';
+import { formatTime } from '@/lib/webmail/dates';
 import {
   forwardSubject,
   quotedBody,
@@ -628,7 +629,7 @@ export default function WebmailCompose({
                 <span className="text-xs text-gray-400">
                   {savingDraft
                     ? 'Saving…'
-                    : `Draft saved ${draftSavedAt?.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+                    : `Draft saved ${draftSavedAt ? formatTime(draftSavedAt) : ''}`}
                 </span>
               )}
               <button
