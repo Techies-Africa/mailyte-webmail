@@ -15,15 +15,15 @@
   --card-foreground: 20 14.3% 4.1%;
   --border: 20 5.9% 90%;
   --input: 20 5.9% 90%;
-  --primary: 43 85% 50%; /* Darker shade of yellow: #DBA500 */
-  --primary-foreground: 0 0% 10%;
+  --primary: 244 54.5% 41.4%; /* Deep indigo #3730A3 — white label at 9.93:1 */
+  --primary-foreground: 0 0% 100%;
   --secondary: 230 100% 55%; /* Secondary blue */
   --secondary-foreground: 0 0% 100%;
   --accent: 0 92% 67%; /* Accent red */
   --accent-foreground: 0 0% 100%;
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 100%;
-  --ring: 43 85% 50%;
+  --ring: 244 54.5% 41.4%;
   --radius: 0.5rem;
 }
 
@@ -38,15 +38,15 @@
   --card-foreground: 0 0% 98%;
   --border: 240 3.7% 15.9%;
   --input: 240 3.7% 15.9%;
-  --primary: 43 85% 50%; /* Same darker yellow, preserved in dark mode */
-  --primary-foreground: 240 10% 3.9%;
+  --primary: 243 61.3% 58.4%; /* Lifted for dark: #5B54D6. #3730A3 scores 1.89:1 on this ground. */
+  --primary-foreground: 0 0% 100%;
   --secondary: 230 100% 55%;
   --secondary-foreground: 0 0% 100%;
   --accent: 0 92% 67%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
-  --ring: 43 85% 50%;
+  --ring: 243 61.3% 58.4%;
 }
 
 @layer base {
