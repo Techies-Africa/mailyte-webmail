@@ -51,6 +51,11 @@ function emailSafeReset() {
   return `<style>
   :root { color-scheme: light; }
   html, body { max-width: 100%; overflow-x: hidden; background: #ffffff; color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  /* The frame is sized to the body's height, so the body's height must never
+     depend on the frame's -- a message shipping "body { height: 100% }"
+     would otherwise resolve to the viewport and grow every time we resized
+     to fit it. See the measure() comment below. */
+  html, body { height: auto !important; min-height: 0 !important; }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
   img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
@@ -104,7 +109,22 @@ export default function WebmailBodyFrame({
         const doc = iframeRef.current?.contentWindow?.document;
         if (!doc?.documentElement) return;
 
-        const measure = () => setHeight(doc.documentElement.scrollHeight + 24);
+        // Measure the BODY, not documentElement. documentElement.scrollHeight
+        // is never less than the frame's own viewport, so measuring it while
+        // sizing the frame to the result is a feedback loop: set the height,
+        // the viewport grows, scrollHeight reports that larger viewport back,
+        // and the next measurement adds another 24px. It compounds once per
+        // animation frame, so every message grew without limit and the page
+        // scrolled forever. The body's height is content-driven and does not
+        // follow the viewport (the reset above keeps it that way), so the
+        // same +24 is now a one-off rather than a per-frame increment.
+        const measure = () => {
+          const body = doc.body;
+          if (!body) return;
+          const next = body.scrollHeight + 24;
+          // Sub-pixel jitter must not ping-pong between two values forever.
+          setHeight((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+        };
         measure();
 
         // scrollHeight at `load` doesn't account for images still
@@ -112,7 +132,7 @@ export default function WebmailBodyFrame({
         // visibly cut off. ResizeObserver re-measures on real size changes.
         resizeObserverRef.current?.disconnect();
         const observer = new ResizeObserver(measure);
-        observer.observe(doc.documentElement);
+        observer.observe(doc.body);
         resizeObserverRef.current = observer;
       }}
       style={{ height }}
