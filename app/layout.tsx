@@ -9,6 +9,16 @@ export const metadata: Metadata = {
   description: 'Read and send mail from your own mail server.',
   // A webmail is a private surface; there is nothing here for a crawler.
   robots: { index: false, follow: false },
+  // Below 32px the wing detail closes up, so the .ico carries a dart-only cut
+  // at 16 and 32 and the full lockup at 48 — a tab icon has to survive being
+  // a tab icon.
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/logo-192.png', type: 'image/png', sizes: '192x192' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
