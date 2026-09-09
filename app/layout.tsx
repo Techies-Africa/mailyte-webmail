@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
+import AccentTheme from '@/components/providers/AccentTheme';
 import { brand } from '@/lib/webmail/brand';
 
 export const metadata: Metadata = {
@@ -17,7 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // reported as a mismatch on every page load.
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <AccentTheme />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

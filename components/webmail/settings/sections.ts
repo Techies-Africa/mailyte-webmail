@@ -1,10 +1,11 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
 import ForwardingSettings from './ForwardingSettings';
 import VacationSettings from './VacationSettings';
 import SecuritySettings from './SecuritySettings';
+import AppearanceSettings from './AppearanceSettings';
 import type { SettingsSectionProps } from './types';
 
 /**
@@ -71,5 +72,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'Two-factor authentication and where you are signed in.',
     icon: ShieldCheck,
     component: SecuritySettings,
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    description: 'The accent colour used across your mailbox.',
+    icon: Palette,
+    component: AppearanceSettings,
   },
 ];

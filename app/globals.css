@@ -49,6 +49,70 @@
   --ring: 243 61.3% 58.4%;
 }
 
+/* ---------------------------------------------------------------------------
+ * Accent themes — the only place accent values exist.
+ *
+ * The shipped accent is indigo and lives in :root / .dark above, carrying NO
+ * attribute, so nothing has to be undone to return to it. Each alternate needs
+ * BOTH blocks: a value chosen to carry a white label on white is invisible on
+ * a dark ground.
+ *
+ * Identical to mailyte-web and mailyte-console. Someone moving between the
+ * dashboard and their inbox should not see the brand change.
+ * ------------------------------------------------------------------------- */
+
+:root[data-theme='magenta'] {
+  --primary: 309 70.6% 38.6%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 309 70.6% 38.6%;
+}
+:root[data-theme='magenta'].dark {
+  --primary: 315 60% 48%;
+  --ring: 315 60% 48%;
+}
+
+:root[data-theme='teal'] {
+  --primary: 193 83.4% 30.8%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 193 83.4% 30.8%;
+}
+:root[data-theme='teal'].dark {
+  --primary: 193 83.4% 30.8%;
+  --ring: 193 83.4% 30.8%;
+}
+
+:root[data-theme='azure'] {
+  --primary: 224 76.3% 48%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 224 76.3% 48%;
+}
+:root[data-theme='azure'].dark {
+  --primary: 224 74.9% 54.7%;
+  --ring: 224 74.9% 54.7%;
+}
+
+:root[data-theme='violet'] {
+  --primary: 262 83.3% 57.8%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 262 83.3% 57.8%;
+}
+:root[data-theme='violet'].dark {
+  --primary: 262 83.3% 57.8%;
+  --ring: 262 83.3% 57.8%;
+}
+
+/* Gold is the only accent whose label is ink: white on it is 2.24:1. */
+:root[data-theme='gold'] {
+  --primary: 45 100% 42.9%;
+  --primary-foreground: 0 0% 10%;
+  --ring: 45 100% 42.9%;
+}
+:root[data-theme='gold'].dark {
+  --primary: 45 100% 42.9%;
+  --primary-foreground: 0 0% 10%;
+  --ring: 45 100% 42.9%;
+}
+
 @layer base {
   * {
     @apply border-border;
