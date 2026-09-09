@@ -13,7 +13,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:brand": "node scripts/check-brand-tokens.mjs"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.30.5",
