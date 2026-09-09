@@ -4,6 +4,7 @@ import { brand } from '@/lib/webmail/brand';
 import { ShieldCheck, Activity, Code2 } from 'lucide-react';
 import ThemeToggle from '@/components/auth/ThemeToggle';
 import AuthBrandVisual from '@/components/auth/AuthBrandVisual';
+import BrandMark from '@/components/brand/BrandMark';
 
 interface TrustCue {
   icon: React.ComponentType<{ className?: string }>;
@@ -76,7 +77,7 @@ export default function AuthLayout({
           href="/"
           className="relative z-10 flex w-full max-w-lg shrink-0 items-center gap-2"
         >
-          <img src="/logo-mark.png" alt="" className="h-9 w-auto object-contain shrink-0" />
+          <BrandMark height={36} />
           <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight text-foreground">
             {brand.name}
           </span>
@@ -117,7 +118,7 @@ export default function AuthLayout({
         <div className="mx-auto w-full max-w-md">
           {/* Mobile brand */}
           <Link href="/" className="mb-8 flex items-center gap-2 md:hidden">
-            <img src="/logo-mark.png" alt="" className="h-8 w-auto object-contain shrink-0" />
+            <BrandMark height={32} />
             <span className="font-[family-name:var(--font-display)] text-lg font-bold tracking-tight text-foreground">
               {brand.name}
             </span>

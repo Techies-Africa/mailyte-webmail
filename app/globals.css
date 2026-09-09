@@ -50,6 +50,50 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * The brand mark.
+ *
+ * The Mailyte plane-and-wing, split in two so the colour follows the accent
+ * without a file per theme:
+ *
+ *   the wing   an alpha mask painted with hsl(var(--primary)). One file serves
+ *              every accent and both light and dark, and it matches the token
+ *              exactly rather than approximating it.
+ *   the plane  its original pixels. Its folds are shading, not flat colour, so
+ *              masking it would flatten the origami into a blob.
+ *
+ * To rebrand: replace public/logo-wing-mask.png (an alpha silhouette) and
+ * public/logo-plane.png. The wing takes the accent; the plane is used as-is.
+ * ------------------------------------------------------------------------- */
+
+.brand-mark {
+  position: relative;
+  display: inline-block;
+  aspect-ratio: 642 / 468;
+  flex: none;
+}
+
+.brand-mark::before,
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.brand-mark::before {
+  background-color: hsl(var(--primary));
+  -webkit-mask: url('/logo-wing-mask.png') center / contain no-repeat;
+  mask: url('/logo-wing-mask.png') center / contain no-repeat;
+  background-image: none;
+}
+
+.brand-mark::after {
+  background-image: url('/logo-plane.png');
+}
+
+/* ---------------------------------------------------------------------------
  * Accent themes — the only place accent values exist.
  *
  * The shipped accent is indigo and lives in :root / .dark above, carrying NO
