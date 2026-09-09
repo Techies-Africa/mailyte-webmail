@@ -95,7 +95,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
                   <button
                     onClick={handleCopy}
                     title="Copy"
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
                   >
                     {isCopied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
                   </button>
@@ -105,7 +105,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
                       setGeneratedContent('');
                     }}
                     title="Start over"
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
                   >
                     <RefreshCcw size={16} />
                   </button>
@@ -122,7 +122,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-muted"
           >
             Cancel
           </button>

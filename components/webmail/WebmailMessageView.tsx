@@ -76,7 +76,7 @@ function AttachmentChip({ attachment, href }: { attachment: WebmailAttachment; h
     <a
       href={href}
       download={attachment.name}
-      className="inline-flex items-center gap-2 max-w-xs px-3 py-2 border border-border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+      className="inline-flex items-center gap-2 max-w-xs px-3 py-2 border border-border rounded-lg hover:bg-muted"
     >
       <Paperclip size={15} className="text-gray-400 flex-shrink-0" />
       <span className="truncate text-sm text-gray-700 dark:text-gray-200">{attachment.name}</span>
@@ -143,7 +143,7 @@ export default function WebmailMessageView({
   const toolbarButton = (label: string, icon: React.ReactNode, onClick: () => void, danger = false) => (
     <button
       onClick={onClick}
-      className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 ${
+      className={`p-2 rounded-full hover:bg-muted ${
         danger ? 'text-red-500' : 'text-gray-500'
       }`}
       title={label}
@@ -159,7 +159,7 @@ export default function WebmailMessageView({
         <div className="flex items-center justify-between">
           <button
             onClick={onClose}
-            className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+            className="p-2 text-gray-500 hover:bg-muted rounded-full"
             title="Back to list"
             aria-label="Back to list"
           >
@@ -183,7 +183,7 @@ export default function WebmailMessageView({
             {toolbarButton('Forward', <Forward size={20} />, onForward)}
             <button
               onClick={onStar}
-              className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+              className="p-2 text-gray-500 hover:bg-muted rounded-full"
               title={message.isStarred ? 'Unstar' : 'Star'}
             >
               <Star size={20} className={message.isStarred ? 'fill-amber-400 text-amber-400' : ''} />
@@ -300,7 +300,7 @@ export default function WebmailMessageView({
                 <button
                   key={m.id}
                   onClick={() => onOpenMessage(m)}
-                  className="w-full text-left border border-border rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  className="w-full text-left border border-border rounded-lg p-3 hover:bg-muted"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-sm truncate">{m.from}</span>
@@ -322,7 +322,7 @@ export default function WebmailMessageView({
         <div className="mt-8 pt-6 border-t border-border">
           <button
             onClick={onReply}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-gray-600 dark:text-gray-300 hover:bg-muted"
           >
             <Reply size={16} />
             Reply to {message.from}

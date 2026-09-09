@@ -78,7 +78,7 @@ export default function WebmailToolbar({
       <button
         key={key}
         onClick={onClick}
-        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-muted rounded"
         title={label}
         aria-label={label}
       >
@@ -121,7 +121,7 @@ export default function WebmailToolbar({
               <div className="relative" ref={moreRef}>
                 <button
                   onClick={() => setShowMore((v) => !v)}
-                  className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-muted rounded"
                   title="More actions"
                 >
                   <MoreHorizontal size={18} />
@@ -134,7 +134,7 @@ export default function WebmailToolbar({
                           setShowMore(false);
                           onMarkReadSelected();
                         }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-muted"
                       >
                         <MailOpen size={16} className="mr-2" />
                         Mark as read
@@ -146,7 +146,7 @@ export default function WebmailToolbar({
                           setShowMore(false);
                           onMarkUnreadSelected();
                         }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-muted"
                       >
                         <Mail size={16} className="mr-2" />
                         Mark as unread
@@ -158,7 +158,7 @@ export default function WebmailToolbar({
                           setShowMore(false);
                           onMoveSelected();
                         }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex items-center w-full px-3 py-2 text-sm text-left hover:bg-muted"
                       >
                         <FolderInput size={16} className="mr-2" />
                         Move to folder…
@@ -176,7 +176,7 @@ export default function WebmailToolbar({
         ) : (
           <button
             onClick={onRefresh}
-            className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+            className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-muted rounded"
             title="Refresh"
           >
             <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
@@ -190,7 +190,7 @@ export default function WebmailToolbar({
         {onPrevPage && (
           <button
             onClick={onPrevPage}
-            className="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="px-2 py-1 rounded hover:bg-muted"
             title="Newer"
             aria-label="Newer messages"
           >
@@ -200,7 +200,7 @@ export default function WebmailToolbar({
         {onNextPage && (
           <button
             onClick={onNextPage}
-            className="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="px-2 py-1 rounded hover:bg-muted"
             title="Older"
             aria-label="Older messages"
           >

@@ -78,7 +78,7 @@ export default function ThreadSummaryModal({
               <p className="text-destructive mb-3">{error}</p>
               <button
                 onClick={generateSummary}
-                className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-foreground/10"
               >
                 Try again
               </button>
@@ -94,14 +94,14 @@ export default function ThreadSummaryModal({
                       setIsCopied(true);
                       setTimeout(() => setIsCopied(false), 2000);
                     }}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
                     title="Copy to clipboard"
                   >
                     {isCopied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
                   </button>
                   <button
                     onClick={generateSummary}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
                     title="Regenerate"
                   >
                     <RefreshCcw size={16} />
@@ -147,7 +147,7 @@ export default function ThreadSummaryModal({
         <div className="flex justify-end px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-foreground/10"
           >
             Close
           </button>

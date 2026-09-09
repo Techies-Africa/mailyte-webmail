@@ -565,7 +565,7 @@ export default function WebmailCompose({
                   </span>
                   <button
                     onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
-                    className="p-0.5 rounded hover:bg-gray-300 dark:hover:bg-gray-600 flex-shrink-0"
+                    className="p-0.5 rounded hover:bg-muted flex-shrink-0"
                     title={`Remove ${file.name}`}
                     aria-label={`Remove ${file.name}`}
                   >
@@ -668,7 +668,7 @@ export default function WebmailCompose({
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowAiPrompt(false)}
-                className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+                className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-muted"
               >
                 Cancel
               </button>

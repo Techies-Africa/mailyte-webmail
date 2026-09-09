@@ -380,7 +380,7 @@ function ToolButton({
       title={label}
       aria-label={label}
       aria-pressed={mark ? active : undefined}
-      className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 ${
+      className={`p-1.5 rounded hover:bg-muted ${
         active ? 'bg-muted text-primary' : 'text-gray-700 dark:text-gray-300'
       }`}
     >

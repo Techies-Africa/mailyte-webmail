@@ -90,7 +90,7 @@ export default function ConfirmModal({
         <div className="flex gap-3 justify-center">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-muted"
           >
             Cancel
           </button>

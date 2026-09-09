@@ -18,7 +18,7 @@ export default function WebmailShortcutHelp({ onClose }: { onClose: () => void }
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-1.5 rounded-full text-gray-500 hover:bg-muted"
             aria-label="Close"
           >
             <X size={16} />

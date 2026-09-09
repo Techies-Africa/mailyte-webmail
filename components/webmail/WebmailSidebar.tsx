@@ -131,7 +131,7 @@ export default function WebmailSidebar({
       className={`flex items-center justify-between w-full px-3 py-2 text-sm rounded-r-full ${
         isActive
           ? 'bg-primary/10 font-medium text-primary'
-          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+          : 'text-gray-700 dark:text-gray-300 hover:bg-muted'
       }`}
     >
       <div className="flex items-center gap-3 min-w-0">
@@ -143,7 +143,7 @@ export default function WebmailSidebar({
   );
 
   return (
-    <div className="w-56 md:w-56 sm:w-full border-r border-border h-full overflow-y-auto bg-muted flex flex-col">
+    <div className="w-56 md:w-56 sm:w-full border-r border-border h-full overflow-y-auto bg-card flex flex-col">
       <div className="p-4">
         <button
           onClick={onCompose}
@@ -214,7 +214,7 @@ export default function WebmailSidebar({
                   setCreating((open) => !open);
                   setCreateError(null);
                 }}
-                className="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="p-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-muted"
                 title="New folder"
                 aria-label="New folder"
               >

@@ -122,11 +122,7 @@ export default function WebmailList({
             onMouseEnter={() => setHoveredEmail(email.id)}
             onMouseLeave={() => setHoveredEmail(null)}
             className={`group relative flex items-start md:items-center gap-3 pl-3 pr-4 ${rowPadding} cursor-pointer transition-colors ${
-              selected
-                ? 'bg-primary/10'
-                : unread
-                  ? 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+              selected ? 'bg-primary/10' : 'bg-card hover:bg-muted'
             }`}
           >
             {/* Unread marker. A left rule rather than a tinted row: the old
@@ -261,7 +257,7 @@ export default function WebmailList({
               <div className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md bg-card shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 px-0.5 py-0.5">
                 <button
                   onClick={(e) => stop(e, () => onArchiveEmail(email.id))}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  className="p-1.5 hover:bg-muted rounded"
                   title="Archive"
                   aria-label="Archive"
                 >
@@ -269,7 +265,7 @@ export default function WebmailList({
                 </button>
                 <button
                   onClick={(e) => stop(e, () => onTrashEmail(email.id))}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  className="p-1.5 hover:bg-muted rounded"
                   title="Move to Trash"
                   aria-label="Move to Trash"
                 >

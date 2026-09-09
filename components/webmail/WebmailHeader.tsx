@@ -49,7 +49,7 @@ export default function WebmailHeader({
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+              className="p-2 rounded-full hover:bg-muted shrink-0"
               title="Toggle folders"
               aria-label="Toggle folders"
             >
@@ -122,7 +122,7 @@ export default function WebmailHeader({
 
           <button
             onClick={onRefresh}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-2 rounded-full hover:bg-muted"
             title="Refresh"
           >
             <RefreshCw
@@ -133,7 +133,7 @@ export default function WebmailHeader({
 
           <button
             onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-2 rounded-full hover:bg-muted"
             title={mounted && isDark ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {mounted && isDark ? (
@@ -148,7 +148,7 @@ export default function WebmailHeader({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="p-2 rounded-full hover:bg-muted"
               title="Settings"
               aria-label="Settings"
             >
@@ -158,7 +158,7 @@ export default function WebmailHeader({
 
           <button
             onClick={onLogout}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-2 rounded-full hover:bg-muted"
             title="Log out"
           >
             <LogOut size={20} className="text-gray-500 dark:text-gray-400" />
