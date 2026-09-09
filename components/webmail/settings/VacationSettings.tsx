@@ -171,7 +171,7 @@ export default function VacationSettings({
         <button
           onClick={() => void save()}
           disabled={saving}
-          className="px-4 py-1.5 text-sm rounded-md bg-primary text-black disabled:opacity-50"
+          className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

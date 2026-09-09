@@ -100,8 +100,10 @@ export default function ConfirmModal({
               onClose();
             }}
             disabled={!canConfirm}
-            className={`px-4 py-2 rounded-md inline-flex items-center gap-2 text-white disabled:opacity-40 disabled:cursor-not-allowed ${
-              isDanger ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'
+            className={`px-4 py-2 rounded-md inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+              isDanger
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
             }`}
           >
             {icon}

@@ -147,7 +147,7 @@ export default function WebmailSidebar({
       <div className="p-4">
         <button
           onClick={onCompose}
-          className="w-full bg-primary text-black rounded-lg p-3 font-medium flex items-center justify-center gap-2"
+          className="w-full bg-primary text-primary-foreground rounded-lg p-3 font-medium flex items-center justify-center gap-2"
         >
           <Plus size={18} />
           <span>Compose</span>

@@ -310,7 +310,7 @@ export default function WebmailEditor({
             placeholder="https://example.com  (empty removes the link)"
             className="flex-1 text-sm px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <button onClick={applyLink} className="text-sm px-3 py-1 rounded bg-primary text-black">
+          <button onClick={applyLink} className="text-sm px-3 py-1 rounded bg-primary text-primary-foreground">
             Apply
           </button>
           <button

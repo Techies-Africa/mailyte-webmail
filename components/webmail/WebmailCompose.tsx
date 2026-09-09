@@ -635,7 +635,7 @@ export default function WebmailCompose({
               <button
                 onClick={handleSend}
                 disabled={isSending || !draft.to.trim()}
-                className="px-4 py-2 bg-primary text-black rounded-md flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSending ? (
                   <span className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full mr-2" />
@@ -674,7 +674,7 @@ export default function WebmailCompose({
               </button>
               <button
                 onClick={generateAIContent}
-                className="px-4 py-2 bg-primary text-black rounded-md hover:bg-primary/90 flex items-center disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center disabled:opacity-50"
                 disabled={isGeneratingAI || !aiPrompt.trim()}
               >
                 {isGeneratingAI ? (

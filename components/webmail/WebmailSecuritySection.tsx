@@ -163,7 +163,7 @@ export default function WebmailSecuritySection({
           <button
             onClick={() => void start()}
             disabled={busy}
-            className="px-3 py-1.5 text-sm rounded-md bg-primary text-black disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
           >
             {busy ? 'Setting up…' : 'Set up'}
           </button>
@@ -213,7 +213,7 @@ export default function WebmailSecuritySection({
               <button
                 onClick={() => void confirm()}
                 disabled={busy || code.trim() === ''}
-                className="px-3 py-1.5 text-sm rounded-md bg-primary text-black disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
               >
                 {busy ? 'Checking…' : 'Turn on'}
               </button>

@@ -59,7 +59,7 @@ export default function WebmailError({
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={reset}
-            className="px-4 py-1.5 text-sm rounded-md bg-primary text-black"
+            className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground"
           >
             Try again
           </button>

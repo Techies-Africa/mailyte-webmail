@@ -69,7 +69,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
           <div className="flex justify-end mt-3">
             <button
               onClick={handleGenerate}
-              className="px-4 py-2 bg-primary text-black rounded-md hover:bg-primary/90 flex items-center disabled:opacity-50"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center disabled:opacity-50"
               disabled={isGenerating || !prompt.trim()}
             >
               {isGenerating ? (
@@ -132,7 +132,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
                 onApply(generatedContent);
                 onClose();
               }}
-              className="px-4 py-2 bg-primary text-black rounded-md hover:bg-primary/90 flex items-center"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center"
             >
               <Send size={16} className="mr-2" />
               Use this
