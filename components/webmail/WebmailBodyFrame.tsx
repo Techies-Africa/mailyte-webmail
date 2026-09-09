@@ -163,7 +163,7 @@ export function BlockedImagesBar({
   if (count === 0) return null;
 
   return (
-    <div className="mb-3 px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+    <div className="mb-3 px-3 py-2 rounded-md bg-muted border border-gray-200 dark:border-gray-600 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
       <ImageOff size={15} className="text-gray-500 flex-shrink-0" />
       <span className="text-gray-700 dark:text-gray-300">
         {count} remote image{count === 1 ? '' : 's'} blocked to keep this message from reporting

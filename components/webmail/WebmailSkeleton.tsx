@@ -17,7 +17,7 @@
 export default function WebmailSkeleton() {
   return (
     <div
-      className="h-screen flex flex-col bg-white dark:bg-gray-900"
+      className="h-screen flex flex-col bg-background"
       role="status"
       aria-busy="true"
       aria-label="Loading your mailbox"
@@ -26,7 +26,7 @@ export default function WebmailSkeleton() {
       <span className="sr-only">Loading your mailbox…</span>
 
       {/* Header — mirrors WebmailHeader */}
-      <div className="border-b border-gray-200 dark:border-gray-700 py-2 px-4 shrink-0">
+      <div className="border-b border-border py-2 px-4 shrink-0">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 lg:w-56 shrink-0">
             <Block className="h-7 w-7 rounded" />
@@ -44,7 +44,7 @@ export default function WebmailSkeleton() {
 
       <div className="flex-1 flex min-h-0">
         {/* Sidebar — mirrors WebmailSidebar's w-56 */}
-        <div className="w-56 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0 hidden md:flex flex-col">
+        <div className="w-56 border-r border-border bg-muted shrink-0 hidden md:flex flex-col">
           <div className="p-4">
             <Block className="h-12 w-full rounded-lg" />
           </div>
@@ -61,7 +61,7 @@ export default function WebmailSkeleton() {
 
         {/* Message list — mirrors WebmailList rows */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-3">
+          <div className="border-b border-border px-4 py-2 flex items-center gap-3">
             <Block className="h-4 w-4 rounded" />
             <Block className="h-4 w-4 rounded" />
           </div>
@@ -109,7 +109,7 @@ function Block({
   return (
     <div
       style={style}
-      className={`bg-gray-200 dark:bg-gray-700 animate-pulse ${className}`}
+      className={`bg-muted animate-pulse ${className}`}
     />
   );
 }

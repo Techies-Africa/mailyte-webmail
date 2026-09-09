@@ -40,7 +40,7 @@ export default function WebmailHeader({
   const isDark = resolvedTheme === 'dark';
 
   return (
-    <header className="border-b border-gray-200 dark:border-gray-700 py-2 px-4 shrink-0">
+    <header className="border-b border-border py-2 px-4 shrink-0">
       <div className="flex items-center gap-2">
         {/* Brand block. Width matches WebmailSidebar's w-56 so the search box
             starts exactly where the folder column ends, instead of drifting
@@ -83,9 +83,9 @@ export default function WebmailHeader({
           <div
             className={`hidden sm:flex items-center w-full max-w-2xl transition-colors duration-200 ${
               searchFocused
-                ? 'bg-white dark:bg-gray-800 shadow-sm'
-                : 'bg-gray-100 dark:bg-gray-700/60'
-            } rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1.5`}
+                ? 'bg-card shadow-sm'
+                : 'bg-muted'
+            } rounded-full border border-border px-3 py-1.5`}
           >
             <Search size={16} className="text-gray-400 flex-shrink-0" />
             <input

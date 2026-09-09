@@ -101,7 +101,7 @@ export default function VacationSettings({
               setSubject(e.target.value);
               touch();
             }}
-            className="w-full text-sm px-2.5 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+            className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
           />
         </div>
 
@@ -118,7 +118,7 @@ export default function VacationSettings({
             }}
             rows={5}
             placeholder="I'm away until the 30th and will reply when I'm back."
-            className="w-full text-sm px-2.5 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+            className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
           />
         </div>
 
@@ -135,7 +135,7 @@ export default function VacationSettings({
                 setStartDate(e.target.value);
                 touch();
               }}
-              className="text-sm px-2.5 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+              className="text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
             />
           </div>
           <div>
@@ -150,7 +150,7 @@ export default function VacationSettings({
                 setEndDate(e.target.value);
                 touch();
               }}
-              className="text-sm px-2.5 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+              className="text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
             />
           </div>
         </div>

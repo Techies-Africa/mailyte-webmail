@@ -68,7 +68,7 @@ export default function WebmailEmptyState({ folder, role, searchQuery }: Webmail
 
   return (
     <div className="flex flex-col items-center text-center">
-      <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 flex items-center justify-center mb-4">
+      <div className="w-14 h-14 rounded-full bg-muted text-gray-400 flex items-center justify-center mb-4">
         {content.icon}
       </div>
       <h3 className="text-base font-medium text-gray-800 dark:text-gray-200">{content.title}</h3>

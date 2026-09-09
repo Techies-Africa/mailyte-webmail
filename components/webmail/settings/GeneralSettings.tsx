@@ -62,7 +62,7 @@ export default function GeneralSettings({
         <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           <PenLine size={15} /> Signature
         </h3>
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+        <div className="border border-border rounded-md overflow-hidden">
           <WebmailEditor
             initialHtml={settings.signatureHtml}
             placeholder="Your name, role, a link…"
@@ -116,7 +116,7 @@ export default function GeneralSettings({
         </h3>
         {quotaMb > 0 ? (
           <>
-            <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
               <div
                 className={`h-full rounded-full ${
                   (percentage ?? 0) >= 90

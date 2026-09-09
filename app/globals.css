@@ -5,7 +5,12 @@
 @tailwind utilities;
 
 :root {
-  --foreground: 0 0% 100%;
+  /* --background was never declared here, only in .dark, so light mode
+     resolved `bg-background` to an invalid hsl() and fell through to the
+     browser's white — which looked right, so nobody noticed. Declared now,
+     set to the white it was already showing. --foreground was also declared
+     twice, the first line dead; removed. */
+  --background: 0 0% 100%;
   --foreground: 20 14.3% 4.1%;
   --muted: 60 4.8% 95.9%;
   --muted-foreground: 25 5.3% 44.7%;
@@ -32,9 +37,12 @@
   --foreground: 0 0% 98%;
   --muted: 240 3.7% 15.9%;
   --muted-foreground: 240 5% 64.9%;
-  --popover: 240 10% 3.9%;
+  /* Cards were 3.9% against a 4% page — a tenth of a percent DARKER than the
+     ground they sit on, so a panel existed only by its border. Same elevation
+     ramp as mailyte-web and mailyte-console. */
+  --popover: 240 10% 6%;
   --popover-foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
+  --card: 240 8% 7%;
   --card-foreground: 0 0% 98%;
   --border: 240 3.7% 15.9%;
   --input: 240 3.7% 15.9%;

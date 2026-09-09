@@ -129,11 +129,11 @@ export default function ForwardingSettings({
       <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
         <p className="text-xs text-gray-500 mb-1.5">Forward to</p>
 
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200 dark:border-gray-700 pb-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-2">
           {addresses.map((address, index) => (
             <span
               key={address}
-              className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-sm text-gray-800 dark:text-gray-200"
+              className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-muted text-sm text-gray-800 dark:text-gray-200"
             >
               <span className="truncate max-w-[16rem]">{address}</span>
               <button

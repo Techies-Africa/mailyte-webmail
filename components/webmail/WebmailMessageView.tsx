@@ -76,7 +76,7 @@ function AttachmentChip({ attachment, href }: { attachment: WebmailAttachment; h
     <a
       href={href}
       download={attachment.name}
-      className="inline-flex items-center gap-2 max-w-xs px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+      className="inline-flex items-center gap-2 max-w-xs px-3 py-2 border border-border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
     >
       <Paperclip size={15} className="text-gray-400 flex-shrink-0" />
       <span className="truncate text-sm text-gray-700 dark:text-gray-200">{attachment.name}</span>
@@ -155,7 +155,7 @@ export default function WebmailMessageView({
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto p-4 animate-fadeIn">
-      <div className="flex flex-col mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex flex-col mb-4 pb-3 border-b border-border">
         <div className="flex items-center justify-between">
           <button
             onClick={onClose}
@@ -177,7 +177,7 @@ export default function WebmailMessageView({
                 true,
               )}
             {toolbarButton('Move to folder', <FolderInput size={20} />, () => setShowMoveModal(true))}
-            <div className="h-6 border-l border-gray-200 dark:border-gray-700 mx-1" />
+            <div className="h-6 border-l border-border mx-1" />
             {toolbarButton('Reply', <Reply size={20} />, onReply)}
             {toolbarButton('Reply all', <ReplyAll size={20} />, onReplyAll)}
             {toolbarButton('Forward', <Forward size={20} />, onForward)}
@@ -270,7 +270,7 @@ export default function WebmailMessageView({
           />
 
           {message.attachments.filter((a) => !a.isInline).length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-4 pt-4 border-t border-border">
               <h3 className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
                 {message.attachments.filter((a) => !a.isInline).length} attachment
                 {message.attachments.filter((a) => !a.isInline).length === 1 ? '' : 's'}
@@ -291,7 +291,7 @@ export default function WebmailMessageView({
         </div>
 
         {earlier.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="mt-6 pt-4 border-t border-border">
             <h3 className="text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">
               Earlier in this conversation ({earlier.length})
             </h3>
@@ -300,7 +300,7 @@ export default function WebmailMessageView({
                 <button
                   key={m.id}
                   onClick={() => onOpenMessage(m)}
-                  className="w-full text-left border border-gray-200 dark:border-gray-700 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  className="w-full text-left border border-border rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-sm truncate">{m.from}</span>
@@ -319,10 +319,10 @@ export default function WebmailMessageView({
           </div>
         )}
 
-        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <div className="mt-8 pt-6 border-t border-border">
           <button
             onClick={onReply}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <Reply size={16} />
             Reply to {message.from}

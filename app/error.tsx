@@ -36,7 +36,7 @@ export default function WebmailError({
   }, [error]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900 px-6">
+    <div className="min-h-screen flex items-center justify-center bg-background px-6">
       <div className="w-full max-w-md">
         <AlertTriangle size={32} className="text-amber-500 mb-4" aria-hidden="true" />
         <h1 className="text-lg font-medium text-gray-900 dark:text-gray-100">
@@ -49,7 +49,7 @@ export default function WebmailError({
 
         <pre
           role="alert"
-          className="mt-4 whitespace-pre-wrap break-words rounded-md bg-gray-100 dark:bg-gray-800 p-3 font-mono text-xs text-gray-800 dark:text-gray-200"
+          className="mt-4 whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs text-gray-800 dark:text-gray-200"
         >
           {`${error.name}: ${error.message}`}
           {error.digest ? `\ndigest: ${error.digest}` : ''}
@@ -65,7 +65,7 @@ export default function WebmailError({
           </button>
           <a
             href="/"
-            className="px-4 py-1.5 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300"
+            className="px-4 py-1.5 text-sm rounded-md border border-border text-gray-700 dark:text-gray-300"
           >
             Back to mail
           </a>

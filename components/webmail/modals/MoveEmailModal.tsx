@@ -39,7 +39,7 @@ export default function MoveEmailModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
+      <div className="bg-card rounded-lg max-w-md w-full p-6 shadow-xl">
         <div className="flex items-center justify-center mb-4">
           <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-500 flex items-center justify-center">
             <FolderInput size={24} />
@@ -80,7 +80,7 @@ export default function MoveEmailModal({
         <div className="flex gap-3 justify-center">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Cancel
           </button>

@@ -396,7 +396,7 @@ export default function WebmailCompose({
 
   return (
     <motion.div
-      className={`flex flex-col bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700 ${
+      className={`flex flex-col bg-card shadow-xl border border-border ${
         isMobile || isMaximized
           ? 'w-full h-full rounded-none'
           : isMinimized
@@ -411,7 +411,7 @@ export default function WebmailCompose({
     >
       <div
         ref={dragRef}
-        className={`flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 ${
+        className={`flex items-center justify-between px-4 py-2 border-b border-border bg-muted ${
           isMobile || isMaximized ? '' : 'cursor-move rounded-t-lg'
         }`}
       >
@@ -514,7 +514,7 @@ export default function WebmailCompose({
                 />
               )}
 
-              <div className="flex items-center px-3 py-1.5 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center px-3 py-1.5 border-b border-border">
                 <span className="text-sm text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">
                   Subj
                 </span>
@@ -552,11 +552,11 @@ export default function WebmailCompose({
           </div>
 
           {attachments.length > 0 && (
-            <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 flex flex-wrap gap-2">
+            <div className="px-3 py-2 border-t border-border flex flex-wrap gap-2">
               {attachments.map((file, index) => (
                 <span
                   key={`${file.name}-${index}`}
-                  className="inline-flex items-center gap-2 max-w-full pl-2 pr-1 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm text-gray-700 dark:text-gray-200"
+                  className="inline-flex items-center gap-2 max-w-full pl-2 pr-1 py-1 bg-muted rounded text-sm text-gray-700 dark:text-gray-200"
                 >
                   <Paperclip size={13} className="flex-shrink-0 text-gray-400" />
                   <span className="truncate">{file.name}</span>
@@ -579,7 +579,7 @@ export default function WebmailCompose({
             </div>
           )}
 
-          <div className="p-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
+          <div className="p-3 border-t border-border flex justify-between items-center bg-muted">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
@@ -651,7 +651,7 @@ export default function WebmailCompose({
 
       {showAiPrompt && onAiWrite && (
         <div className="absolute inset-0 bg-black/50 z-10 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-[500px] max-w-full">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-[500px] max-w-full">
             <h3 className="text-lg font-medium mb-4 flex items-center">
               <Sparkles size={18} className="text-blue-500 mr-2" />
               AI Write
@@ -663,12 +663,12 @@ export default function WebmailCompose({
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
               placeholder="e.g. politely decline and suggest next week instead"
-              className="w-full h-32 p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-transparent focus:ring-2 focus:ring-primary/20 mb-4"
+              className="w-full h-32 p-3 border border-border rounded-md bg-transparent focus:ring-2 focus:ring-primary/20 mb-4"
             />
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowAiPrompt(false)}
-                className="px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+                className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>

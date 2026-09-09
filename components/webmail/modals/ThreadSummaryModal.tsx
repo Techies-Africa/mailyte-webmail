@@ -53,8 +53,8 @@ export default function ThreadSummaryModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-card rounded-lg shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-medium flex items-center">
             <Hash size={18} className="text-violet-500 mr-2" />
             Thread Summary
@@ -78,7 +78,7 @@ export default function ThreadSummaryModal({
               <p className="text-destructive mb-3">{error}</p>
               <button
                 onClick={generateSummary}
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Try again
               </button>
@@ -144,10 +144,10 @@ export default function ThreadSummaryModal({
           )}
         </div>
 
-        <div className="flex justify-end px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex justify-end px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
           >
             Close
           </button>

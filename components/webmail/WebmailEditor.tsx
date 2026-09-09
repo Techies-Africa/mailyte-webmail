@@ -208,7 +208,7 @@ export default function WebmailEditor({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+      <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 border-b border-border bg-muted">
         <ToolButton editor={editor} label="Bold" mark="bold" onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold size={15} />
         </ToolButton>
@@ -295,7 +295,7 @@ export default function WebmailEditor({
       </div>
 
       {linkOpen && (
-        <div className="flex items-center gap-2 px-2 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-border bg-card">
           <input
             autoFocus
             value={linkValue}
@@ -308,7 +308,7 @@ export default function WebmailEditor({
               if (e.key === 'Escape') setLinkOpen(false);
             }}
             placeholder="https://example.com  (empty removes the link)"
-            className="flex-1 text-sm px-2 py-1 border border-gray-200 dark:border-gray-700 rounded bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="flex-1 text-sm px-2 py-1 border border-border rounded bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button onClick={applyLink} className="text-sm px-3 py-1 rounded bg-primary text-primary-foreground">
             Apply
@@ -325,7 +325,7 @@ export default function WebmailEditor({
       {imageError && (
         <div
           role="alert"
-          className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300"
+          className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300"
         >
           <span className="flex-1">{imageError}</span>
           <button
@@ -345,7 +345,7 @@ export default function WebmailEditor({
 }
 
 function Divider() {
-  return <span className="w-px h-5 mx-1 bg-gray-200 dark:bg-gray-700" />;
+  return <span className="w-px h-5 mx-1 bg-border" />;
 }
 
 function ToolButton({
@@ -381,7 +381,7 @@ function ToolButton({
       aria-label={label}
       aria-pressed={mark ? active : undefined}
       className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 ${
-        active ? 'bg-gray-200 dark:bg-gray-700 text-primary' : 'text-gray-700 dark:text-gray-300'
+        active ? 'bg-muted text-primary' : 'text-gray-700 dark:text-gray-300'
       }`}
     >
       {children}

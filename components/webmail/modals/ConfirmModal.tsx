@@ -51,7 +51,7 @@ export default function ConfirmModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-xl">
+      <div className="bg-card rounded-lg max-w-md w-full p-6 shadow-xl">
         <div className="flex items-center justify-center mb-4">
           <div
             className={`w-12 h-12 rounded-full flex items-center justify-center ${
@@ -82,7 +82,7 @@ export default function ConfirmModal({
               autoFocus
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              className="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20"
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20"
             />
           </div>
         )}
@@ -90,7 +90,7 @@ export default function ConfirmModal({
         <div className="flex gap-3 justify-center">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Cancel
           </button>

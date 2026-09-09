@@ -86,11 +86,11 @@ export default function WebmailSettingsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-background">
       {/* Same geometry as WebmailHeader: a w-56 left block so the header's
           divider lines up with the sidebar edge below it, instead of the two
           columns disagreeing about where the app starts. */}
-      <header className="border-b border-gray-200 dark:border-gray-700 py-2 px-4 shrink-0">
+      <header className="border-b border-border py-2 px-4 shrink-0">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 min-w-0 lg:w-56 shrink-0">
             <button
@@ -127,7 +127,7 @@ export default function WebmailSettingsPage() {
             settings does not shift the layout under the pointer. */}
         <nav
           aria-label="Settings sections"
-          className="hidden md:flex w-56 border-r border-gray-200 dark:border-gray-700 h-full overflow-y-auto bg-gray-50 dark:bg-gray-800 flex-col"
+          className="hidden md:flex w-56 border-r border-border h-full overflow-y-auto bg-muted flex-col"
         >
           <div className="px-4 pt-4 pb-2 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Preferences
@@ -169,7 +169,7 @@ export default function WebmailSettingsPage() {
               would leave nothing for the form. */}
           <nav
             aria-label="Settings sections"
-            className="md:hidden flex gap-1 px-3 py-2 border-b border-gray-200 dark:border-gray-700 overflow-x-auto shrink-0"
+            className="md:hidden flex gap-1 px-3 py-2 border-b border-border overflow-x-auto shrink-0"
           >
             {SETTINGS_SECTIONS.map((section) => (
               <button

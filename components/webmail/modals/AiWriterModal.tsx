@@ -39,8 +39,8 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-card rounded-lg shadow-xl w-full max-w-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-medium flex items-center">
             <Sparkles size={18} className="text-blue-500 mr-2" />
             AI Email Writer
@@ -62,7 +62,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g. a short reply agreeing to Friday's meeting and asking for the agenda"
-            className="w-full h-20 p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-transparent focus:ring-2 focus:ring-primary/20"
+            className="w-full h-20 p-3 border border-border rounded-md bg-transparent focus:ring-2 focus:ring-primary/20"
             disabled={isGenerating}
           />
 
@@ -88,7 +88,7 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
           {error && <p className="text-sm text-destructive mt-2">{error}</p>}
 
           {generatedContent && (
-            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mt-6">
+            <div className="border border-border rounded-lg p-4 mt-6">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="text-sm font-medium">Generated draft</h4>
                 <div className="flex gap-2">
@@ -112,17 +112,17 @@ export default function AiWriterModal({ isOpen, onClose, onApply, onGenerate }: 
                 </div>
               </div>
 
-              <div className="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md text-sm">
+              <div className="whitespace-pre-wrap bg-muted p-3 rounded-md text-sm">
                 {generatedContent}
               </div>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Cancel
           </button>

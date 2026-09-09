@@ -129,7 +129,7 @@ export default function WebmailRecipientInput({
   };
 
   return (
-    <div ref={containerRef} className="relative flex items-start border-b border-gray-200 dark:border-gray-700 px-3 py-1.5">
+    <div ref={containerRef} className="relative flex items-start border-b border-border px-3 py-1.5">
       <span className="text-sm text-gray-500 dark:text-gray-400 pt-1.5 w-10 flex-shrink-0">
         {label}
       </span>
@@ -143,7 +143,7 @@ export default function WebmailRecipientInput({
               key={`${chip}-${index}`}
               className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-sm max-w-full ${
                 valid
-                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  ? 'bg-muted text-gray-800 dark:text-gray-200'
                   : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-300 dark:ring-red-700'
               }`}
               title={valid ? email : `${email} is not a valid email address`}
@@ -181,7 +181,7 @@ export default function WebmailRecipientInput({
       {trailing && <div className="pt-1 flex-shrink-0">{trailing}</div>}
 
       {open && suggestions.length > 0 && (
-        <ul className="absolute left-12 top-full z-20 mt-1 w-80 max-w-[calc(100%-3rem)] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg overflow-hidden">
+        <ul className="absolute left-12 top-full z-20 mt-1 w-80 max-w-[calc(100%-3rem)] bg-card border border-border rounded-md shadow-lg overflow-hidden">
           {suggestions.map((contact, index) => (
             <li key={contact.email}>
               <button
@@ -193,7 +193,7 @@ export default function WebmailRecipientInput({
                 }}
                 onMouseEnter={() => setHighlight(index)}
                 className={`w-full text-left px-3 py-2 text-sm ${
-                  index === highlight ? 'bg-gray-100 dark:bg-gray-700' : ''
+                  index === highlight ? 'bg-muted' : ''
                 }`}
               >
                 {contact.name && (

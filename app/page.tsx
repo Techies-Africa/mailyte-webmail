@@ -902,7 +902,7 @@ export default function WebmailInboxPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-background">
       {/* Full width, above the sidebar rather than beside it, so the product
           identity and the search box stay put no matter which folder or
           message is open -- the thing that makes Gmail always read as Gmail.
@@ -924,7 +924,7 @@ export default function WebmailInboxPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {showSidebar && (
-          <div className={isMobileView ? 'absolute z-20 h-full bg-white dark:bg-gray-800 shadow-lg' : ''}>
+          <div className={isMobileView ? 'absolute z-20 h-full bg-card shadow-lg' : ''}>
             <WebmailSidebar
               folders={folders}
               activeFolder={activeFolder}

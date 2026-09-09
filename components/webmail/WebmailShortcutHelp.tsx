@@ -9,10 +9,10 @@ export default function WebmailShortcutHelp({ onClose }: { onClose: () => void }
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-xl"
+        className="w-full max-w-md bg-card rounded-lg shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <h2 className="text-base font-medium text-gray-900 dark:text-gray-100">
             Keyboard shortcuts
           </h2>
@@ -29,7 +29,7 @@ export default function WebmailShortcutHelp({ onClose }: { onClose: () => void }
           {SHORTCUT_HELP.map((shortcut) => (
             <li key={shortcut.keys} className="flex items-center justify-between gap-4 text-sm">
               <span className="text-gray-600 dark:text-gray-400">{shortcut.description}</span>
-              <kbd className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-xs font-mono text-gray-700 dark:text-gray-300">
+              <kbd className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-muted text-xs font-mono text-gray-700 dark:text-gray-300">
                 {shortcut.keys}
               </kbd>
             </li>

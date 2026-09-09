@@ -138,7 +138,7 @@ export default function WebmailSecuritySection({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Code from your app"
-              className="w-48 text-sm px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+              className="w-48 text-sm px-2 py-1.5 rounded border border-border bg-transparent"
             />
             <button
               onClick={() => void turnOff()}
@@ -208,7 +208,7 @@ export default function WebmailSecuritySection({
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="6-digit code"
                 inputMode="numeric"
-                className="w-40 text-sm px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-transparent"
+                className="w-40 text-sm px-2 py-1.5 rounded border border-border bg-transparent"
               />
               <button
                 onClick={() => void confirm()}

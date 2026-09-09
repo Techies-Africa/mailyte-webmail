@@ -143,7 +143,7 @@ export default function WebmailSidebar({
   );
 
   return (
-    <div className="w-56 md:w-56 sm:w-full border-r border-gray-200 dark:border-gray-700 h-full overflow-y-auto bg-gray-50 dark:bg-gray-800 flex flex-col">
+    <div className="w-56 md:w-56 sm:w-full border-r border-border h-full overflow-y-auto bg-muted flex flex-col">
       <div className="p-4">
         <button
           onClick={onCompose}
@@ -239,7 +239,7 @@ export default function WebmailSidebar({
                 onBlur={() => void submitNewFolder()}
                 disabled={busy}
                 placeholder="Folder name"
-                className="w-full text-sm px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm px-2 py-1 rounded border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
               {createError && <p className="mt-1 text-xs text-red-600">{createError}</p>}
             </div>

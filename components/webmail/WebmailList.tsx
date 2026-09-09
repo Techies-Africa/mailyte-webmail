@@ -85,11 +85,11 @@ export default function WebmailList({
       <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
           <div key={i} className={`flex items-center gap-3 px-4 ${rowPadding} animate-pulse`}>
-            <div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded" />
-            <div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded" />
-            <div className="h-3.5 bg-gray-200 dark:bg-gray-700 rounded w-44 flex-shrink-0" />
-            <div className="h-3.5 bg-gray-200 dark:bg-gray-700 rounded flex-1" />
-            <div className="h-3.5 w-12 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-4 w-4 bg-muted rounded" />
+            <div className="h-4 w-4 bg-muted rounded" />
+            <div className="h-3.5 bg-muted rounded w-44 flex-shrink-0" />
+            <div className="h-3.5 bg-muted rounded flex-1" />
+            <div className="h-3.5 w-12 bg-muted rounded" />
           </div>
         ))}
       </div>
@@ -258,7 +258,7 @@ export default function WebmailList({
                 so the date column does not flicker as the pointer moves down
                 the list. */}
             {hoveredEmail === email.id && (
-              <div className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md bg-white dark:bg-gray-800 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 px-0.5 py-0.5">
+              <div className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md bg-card shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 px-0.5 py-0.5">
                 <button
                   onClick={(e) => stop(e, () => onArchiveEmail(email.id))}
                   className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
