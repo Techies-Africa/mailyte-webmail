@@ -65,6 +65,64 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
 };
 const CATEGORY_ORDER = ['Social', 'Promotions', 'Updates', 'Notifications'];
 
+/**
+ * Shared mailboxes arrive as IMAP folders under Dovecot's shared namespace:
+ *   Shared/sales@example.com/INBOX
+ *   Shared/sales@example.com/Sent
+ *
+ * The prefix is set in Dovecot (`namespace shared { prefix = Shared/%%u/ }`),
+ * so it is a real folder path, not a naming convention invented in the UI.
+ *
+ * Left ungrouped these sort in among the reader's own folders under "Folders"
+ * with their full path as the label, which reads as somebody else's mail
+ * dumped into yours. They get their own section instead, headed by address.
+ */
+const SHARED_PREFIX = 'Shared/';
+
+export interface SharedMailboxGroup {
+  address: string;
+  folders: { folder: WebmailFolder; label: string }[];
+}
+
+export function groupSharedFolders(folders: WebmailFolder[]): SharedMailboxGroup[] {
+  const byAddress = new Map<string, { folder: WebmailFolder; label: string }[]>();
+
+  for (const folder of folders) {
+    if (!folder.name.startsWith(SHARED_PREFIX)) continue;
+
+    // Shared/<address>/<path...> -- the path can itself contain '/', so take
+    // the address as the one segment after the prefix and keep the rest whole.
+    const rest = folder.name.slice(SHARED_PREFIX.length);
+    const separator = rest.indexOf('/');
+    if (separator === -1) continue;
+
+    const address = rest.slice(0, separator);
+    const path = rest.slice(separator + 1);
+    if (address === '' || path === '') continue;
+
+    // INBOX is the shared mailbox itself; labelling it 'INBOX' under a heading
+    // that already names the address is a wasted row of nesting.
+    const label = path === 'INBOX' ? 'Inbox' : path;
+
+    const existing = byAddress.get(address) ?? [];
+    existing.push({ folder, label });
+    byAddress.set(address, existing);
+  }
+
+  return [...byAddress.entries()]
+    .map(([address, entries]) => ({
+      address,
+      // Inbox first, then the rest alphabetically -- the same shape the
+      // reader's own folder list has.
+      folders: entries.sort((a, b) => {
+        if (a.label === 'Inbox') return -1;
+        if (b.label === 'Inbox') return 1;
+        return a.label.localeCompare(b.label);
+      }),
+    }))
+    .sort((a, b) => a.address.localeCompare(b.address));
+}
+
 function sortFolders(folders: WebmailFolder[]): WebmailFolder[] {
   return [...folders].sort((a, b) => {
     const ai = a.role ? ROLE_ORDER.indexOf(a.role) : -1;
@@ -115,7 +173,12 @@ export default function WebmailSidebar({
     sorted.find((f) => f.role === null && f.name === name),
   ).filter((f): f is WebmailFolder => Boolean(f));
   const categoryNames = new Set(categoryFolders.map((f) => f.name));
-  const customFolders = sorted.filter((f) => f.role === null && !categoryNames.has(f.name));
+  // Shared mailboxes get their own section, so they must not also fall
+  // through into the reader's own 'Folders' list.
+  const sharedGroups = groupSharedFolders(sorted);
+  const customFolders = sorted.filter(
+    (f) => f.role === null && !categoryNames.has(f.name) && !f.name.startsWith(SHARED_PREFIX),
+  );
 
   const row = (
     key: string,
@@ -201,6 +264,34 @@ export default function WebmailSidebar({
           )}
         </div>
       )}
+
+      {/* Shared mailboxes -- addresses a team works out of together. Above
+          the reader's own folders because mail arrives here without them
+          having filed it, and each is headed by the address so it is never
+          mistaken for one of their own folders. */}
+      {sharedGroups.map((group) => (
+        <div className="mt-4" key={group.address}>
+          <div className="px-3 py-1.5 flex items-center gap-2">
+            <Users size={13} className="text-gray-400 dark:text-gray-500 shrink-0" />
+            <span
+              className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 truncate"
+              title={group.address}
+            >
+              {group.address}
+            </span>
+          </div>
+          {group.folders.map(({ folder, label }) =>
+            row(
+              folder.id,
+              label === 'Inbox' ? <Inbox size={18} /> : <Folder size={18} />,
+              label,
+              folder.unreadEmails,
+              activeFolder === folder.name,
+              () => onFolderChange(folder.name),
+            ),
+          )}
+        </div>
+      ))}
 
       {(customFolders.length > 0 || onCreateFolder) && (
         <div className="mt-4">
