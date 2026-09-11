@@ -14,6 +14,7 @@ import {
   Tag,
   Newspaper,
   Bell,
+  ChevronRight,
 } from 'lucide-react';
 import type { WebmailFolder } from './types';
 
@@ -136,6 +137,8 @@ function sortFolders(folders: WebmailFolder[]): WebmailFolder[] {
 
 export const STARRED_VIEW = '__starred__';
 
+const SHARED_OPEN_KEY = 'mailyte.webmail.sharedMailboxesOpen';
+
 export default function WebmailSidebar({
   folders,
   activeFolder,
@@ -143,6 +146,29 @@ export default function WebmailSidebar({
   onCompose,
   onCreateFolder,
 }: WebmailSidebarProps) {
+  // Collapsed by default and remembered per address: a shared mailbox brings
+  // ten folders of its own, so two or three of them would push the reader's
+  // own mail off the screen. localStorage is wrapped because Safari's private
+  // mode throws on access rather than returning null.
+  const [openShared, setOpenShared] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(SHARED_OPEN_KEY) ?? '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleShared = (address: string) =>
+    setOpenShared((previous) => {
+      const next = { ...previous, [address]: !previous[address] };
+      try {
+        localStorage.setItem(SHARED_OPEN_KEY, JSON.stringify(next));
+      } catch {
+        // Not worth failing a click over; it just will not be remembered.
+      }
+      return next;
+    });
+
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
@@ -269,29 +295,51 @@ export default function WebmailSidebar({
           the reader's own folders because mail arrives here without them
           having filed it, and each is headed by the address so it is never
           mistaken for one of their own folders. */}
-      {sharedGroups.map((group) => (
-        <div className="mt-4" key={group.address}>
-          <div className="px-3 py-1.5 flex items-center gap-2">
-            <Users size={13} className="text-gray-400 dark:text-gray-500 shrink-0" />
-            <span
-              className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500 truncate"
+      {sharedGroups.map((group) => {
+        // Always open while the reader is inside it, whatever they last chose
+        // -- collapsing the section you are reading would hide your own
+        // position in it.
+        const containsActive = group.folders.some((f) => f.folder.name === activeFolder);
+        const expanded = openShared[group.address] === true || containsActive;
+        // Collapsed, the header carries the whole mailbox's unread count, so a
+        // shut section still shows that something arrived.
+        const unread = group.folders.reduce((sum, f) => sum + f.folder.unreadEmails, 0);
+
+        return (
+          <div className="mt-4" key={group.address}>
+            <button
+              onClick={() => toggleShared(group.address)}
+              aria-expanded={expanded}
               title={group.address}
+              className="w-full px-3 py-1.5 flex items-center gap-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"
             >
-              {group.address}
-            </span>
+              <ChevronRight
+                size={13}
+                className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+              />
+              <Users size={13} className="shrink-0" />
+              <span className="text-xs font-medium uppercase tracking-wide truncate min-w-0">
+                {group.address}
+              </span>
+              {!expanded && unread > 0 && (
+                <span className="ml-auto text-xs font-medium shrink-0">{unread}</span>
+              )}
+            </button>
+
+            {expanded &&
+              group.folders.map(({ folder, label }) =>
+                row(
+                  folder.id,
+                  label === 'Inbox' ? <Inbox size={18} /> : <Folder size={18} />,
+                  label,
+                  folder.unreadEmails,
+                  activeFolder === folder.name,
+                  () => onFolderChange(folder.name),
+                ),
+              )}
           </div>
-          {group.folders.map(({ folder, label }) =>
-            row(
-              folder.id,
-              label === 'Inbox' ? <Inbox size={18} /> : <Folder size={18} />,
-              label,
-              folder.unreadEmails,
-              activeFolder === folder.name,
-              () => onFolderChange(folder.name),
-            ),
-          )}
-        </div>
-      ))}
+        );
+      })}
 
       {(customFolders.length > 0 || onCreateFolder) && (
         <div className="mt-4">
