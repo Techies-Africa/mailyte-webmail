@@ -291,6 +291,12 @@ export default function WebmailInboxPage() {
   useEffect(() => {
     void loadMessages(activeFolder, { search: activeSearch });
     void loadFolders();
+    // A PLACEHOLDER only, so the header is not blank on first paint. It is
+    // written at login and can outlive the session it describes -- signing in
+    // as somebody else without passing through the login page leaves the
+    // previous person's address on screen while their mail is correctly
+    // nobody's but your own. The authoritative address arrives from
+    // /capabilities below and overwrites this.
     const raw = sessionStorage.getItem('mailyte_mailbox_display');
     if (raw) {
       try {
@@ -316,6 +322,21 @@ export default function WebmailInboxPage() {
     // says otherwise -- see the aiAvailable note where the state is declared.
     void getCapabilities(handleUnauthorized).then((result) => {
       if (result.success) setCapabilities(result.data.capabilities);
+      // The signed-in address according to the SERVER, which is the only
+      // thing that knows whose session this actually is. Showing one person's
+      // address above another person's mail reads as a data leak even when
+      // nothing has leaked, so the cached value never gets the last word.
+      if (result.success && result.data.email_address) {
+        setDisplayEmail(result.data.email_address);
+        try {
+          sessionStorage.setItem(
+            'mailyte_mailbox_display',
+            JSON.stringify({ email_address: result.data.email_address }),
+          );
+        } catch {
+          // Storage unavailable (private mode); the state above is what renders.
+        }
+      }
     });
   }, [handleUnauthorized]);
 
