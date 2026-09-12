@@ -117,6 +117,8 @@ export interface ApiCapabilities {
     forwarding: boolean;
     vacation: boolean;
     ai: boolean;
+    /** phase-09: this deployment runs a calendar (CalDAV) service. */
+    calendar: boolean;
   };
 }
 

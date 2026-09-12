@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
 import ForwardingSettings from './ForwardingSettings';
 import VacationSettings from './VacationSettings';
 import SecuritySettings from './SecuritySettings';
 import AppearanceSettings from './AppearanceSettings';
+import CalendarSettings from './CalendarSettings';
 import type { SettingsSectionProps } from './types';
 
 /**
@@ -27,6 +28,13 @@ import type { SettingsSectionProps } from './types';
  *     now works, but the rule-builder UI is not built yet.
  *   - Labels: managed from the sidebar, where folders already live.
  *   - IMAP accounts: no backend of any kind.
+ *
+ * Calendar is listed unconditionally even though the calendar service is
+ * optional. That is deliberate and is the one exception: the section explains
+ * how to reach the calendar from other apps, and a deployment without the
+ * service answers its requests with a clear message rather than a broken
+ * control. The CALENDAR SCREEN itself is gated on the capability (see
+ * app/calendar/page.tsx) -- that is where an absent service must not render.
  */
 export interface SettingsSection {
   id: string;
@@ -65,6 +73,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'Reply automatically while you are away.',
     icon: Plane,
     component: VacationSettings,
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    description: 'Use this calendar in Apple Calendar, Thunderbird, Android or Outlook.',
+    icon: CalendarDays,
+    component: CalendarSettings,
   },
   {
     id: 'security',

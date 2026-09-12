@@ -195,6 +195,9 @@ export default function WebmailInboxPage() {
    */
   const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
   const aiAvailable = capabilities?.ai === true;
+  // phase-09. Undefined rather than false when absent: the header prop is
+  // optional, and an undefined href renders no control at all.
+  const calendarHref = capabilities?.calendar === true ? '/calendar' : undefined;
   // The last folder fingerprint the list was built from. The poll compares
   // against this and reloads only on a real change.
   const syncTokenRef = useRef<string>('');
@@ -941,6 +944,7 @@ export default function WebmailInboxPage() {
         refreshing={loadingList}
         onLogout={logout}
         onOpenSettings={() => router.push('/settings')}
+        calendarHref={calendarHref}
       />
 
       <div className="flex-1 flex overflow-hidden">
