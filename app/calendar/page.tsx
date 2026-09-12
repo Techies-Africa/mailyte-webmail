@@ -24,15 +24,20 @@ import {
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Mail, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
+import InvitationsPanel from '@/components/calendar/InvitationsPanel';
 import {
   createEvent,
   deleteEvent,
   listCalendars,
   listEvents,
+  listInvitations,
+  rsvp as sendRsvp,
   updateEvent,
   type CalendarEvent,
   type CalendarSummary,
   type EventDraft,
+  type Invitation,
+  type RsvpResponse,
 } from '@/lib/webmail/calendar';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
@@ -49,6 +54,10 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
+
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [invitationsHidden, setInvitationsHidden] = useState(false);
+  const [answering, setAnswering] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
   const [creatingAt, setCreatingAt] = useState<{ start: Date; allDay: boolean } | null>(null);
@@ -138,6 +147,31 @@ export default function CalendarPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadInvitations = useCallback(async () => {
+    if (supported !== true) return;
+    const res = await listInvitations(onUnauthorized);
+    // A failure here is deliberately quiet. The scheduling inbox is a bonus
+    // on this screen; the calendar itself still works, and an error banner
+    // for something the user did not ask for is noise.
+    if (res.success) setInvitations(res.data);
+  }, [supported, onUnauthorized]);
+
+  useEffect(() => {
+    void loadInvitations();
+  }, [loadInvitations]);
+
+  async function respond(invitation: Invitation, response: RsvpResponse) {
+    setAnswering(invitation.id);
+    const res = await sendRsvp(invitation.id, response, onUnauthorized);
+    setAnswering(null);
+    if (!res.success) {
+      setBanner(res.message);
+      return;
+    }
+    // Both: the invitation leaves the inbox and the event joins the calendar.
+    await Promise.all([loadInvitations(), load()]);
+  }
 
   const readOnly = useMemo(
     () => calendars.find((c) => c.uri === active)?.read_only ?? false,
@@ -304,6 +338,15 @@ export default function CalendarPage() {
         </div>
       </header>
 
+      {!invitationsHidden && (
+        <InvitationsPanel
+          invitations={invitations}
+          busy={answering}
+          onRespond={respond}
+          onDismiss={() => setInvitationsHidden(true)}
+        />
+      )}
+
       {banner && (
         <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
           {banner}
@@ -340,6 +383,7 @@ export default function CalendarPage() {
           onClose={() => setModalOpen(false)}
           onSave={save}
           onDelete={remove}
+          onUnauthorized={onUnauthorized}
         />
       )}
     </div>

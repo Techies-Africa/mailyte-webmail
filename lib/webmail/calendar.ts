@@ -30,9 +30,11 @@ export type EventAttendee = {
    * Set by the server's scheduling plugin. `1.x` delivered, `3.7` unknown
    * user, `5.x` could not be delivered.
    *
-   * Rendered rather than hidden on purpose: invitations to addresses outside
-   * this server are not wired up yet, and an undelivered invitation that
-   * looks sent is the failure this whole feature is trying not to repeat.
+   * Rendered rather than hidden on purpose. Delivery is real in both
+   * directions now, but it can still fail -- the server may not be able to
+   * reach an address, or iMIP may be off on this deployment -- and an
+   * undelivered invitation that looks sent is the failure this whole feature
+   * exists to avoid.
    */
   schedule_status: string | null;
 };
@@ -237,4 +239,78 @@ export function deliveryState(
   if (code.startsWith('1') || code.startsWith('2')) return 'delivered';
   if (code.startsWith('3') || code.startsWith('4') || code.startsWith('5')) return 'undelivered';
   return 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling: invitations, RSVP, availability
+// ---------------------------------------------------------------------------
+
+export type Invitation = CalendarEvent & {
+  /** REQUEST, CANCEL or REPLY. What the organizer is telling you. */
+  method: string | null;
+};
+
+export type RsvpResponse = 'accepted' | 'declined' | 'tentative';
+
+export type Availability = {
+  email: string;
+  /**
+   * Whether the server could answer for this person at all.
+   *
+   * False for anyone outside the organization -- neither Google nor Microsoft
+   * exposes free/busy to strangers. A UI must render this as "unknown", never
+   * as "free": showing someone as available when nobody asked them is how a
+   * meeting gets booked over a conflict.
+   */
+  known: boolean;
+  busy: { start: string; end: string }[];
+};
+
+export function listInvitations(onUnauthorized: () => void) {
+  return call<Invitation[]>('/api/webmail/calendar/invitations', undefined, onUnauthorized);
+}
+
+export function rsvp(id: string, response: RsvpResponse, onUnauthorized: () => void) {
+  return call<{ id: string; response: string }>(
+    `/api/webmail/calendar/invitations/${encodeURIComponent(id)}/rsvp`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response }),
+    },
+    onUnauthorized,
+  );
+}
+
+export function checkAvailability(
+  attendees: string[],
+  start: Date,
+  end: Date,
+  onUnauthorized: () => void,
+) {
+  return call<Availability[]>(
+    '/api/webmail/calendar/free-busy',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        attendees,
+        start: start.toISOString(),
+        end: end.toISOString(),
+      }),
+    },
+    onUnauthorized,
+  );
+}
+
+/** Whether a busy period overlaps the proposed slot. */
+export function clashes(availability: Availability, start: Date, end: Date): boolean {
+  if (!availability.known) return false;
+  const from = start.getTime();
+  const to = end.getTime();
+  return availability.busy.some((period) => {
+    const busyFrom = new Date(period.start).getTime();
+    const busyTo = new Date(period.end).getTime();
+    return busyFrom < to && from < busyTo;
+  });
 }
