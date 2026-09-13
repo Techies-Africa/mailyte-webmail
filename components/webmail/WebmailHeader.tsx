@@ -1,4 +1,4 @@
-import { Menu, RefreshCw, Search, LogOut, Settings, Sun, Moon } from 'lucide-react';
+import { Menu, RefreshCw, Search, LogOut, Settings, Sun, Moon, CalendarDays } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { brand } from '@/lib/webmail/brand';
@@ -18,6 +18,12 @@ type WebmailHeaderProps = {
   onLogout: () => void;
   /** Opens the settings panel (PRD S1). Absent = no gear rendered. */
   onOpenSettings?: () => void;
+  /**
+   * phase-09. Absent = this server has no calendar service, so no calendar
+   * control is rendered at all -- the same rule every optional feature here
+   * follows: absent, not disabled.
+   */
+  calendarHref?: string;
 };
 
 export default function WebmailHeader({
@@ -32,6 +38,7 @@ export default function WebmailHeader({
   refreshing = false,
   onLogout,
   onOpenSettings,
+  calendarHref,
 }: WebmailHeaderProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -142,6 +149,21 @@ export default function WebmailHeader({
               <Moon size={20} className="text-gray-500 dark:text-gray-400" />
             )}
           </button>
+
+          {/* phase-09. A link, not a button: the calendar is a route, so it
+              opens in a new tab if the reader middle-clicks and survives a
+              refresh. Rendered only when the server reports a calendar
+              service -- absent, not disabled. */}
+          {calendarHref && (
+            <a
+              href={calendarHref}
+              className="p-2 rounded-full hover:bg-muted"
+              title="Calendar"
+              aria-label="Calendar"
+            >
+              <CalendarDays size={20} className="text-gray-500 dark:text-gray-400" />
+            </a>
+          )}
 
           {/* The gear was a dead control until S1 gave it a real panel;
               it is rendered only when there is one to open. */}
