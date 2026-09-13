@@ -131,7 +131,7 @@ export function MonthView({ events, anchor, onSelect, onCreateAt }: ViewProps) {
                   className={[
                     'text-xs tabular-nums',
                     isToday(day)
-                      ? 'rounded-full bg-teal-600 px-1.5 py-0.5 font-semibold text-white'
+                      ? 'rounded-full bg-primary px-1.5 py-0.5 font-semibold text-primary-foreground'
                       : outside
                         ? 'text-neutral-400 dark:text-neutral-600'
                         : 'text-neutral-700 dark:text-neutral-300',
@@ -196,7 +196,7 @@ export function WeekView({ events, anchor, onSelect, onCreateAt }: ViewProps) {
             <div
               className={[
                 'text-sm tabular-nums',
-                isToday(day) ? 'font-semibold text-teal-600 dark:text-teal-400' : '',
+                isToday(day) ? 'font-semibold text-primary' : '',
               ].join(' ')}
             >
               {format(day, 'd')}
@@ -255,7 +255,7 @@ export function WeekView({ events, anchor, onSelect, onCreateAt }: ViewProps) {
                     at.setHours(hour, 0, 0, 0);
                     onCreateAt(at, false);
                   }}
-                  className="block w-full border-b border-neutral-100 hover:bg-teal-50/60 dark:border-neutral-800/60 dark:hover:bg-teal-900/20"
+                  className="block w-full border-b border-neutral-100 hover:bg-primary/10 dark:border-neutral-800/60"
                   aria-label={`Add an event at ${format(new Date(2000, 0, 1, hour), 'HH:mm')} on ${format(day, 'd MMMM')}`}
                 />
               ))}
@@ -331,7 +331,7 @@ export function AgendaView({ events, onSelect }: Omit<ViewProps, 'onCreateAt' | 
               className={[
                 'sticky top-0 z-10 bg-white/95 px-4 py-1.5 text-xs font-medium backdrop-blur dark:bg-neutral-950/95',
                 isSameDay(day, new Date())
-                  ? 'text-teal-600 dark:text-teal-400'
+                  ? 'text-primary'
                   : 'text-neutral-500 dark:text-neutral-400',
               ].join(' ')}
             >
