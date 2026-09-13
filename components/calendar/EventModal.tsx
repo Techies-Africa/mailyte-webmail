@@ -4,14 +4,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, Check, Clock, MapPin, Repeat, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, DoorOpen, MapPin, Repeat, Trash2, Users, X } from 'lucide-react';
 import {
   checkAvailability,
   clashes,
   deliveryState,
+  listRooms,
   type Availability,
   type CalendarEvent,
   type EventDraft,
+  type Room,
 } from '@/lib/webmail/calendar';
 
 type Props = {
@@ -118,6 +120,7 @@ export default function EventModal({
   );
   const [guestInput, setGuestInput] = useState('');
   const [availability, setAvailability] = useState<Availability[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -134,6 +137,17 @@ export default function EventModal({
     if (end < start) setEnd(new Date(start.getTime() + 60 * 60000));
   }, [start, end]);
 
+  // Most organizations have no rooms, and that is the normal case: this
+  // resolves to an empty list and the room controls never render. Failure
+  // is treated the same way -- a meeting you can still create without a
+  // room beats a modal that refuses to open because a side lookup failed.
+  useEffect(() => {
+    (async () => {
+      const res = await listRooms(onUnauthorized);
+      if (res.success) setRooms(res.data);
+    })();
+  }, [onUnauthorized]);
+
   // Availability, refreshed when the guest list or the slot changes. Debounced
   // because this is an organization-directory lookup, not a local calculation:
   // one request per keystroke would make it a scraping API.
@@ -148,6 +162,13 @@ export default function EventModal({
     }, 500);
     return () => window.clearTimeout(timer);
   }, [guests, start, end, allDay, onUnauthorized]);
+
+  // A room is an attendee like any other once it is on the meeting -- the
+  // distinction is presentational. Showing `boardroom@company.com` in the
+  // guest list when the person picked "Boardroom" from a list is the kind
+  // of leak that makes software feel like plumbing.
+  const roomByEmail = useMemo(() => new Map(rooms.map((r) => [r.email, r])), [rooms]);
+  const availableRooms = rooms.filter((r) => !guests.includes(r.email));
 
   function addGuest() {
     const value = guestInput.trim().toLowerCase();
@@ -319,6 +340,38 @@ export default function EventModal({
               <Users size={14} /> Guests
             </div>
 
+            {/* Rooms first, and only when there are any. A room is the thing
+                people come here to book; making them recall its address was
+                the single reason rooms went unused. Hidden entirely for an
+                organisation with none, rather than shown as an empty list. */}
+            {!readOnly && availableRooms.length > 0 && (
+              <div className="mb-2">
+                <label htmlFor="event-room" className="sr-only">
+                  Add a room
+                </label>
+                <select
+                  id="event-room"
+                  value=""
+                  onChange={(e) => {
+                    const email = e.target.value;
+                    if (email && !guests.includes(email)) {
+                      setGuests((current) => [...current, email]);
+                    }
+                  }}
+                  className="w-full rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                >
+                  <option value="">Add a room or equipment&hellip;</option>
+                  {availableRooms.map((room) => (
+                    <option key={room.email} value={room.email}>
+                      {room.name}
+                      {room.capacity ? ` (${room.capacity} seats)` : ''}
+                      {room.location ? ` — ${room.location}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {!readOnly && (
               <div className="mb-2 flex gap-2">
                 <input
@@ -347,13 +400,20 @@ export default function EventModal({
               <ul className="space-y-1.5">
                 {guests.map((email) => {
                   const existing = event?.attendees.find((a) => a.email === email);
+                  const room = roomByEmail.get(email);
                   const state = deliveryState(existing?.schedule_status ?? null);
                   const avail = availability.find((a) => a.email === email);
                   const busy = avail ? clashes(avail, start, end) : false;
                   return (
                     <li key={email} className="flex items-center justify-between gap-2 text-sm">
-                      <span className="min-w-0 flex-1 truncate">
-                        {existing?.name ?? email}
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+                        {room && <DoorOpen size={13} className="shrink-0 text-neutral-400" />}
+                        {room?.name ?? existing?.name ?? email}
+                        {room?.capacity ? (
+                          <span className="shrink-0 text-xs text-neutral-500">
+                            {room.capacity} seats
+                          </span>
+                        ) : null}
                         {existing && (
                           <span className="ml-1 text-xs text-neutral-500">
                             {existing.status.toLowerCase()}
