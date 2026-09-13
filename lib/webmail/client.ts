@@ -32,6 +32,28 @@ async function call<T>(
 
   const data = await res.json().catch(() => ({}) as Record<string, unknown>);
 
+  // A session carrying a temporary password: real, but allowed to do exactly
+  // two things -- set a password, and sign out. Every other mailbox route
+  // answers this, so it is handled here for the same reason 401 is: one
+  // place, rather than every caller having to recognise it.
+  //
+  // Sign-in already routes to this screen, so reaching here means arriving
+  // some other way -- a bookmarked inbox URL, a restored tab, or a session
+  // that was flagged by an admin reset while it was open. A hard assign
+  // rather than a router push: this module has no router, and the point is to
+  // leave a page that cannot load anything anyway.
+  if (res.status === 403) {
+    const code =
+      (data as { error_code?: string; detail?: { error_code?: string } })?.error_code ??
+      (data as { detail?: { error_code?: string } })?.detail?.error_code;
+    if (code === 'password_change_required' && typeof window !== 'undefined') {
+      if (window.location.pathname !== '/change-password') {
+        window.location.assign('/change-password');
+      }
+      return { success: false, message: 'Set a new password to continue' };
+    }
+  }
+
   // Two envelopes are accepted on purpose.
   //
   // Mailyte's mail server answers `{ type, msg, data }` -- its own convention

@@ -50,9 +50,22 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // The mailbox was provisioned with a starter password, or an admin reset it
+  // with temporary=true. The session is real and is issued as normal, but
+  // every /api/v1/mailbox/* route except POST /security/password and sign-out
+  // will answer 403 password_change_required until a new password is set --
+  // so the client is told here, and sends the holder straight to the screen
+  // that can clear it rather than into an inbox that cannot load.
+  const mustChangePassword = data?.data?.must_change_password === true;
+
   const response = NextResponse.json({
     success: true,
     email_account: data.data.email_account,
+    must_change_password: mustChangePassword,
+    // temporary | expired | admin_reset -- worth showing, because "your
+    // administrator reset this" and "this was the password you were given"
+    // are different messages to the person reading the screen.
+    password_change_reason: data?.data?.password_change_reason ?? null,
   });
 
   const expiresAt = new Date(data.data.expires_at);

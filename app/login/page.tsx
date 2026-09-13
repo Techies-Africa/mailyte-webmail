@@ -44,6 +44,25 @@ export default function WebmailLoginPage() {
       // Non-sensitive display info only -- the session token itself lives
       // in an HttpOnly cookie the login route just set, never here.
       sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify(data.email_account));
+
+      // A temporary or admin-reset password buys a session that can do
+      // exactly two things: set a real password, and sign out. Sending them
+      // to the inbox would show an empty shell -- every folder and message
+      // call answers 403 until the change is made.
+      if (data.must_change_password) {
+        // The change screen asks for the current password again rather than
+        // it being carried over. Handing it along would mean putting a
+        // plaintext password in sessionStorage -- reachable by any script on
+        // this origin, and squarely against the rule the line above states:
+        // the session token itself is kept out of JS for exactly this reason,
+        // so the password it was exchanged for does not belong there either.
+        const reason = data.password_change_reason
+          ? `?reason=${encodeURIComponent(data.password_change_reason)}`
+          : '';
+        router.push(`/change-password${reason}`);
+        return;
+      }
+
       router.push('/');
     } catch {
       setError('Could not reach the server. Please try again.');
