@@ -70,7 +70,9 @@
  *              masking it would flatten the origami into a blob.
  *
  * To rebrand: replace public/logo-wing-mask.png (an alpha silhouette) and
- * public/logo-plane.png. The wing takes the accent; the plane is used as-is.
+ * BOTH plane drawings — public/logo-plane.png for the dark ground and
+ * public/logo-plane-on-light.png for the light one. The wing takes the accent;
+ * the planes are used as-is, which is why there has to be one of each.
  * ------------------------------------------------------------------------- */
 
 .brand-mark {
@@ -97,7 +99,23 @@
   background-image: none;
 }
 
+/* Plane — one artwork per ground, because it is line art, not a flat shape.
+ *
+ * The shipped plane is a white body with thin dark fold lines, which is right
+ * on the dark ground and invisible on a white page (79% of its opaque pixels
+ * are above luminance 225 — only a faint wireframe survived).
+ *
+ * It cannot be themed the way the wing is: the wing is a silhouette, so a mask
+ * plus a flat fill loses nothing, but the plane's folds ARE the lines and a
+ * mask would fill body and lines alike and leave a blob. So there are two
+ * drawings — the second is the first tone-inverted into a dark range, same
+ * geometry.
+ */
 .brand-mark::after {
+  background-image: url('/logo-plane-on-light.png');
+}
+
+.dark .brand-mark::after {
   background-image: url('/logo-plane.png');
 }
 
