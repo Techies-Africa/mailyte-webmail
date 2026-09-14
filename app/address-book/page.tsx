@@ -72,7 +72,8 @@ export default function AddressBookPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  const readOnly = books.find((b) => b.uri === activeBook)?.read_only ?? false;
+  const currentBook = books.find((b) => b.uri === activeBook);
+  const readOnly = currentBook?.read_only ?? false;
 
   // Capability first, exactly as the calendar page does: an optional feature
   // stays hidden until the server says it exists, rather than flashing on and
@@ -261,8 +262,13 @@ export default function AddressBookPage() {
       {readOnly && (
         <p className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
           <Users size={13} />
-          Everyone in your organisation. Kept up to date automatically, so it
-          cannot be edited here.
+          {/* The server's own description, not a copy of it. This used to say
+              "Everyone in your organisation", which stopped being true when
+              the directory narrowed to the signed-in domain -- and was
+              already misleading for an organisation holding several. Whose
+              addresses these are is the server's answer to give. */}
+          {currentBook?.description || 'Kept up to date automatically.'} Not
+          editable here.
         </p>
       )}
 
