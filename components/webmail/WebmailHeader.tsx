@@ -1,4 +1,4 @@
-import { Menu, RefreshCw, Search, LogOut, Settings, Sun, Moon, CalendarDays } from 'lucide-react';
+import { Menu, RefreshCw, Search, LogOut, Settings, Sun, Moon, CalendarDays, BookUser } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { brand } from '@/lib/webmail/brand';
@@ -24,6 +24,7 @@ type WebmailHeaderProps = {
    * follows: absent, not disabled.
    */
   calendarHref?: string;
+  contactsHref?: string;
 };
 
 export default function WebmailHeader({
@@ -39,6 +40,7 @@ export default function WebmailHeader({
   onLogout,
   onOpenSettings,
   calendarHref,
+  contactsHref,
 }: WebmailHeaderProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -162,6 +164,19 @@ export default function WebmailHeader({
               aria-label="Calendar"
             >
               <CalendarDays size={20} className="text-gray-500 dark:text-gray-400" />
+            </a>
+          )}
+
+          {/* Same reasoning as the calendar link above: a route, rendered
+              only when the server reports a contacts service. */}
+          {contactsHref && (
+            <a
+              href={contactsHref}
+              className="p-2 rounded-full hover:bg-muted"
+              title="Contacts"
+              aria-label="Contacts"
+            >
+              <BookUser size={20} className="text-gray-500 dark:text-gray-400" />
             </a>
           )}
 

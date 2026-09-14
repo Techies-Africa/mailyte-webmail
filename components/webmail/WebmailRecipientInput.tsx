@@ -200,6 +200,13 @@ export default function WebmailRecipientInput({
                   <span className="text-gray-900 dark:text-gray-100">{contact.name} </span>
                 )}
                 <span className="text-gray-500">{contact.email}</span>
+                {/* Which list this came from. Saved contacts already rank
+                    first (app/page.tsx merges them ahead), and the marker is
+                    what makes that ordering legible rather than arbitrary --
+                    the same address can appear in both. */}
+                {contact.saved && (
+                  <span className="ml-1.5 text-[11px] text-gray-400">saved</span>
+                )}
               </button>
             </li>
           ))}

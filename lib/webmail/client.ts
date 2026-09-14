@@ -141,6 +141,14 @@ export interface ApiCapabilities {
     ai: boolean;
     /** phase-09: this deployment runs a calendar (CalDAV) service. */
     calendar: boolean;
+    /**
+     * phase-09: this deployment runs an address book (CardDAV) service.
+     *
+     * Its own key rather than folded into `calendar`, even though both come
+     * from the same `dav` service, so the two can be turned on separately and
+     * a client can tell which it is looking at without inferring it.
+     */
+    contacts: boolean;
   };
 }
 

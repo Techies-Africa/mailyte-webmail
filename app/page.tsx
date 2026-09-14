@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  listContacts as listSavedContacts,
+  displayName as contactName,
+} from '@/lib/webmail/contacts';
 import { Trash2, Check } from 'lucide-react';
 import WebmailSidebar, { STARRED_VIEW } from '@/components/webmail/WebmailSidebar';
 import WebmailHeader from '@/components/webmail/WebmailHeader';
@@ -198,6 +202,7 @@ export default function WebmailInboxPage() {
   // phase-09. Undefined rather than false when absent: the header prop is
   // optional, and an undefined href renders no control at all.
   const calendarHref = capabilities?.calendar === true ? '/calendar' : undefined;
+  const contactsHref = capabilities?.contacts === true ? '/address-book' : undefined;
   // The last folder fingerprint the list was built from. The poll compares
   // against this and reloads only on a real change.
   const syncTokenRef = useRef<string>('');
@@ -311,12 +316,54 @@ export default function WebmailInboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFolder, activeSearch]);
 
+  // `/?compose=<address>` opens a new message to that person. The address
+  // book's write button is the only thing that uses it today, and without it
+  // that button would land on the inbox and look broken.
+  //
+  // Read off window.location rather than useSearchParams: this needs to run
+  // once on mount, and useSearchParams would drag a Suspense boundary in for
+  // a value that never changes. The parameter is stripped afterwards so a
+  // refresh does not reopen the window.
+  useEffect(() => {
+    const to = new URLSearchParams(window.location.search).get('compose');
+    if (!to) return;
+    setCompose({
+      open: true,
+      mode: 'compose',
+      resumed: { to, cc: '', bcc: '', subject: '' },
+    });
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
   // Autocomplete suggestions (C2). Loaded once -- they are a convenience,
   // and re-harvesting them on every folder change would cost two folder
   // reads for no benefit.
   useEffect(() => {
     void listContacts(handleUnauthorized).then((result) => {
       if (result.success) setContacts(result.data.map(toContact));
+    });
+    // Saved contacts are merged in ahead of the harvested ones, de-duplicated
+    // by address. Both are kept: harvested addresses cover everyone written
+    // to, saved cards cover the people deliberately kept, and a curated
+    // record should win when the same address appears in both. Failure is
+    // silent by design -- the address book is an addition to autocomplete,
+    // not a prerequisite for it.
+    void listSavedContacts(handleUnauthorized).then((result) => {
+      if (!result.success) return;
+      const saved = result.data
+        .flatMap((contact) =>
+          contact.emails.map((email) => ({
+            name: contactName(contact),
+            email: email.address,
+            saved: true,
+          })),
+        )
+        .filter((entry) => entry.email);
+      if (saved.length === 0) return;
+      setContacts((current) => {
+        const seen = new Set(saved.map((entry) => entry.email.toLowerCase()));
+        return [...saved, ...current.filter((c) => !seen.has(c.email.toLowerCase()))];
+      });
     });
     void getSettings(handleUnauthorized).then((result) => {
       if (result.success) setSettings(toSettings(result.data));
@@ -945,6 +992,7 @@ export default function WebmailInboxPage() {
         onLogout={logout}
         onOpenSettings={() => router.push('/settings')}
         calendarHref={calendarHref}
+        contactsHref={contactsHref}
       />
 
       <div className="flex-1 flex overflow-hidden">

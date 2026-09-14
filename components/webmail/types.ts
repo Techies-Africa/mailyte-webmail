@@ -50,10 +50,20 @@ export interface WebmailMessage extends WebmailListItem {
   attachments: WebmailAttachment[];
 }
 
-/** An autocomplete suggestion, harvested from message headers (PRD C2). */
+/**
+ * An autocomplete suggestion for the recipient fields.
+ *
+ * Two sources feed this, and the difference is worth keeping: addresses
+ * harvested from message headers (PRD C2) cover everyone the mailbox has
+ * written to, while `saved` entries come from the CardDAV address book and
+ * are people the owner deliberately kept. Saved ones rank first and carry a
+ * marker, so picking the curated record over a half-remembered header is the
+ * default rather than a coincidence of ordering.
+ */
 export interface WebmailContact {
   name: string | null;
   email: string;
+  saved?: boolean;
 }
 
 export interface WebmailSettings {
