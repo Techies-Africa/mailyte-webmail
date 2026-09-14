@@ -14,6 +14,7 @@ import {
   Tag,
   Newspaper,
   Bell,
+  CalendarClock,
   ChevronRight,
 } from 'lucide-react';
 import type { WebmailFolder } from './types';
@@ -36,6 +37,7 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
   inbox: <Inbox size={18} />,
   sent: <Send size={18} />,
   drafts: <File size={18} />,
+  scheduled: <CalendarClock size={18} />,
   junk: <AlertOctagon size={18} />,
   trash: <Trash2 size={18} />,
   archive: <Archive size={18} />,
@@ -44,7 +46,9 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 // Roles first, in the order a mail client conventionally shows them, then
 // custom folders alphabetically. The mail server hands folders back in IMAP
 // LIST order, which is arbitrary.
-const ROLE_ORDER = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'trash'];
+// `scheduled` sits between Drafts and Sent, which is where a message waiting
+// on a send time is in its life: written, but not gone.
+const ROLE_ORDER = ['inbox', 'drafts', 'scheduled', 'sent', 'archive', 'junk', 'trash'];
 
 /**
  * Folders the server files mail into on its own, via the global Sieve script.
@@ -249,7 +253,10 @@ export default function WebmailSidebar({
             f.id,
             ROLE_ICONS[f.role ?? ''] ?? <Folder size={18} />,
             f.name === 'INBOX' ? 'Inbox' : f.name,
-            f.unreadEmails,
+            // Nothing in Scheduled is ever unread -- it is filed \Seen,
+            // because the holder wrote it. The number worth showing there is
+            // how many are waiting to go.
+            f.role === 'scheduled' ? f.totalEmails : f.unreadEmails,
             activeFolder === f.name,
             () => onFolderChange(f.name),
           ),

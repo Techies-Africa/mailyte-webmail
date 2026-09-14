@@ -149,6 +149,16 @@ export interface ApiCapabilities {
      * a client can tell which it is looking at without inferring it.
      */
     contacts: boolean;
+    /**
+     * This server can hold a message and send it later.
+     *
+     * Optional in the type because an older mail server does not report the
+     * key at all -- and there it must read as absent, not as present. A
+     * server that does not know `send_at` ignores the field and sends the
+     * message IMMEDIATELY, so a schedule control shown against one would be
+     * the worst kind of wrong.
+     */
+    scheduled_send?: boolean;
   };
 }
 
@@ -256,6 +266,13 @@ export interface SendPayload {
   body_html?: string;
   in_reply_to?: string;
   references?: string;
+  /**
+   * ISO-8601 instant to send at instead of now (schedule send). Absolute,
+   * from `Date.toISOString()`: the server converts it to its own clock, so
+   * a person scheduling 9am in Lagos gets 9am in Lagos whatever the server
+   * is set to.
+   */
+  send_at?: string;
 }
 
 export interface SendResult {
@@ -301,11 +318,47 @@ export function sendMessage(
   if (payload.body_html) form.append('body_html', payload.body_html);
   if (payload.in_reply_to) form.append('in_reply_to', payload.in_reply_to);
   if (payload.references) form.append('references', payload.references);
+  if (payload.send_at) form.append('send_at', payload.send_at);
   for (const file of attachments) form.append('attachments[]', file, file.name);
 
   return call<SendResult>(
     '/api/webmail/messages/send',
     { method: 'POST', body: form },
+    onUnauthorized,
+  );
+}
+
+/**
+ * One message waiting in the Scheduled folder.
+ *
+ * `id` is the ordinary FOLDER:UID message id, so this list merges onto the
+ * folder listing the client already has rather than being fetched twice.
+ * `status` is 'pending' or 'failed' -- a failed one is still listed on
+ * purpose: a message that did not go out is the one most worth showing.
+ */
+export interface ScheduledMessage {
+  id: string;
+  folder: string;
+  send_at: string | null;
+  status: string;
+  attempts: number;
+  error: string | null;
+  created_at: string | null;
+}
+
+export function listScheduled(onUnauthorized: () => void) {
+  return call<{ messages: ScheduledMessage[] }>(
+    '/api/webmail/messages/scheduled',
+    undefined,
+    onUnauthorized,
+  );
+}
+
+/** Cancel a scheduled send. The message is moved back to Drafts, not lost. */
+export function cancelScheduled(id: string, onUnauthorized: () => void) {
+  return call<{ id: string; folder: string }>(
+    `/api/webmail/messages/scheduled/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
     onUnauthorized,
   );
 }

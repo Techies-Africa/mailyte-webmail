@@ -39,6 +39,16 @@ type WebmailListProps = {
   threadCounts?: Record<string, number>;
   /** From the holder's settings (PRD S1). Drives row height and the preview. */
   density?: Density;
+  /**
+   * Send times for messages waiting in the Scheduled folder, by message id.
+   *
+   * When a row has one, the date column shows when it WILL go rather than
+   * when it was written -- the written date is the one thing nobody opening
+   * that folder is asking about.
+   */
+  sendTimes?: Record<string, { label: string; failed: boolean; error: string | null }>;
+  /** Offered on scheduled rows in place of Archive and Trash. */
+  onCancelScheduled?: (id: string) => void;
 };
 
 /**
@@ -70,6 +80,8 @@ export default function WebmailList({
   emptyState,
   threadCounts,
   density = 'comfortable',
+  sendTimes,
+  onCancelScheduled,
 }: WebmailListProps) {
   const [hoveredEmail, setHoveredEmail] = useState<string | null>(null);
 
@@ -106,6 +118,7 @@ export default function WebmailList({
         const threadCount = email.threadId ? (threadCounts?.[email.threadId] ?? 1) : 1;
         const selected = selectedIds.includes(email.id);
         const unread = !email.isRead;
+        const scheduled = sendTimes?.[email.id];
 
         return (
           <div
@@ -204,6 +217,11 @@ export default function WebmailList({
                     {email.preview}
                   </span>
                 )}
+                {scheduled?.failed && (
+                  <span className="ml-2 text-xs text-destructive">
+                    Did not send{scheduled.error ? ` — ${scheduled.error}` : ''}
+                  </span>
+                )}
               </span>
             </div>
 
@@ -219,8 +237,16 @@ export default function WebmailList({
                 >
                   {email.from}
                 </span>
-                <span className="text-xs text-gray-400 flex-shrink-0 tabular-nums">
-                  {listDate(email.timestamp)}
+                <span
+                  className={`text-xs flex-shrink-0 tabular-nums ${
+                    scheduled
+                      ? scheduled.failed
+                        ? 'text-destructive'
+                        : 'text-primary'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {scheduled ? scheduled.label : listDate(email.timestamp)}
                 </span>
               </div>
               <span
@@ -241,19 +267,48 @@ export default function WebmailList({
 
             {/* Date column, wide layout only. Fixed width and tabular figures
                 so the dates line up as a column instead of ragging. */}
-            <div className="hidden md:flex items-center gap-2 flex-shrink-0 w-[5.5rem] justify-end">
+            <div
+              className={`hidden md:flex items-center gap-2 flex-shrink-0 justify-end ${
+                scheduled ? 'w-[9.5rem]' : 'w-[5.5rem]'
+              }`}
+            >
               {email.hasAttachment && (
                 <Paperclip size={14} className="text-gray-400 flex-shrink-0" aria-label="Has attachment" />
               )}
-              <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap">
-                {listDate(email.timestamp)}
+              <span
+                className={`text-xs tabular-nums whitespace-nowrap ${
+                  scheduled
+                    ? scheduled.failed
+                      ? 'text-destructive'
+                      : 'text-primary'
+                    : 'text-gray-400'
+                }`}
+              >
+                {scheduled ? scheduled.label : listDate(email.timestamp)}
               </span>
             </div>
 
             {/* Hover actions sit ON TOP of the date rather than replacing it,
                 so the date column does not flicker as the pointer moves down
                 the list. */}
-            {hoveredEmail === email.id && (
+            {hoveredEmail === email.id && scheduled && onCancelScheduled && (
+              <div className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 items-center rounded-md bg-card shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 px-1 py-0.5">
+                {/* Archive and Trash are deliberately not offered here.
+                    Moving a scheduled message out of this folder DOES call
+                    the send off -- the server treats a missing message as a
+                    cancellation -- and doing that under a button labelled
+                    "Archive" would be a silent one. */}
+                <button
+                  onClick={(e) => stop(e, () => onCancelScheduled(email.id))}
+                  className="px-2 py-1 text-xs rounded hover:bg-muted text-gray-600 dark:text-gray-300"
+                  title="Cancel send and move to Drafts"
+                >
+                  Cancel send
+                </button>
+              </div>
+            )}
+
+            {hoveredEmail === email.id && !scheduled && (
               <div className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 items-center gap-0.5 rounded-md bg-card shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 px-0.5 py-0.5">
                 <button
                   onClick={(e) => stop(e, () => onArchiveEmail(email.id))}

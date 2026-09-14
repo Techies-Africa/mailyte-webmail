@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Minimize2, Maximize2, Send, Sparkles, Trash2, Paperclip, Undo2 } from 'lucide-react';
+import {
+  X,
+  ChevronDown,
+  ChevronUp,
+  Minimize2,
+  Maximize2,
+  Send,
+  Sparkles,
+  Trash2,
+  Paperclip,
+  Undo2,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import type {
   ComposeDraft,
@@ -10,6 +21,7 @@ import type {
 } from './types';
 import WebmailEditor from './WebmailEditor';
 import WebmailRecipientInput from './WebmailRecipientInput';
+import ScheduleSendMenu from './ScheduleSendMenu';
 import { formatTime } from '@/lib/webmail/dates';
 import {
   forwardSubject,
@@ -23,6 +35,11 @@ export type ComposePayload = ComposeDraft & {
   inReplyTo?: string;
   references?: string;
   attachments?: File[];
+  /**
+   * ISO-8601 instant for a scheduled send. Absent means send now, so every
+   * caller that predates schedule send is unchanged.
+   */
+  sendAt?: string;
 };
 
 /**
@@ -45,7 +62,8 @@ type WebmailComposeProps = {
   selfAddress: string;
   initialValues?: Partial<ComposeDraft>;
   onClose: () => void;
-  onSent: () => void;
+  /** `scheduledFor` is set when the message was queued rather than sent. */
+  onSent: (scheduledFor?: Date) => void;
   onSend: (payload: ComposePayload) => Promise<SendResult>;
   /**
    * Absent when the server reports no AI endpoint (GET
@@ -66,6 +84,14 @@ type WebmailComposeProps = {
   existingDraftId?: string;
   /** Autocomplete suggestions for the recipient fields (C2). */
   contacts?: WebmailContact[];
+  /**
+   * Whether this mail server can hold a message and send it later
+   * (GET /mailbox/capabilities -> scheduled_send). Gated rather than always
+   * shown: against an older server the send_at field is ignored and the
+   * message goes out IMMEDIATELY, which is the worst possible way for a
+   * scheduling control to fail.
+   */
+  canSchedule?: boolean;
 };
 
 /** PRD F6: "autosave every 30s + on close". */
@@ -108,6 +134,7 @@ export default function WebmailCompose({
   onDiscardDraft,
   existingDraftId,
   contacts = [],
+  canSchedule = false,
 }: WebmailComposeProps) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -117,6 +144,7 @@ export default function WebmailCompose({
   const [aiPrompt, setAiPrompt] = useState('');
   const [showAiPrompt, setShowAiPrompt] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -339,8 +367,9 @@ export default function WebmailCompose({
     setAttachments((prev) => [...prev, ...incoming]);
   };
 
-  const handleSend = async () => {
+  const handleSend = async (sendAt?: Date) => {
     setSendError(null);
+    setScheduling(!!sendAt);
     setIsSending(true);
     try {
       const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
@@ -351,6 +380,7 @@ export default function WebmailCompose({
         inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : undefined,
         references: isReply ? (replyTo?.references ?? undefined) : undefined,
         attachments,
+        sendAt: sendAt?.toISOString(),
       });
       if (!result.success) {
         setSendError(result.message ?? 'Could not send this message');
@@ -363,9 +393,10 @@ export default function WebmailCompose({
       const saved = draftIdRef.current;
       if (saved && onDiscardDraft) void onDiscardDraft(saved);
 
-      onSent();
+      onSent(sendAt);
     } finally {
       setIsSending(false);
+      setScheduling(false);
     }
   };
 
@@ -417,6 +448,11 @@ export default function WebmailCompose({
       >
         <h3 className="font-medium text-gray-700 dark:text-gray-300">{title}</h3>
         <div className="flex items-center space-x-2">
+          {/* A chevron, not Minimize2. Both controls used to be diagonal
+              arrows -- inward for "collapse to the title bar", outward for
+              "fill the screen" -- which read as two expand buttons sitting
+              next to each other. The chevron says which way the window is
+              about to travel and leaves the diagonal arrows to mean size. */}
           {!isMobile && (
           <button
             onClick={() => {
@@ -425,8 +461,9 @@ export default function WebmailCompose({
             }}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-1"
             title={isMinimized ? 'Restore' : 'Minimize'}
+            aria-label={isMinimized ? 'Restore' : 'Minimize'}
           >
-            <Minimize2 size={16} />
+            {isMinimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
           )}
           {!isMobile && (
@@ -436,7 +473,8 @@ export default function WebmailCompose({
               setIsMinimized(false);
             }}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-1"
-            title={isMaximized ? 'Restore' : 'Maximize'}
+            title={isMaximized ? 'Exit full screen' : 'Full screen'}
+            aria-label={isMaximized ? 'Exit full screen' : 'Full screen'}
           >
             {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
@@ -632,18 +670,33 @@ export default function WebmailCompose({
                     : `Draft saved ${draftSavedAt ? formatTime(draftSavedAt) : ''}`}
                 </span>
               )}
-              <button
-                onClick={handleSend}
-                disabled={isSending || !draft.to.trim()}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-md flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSending ? (
-                  <span className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full mr-2" />
-                ) : (
-                  <Send size={16} className="mr-2" />
+              {/* A split button: Send, and a caret for "send it later". The
+                  caret is only rendered when the SERVER says it can hold a
+                  message -- an older mail server ignores send_at and posts
+                  the message immediately, and a scheduling control that
+                  silently sends now is worse than no control. */}
+              <div className="flex items-stretch">
+                <button
+                  onClick={() => void handleSend()}
+                  disabled={isSending || !draft.to.trim()}
+                  className={`px-4 py-2 bg-primary text-primary-foreground flex items-center disabled:opacity-50 disabled:cursor-not-allowed ${
+                    canSchedule ? 'rounded-l-md' : 'rounded-md'
+                  }`}
+                >
+                  {isSending ? (
+                    <span className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full mr-2" />
+                  ) : (
+                    <Send size={16} className="mr-2" />
+                  )}
+                  {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : 'Send'}
+                </button>
+                {canSchedule && (
+                  <ScheduleSendMenu
+                    disabled={isSending || !draft.to.trim()}
+                    onSchedule={(at) => void handleSend(at)}
+                  />
                 )}
-                {isSending ? 'Sending…' : 'Send'}
-              </button>
+              </div>
             </div>
           </div>
         </>

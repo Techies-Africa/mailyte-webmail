@@ -52,10 +52,13 @@ import {
   listContacts,
   getSettings,
   getCapabilities,
+  listScheduled,
+  cancelScheduled as apiCancelScheduled,
   createFolder as apiCreateFolder,
   logout as apiLogout,
 } from '@/lib/webmail/client';
-import type { ApiCapabilities } from '@/lib/webmail/client';
+import type { ApiCapabilities, ScheduledMessage } from '@/lib/webmail/client';
+import { formatSendAt } from '@/lib/webmail/scheduleTimes';
 import {
   FALLBACK_FOLDERS,
   foldersFingerprint,
@@ -199,6 +202,10 @@ export default function WebmailInboxPage() {
    */
   const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
   const aiAvailable = capabilities?.ai === true;
+  const scheduleAvailable = capabilities?.scheduled_send === true;
+
+  /** Everything waiting in the Scheduled folder, with its send time. */
+  const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
   // phase-09. Undefined rather than false when absent: the header prop is
   // optional, and an undefined href renders no control at all.
   const calendarHref = capabilities?.calendar === true ? '/calendar' : undefined;
@@ -296,9 +303,22 @@ export default function WebmailInboxPage() {
     return { changed };
   }, [handleUnauthorized]);
 
+  /**
+   * When each message in the Scheduled folder is due.
+   *
+   * A separate call from the folder listing on purpose: the send time lives
+   * on the mail server's own index, not in the message, and joining the two
+   * client-side keeps the message listing one shape for every folder.
+   */
+  const loadScheduled = useCallback(async () => {
+    const result = await listScheduled(handleUnauthorized);
+    setScheduled(result.success ? result.data.messages : []);
+  }, [handleUnauthorized]);
+
   useEffect(() => {
     void loadMessages(activeFolder, { search: activeSearch });
     void loadFolders();
+    void loadScheduled();
     // A PLACEHOLDER only, so the header is not blank on first paint. It is
     // written at login and can outlive the session it describes -- signing in
     // as somebody else without passing through the login page leaves the
@@ -412,6 +432,11 @@ export default function WebmailInboxPage() {
       const { changed } = await loadFolders();
       if (changed) {
         void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
+        // A message leaving Scheduled is exactly the kind of change that
+        // moves a folder's tokens, and its send time has to go with it --
+        // otherwise the row keeps its old time beside a message that has
+        // already gone out.
+        void loadScheduled();
       } else {
         setLastSyncAt(new Date());
       }
@@ -424,7 +449,7 @@ export default function WebmailInboxPage() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [activeFolder, activeSearch, offset, loadFolders, loadMessages]);
+  }, [activeFolder, activeSearch, offset, loadFolders, loadMessages, loadScheduled]);
 
   const refreshAll = useCallback(() => {
     void loadMessages(activeFolder, { offset, search: activeSearch });
@@ -717,6 +742,7 @@ export default function WebmailInboxPage() {
           body_html: payload.body,
           in_reply_to: payload.inReplyTo,
           references: payload.references,
+          send_at: payload.sendAt,
         },
         payload.attachments ?? [],
         handleUnauthorized,
@@ -725,7 +751,23 @@ export default function WebmailInboxPage() {
       if (!result.success) {
         // The message never left. Say so where the user is now -- the
         // compose window is long closed.
-        setError(`"${payload.subject || '(no subject)'}" was not sent: ${result.message}`);
+        const verb = payload.sendAt ? 'was not scheduled' : 'was not sent';
+        setError(`"${payload.subject || '(no subject)'}" ${verb}: ${result.message}`);
+        return;
+      }
+
+      // Scheduled, not sent. Nothing is in Sent and nothing will be for
+      // hours, so the "Message sent to…" wording below would be a lie; the
+      // confirmation names the time instead, which is the one fact the
+      // person needs to check they got it right.
+      if (payload.sendAt) {
+        setNotice({
+          text: `Scheduled to send ${formatSendAt(new Date(payload.sendAt))}`,
+          tone: 'success',
+        });
+        void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
+        void loadFolders();
+        void loadScheduled();
         return;
       }
 
@@ -758,7 +800,15 @@ export default function WebmailInboxPage() {
       void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
       void loadFolders();
     },
-    [activeFolder, activeSearch, offset, handleUnauthorized, loadMessages, loadFolders],
+    [
+      activeFolder,
+      activeSearch,
+      offset,
+      handleUnauthorized,
+      loadMessages,
+      loadFolders,
+      loadScheduled,
+    ],
   );
 
   const cancelUndo = useCallback(() => {
@@ -788,6 +838,16 @@ export default function WebmailInboxPage() {
 
   const send = useCallback(
     async (payload: ComposePayload) => {
+      // A scheduled message skips the undo hold entirely. Holding it for ten
+      // seconds protects nothing -- it is not going out for hours, and it
+      // can be called back from the Scheduled folder for the whole of that
+      // time. Running it through the toast would only delay the
+      // confirmation that says WHEN it will go.
+      if (payload.sendAt) {
+        void deliver(payload);
+        return { success: true as const };
+      }
+
       // Undo-send is opt-in (settings > Composing). With it off there is no
       // hold and no toast -- Send means sent, which is what someone who
       // turned it off is asking for.
@@ -821,6 +881,49 @@ export default function WebmailInboxPage() {
       return { success: true as const };
     },
     [deliver, settings],
+  );
+
+  /**
+   * Send times keyed by message id, for the list to render.
+   *
+   * Built from the whole list rather than filtered to the open folder: a
+   * scheduled message can only be in Scheduled, so there is nothing to
+   * filter, and keying by id means the list never has to know which folder
+   * it is showing.
+   */
+  const sendTimes = useMemo(() => {
+    const map: Record<string, { label: string; failed: boolean; error: string | null }> = {};
+    for (const row of scheduled) {
+      map[row.id] = {
+        label: row.send_at ? formatSendAt(new Date(row.send_at)) : 'Scheduled',
+        failed: row.status === 'failed',
+        error: row.error,
+      };
+    }
+    return map;
+  }, [scheduled]);
+
+  const cancelScheduledSend = useCallback(
+    async (id: string) => {
+      const result = await apiCancelScheduled(id, handleUnauthorized);
+      if (!result.success) {
+        setError(`Could not cancel that scheduled message: ${result.message}`);
+        return;
+      }
+      setNotice({ text: 'Send cancelled. The message is in your drafts.', tone: 'success' });
+      void loadScheduled();
+      void loadFolders();
+      void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
+    },
+    [
+      handleUnauthorized,
+      loadScheduled,
+      loadFolders,
+      loadMessages,
+      activeFolder,
+      offset,
+      activeSearch,
+    ],
   );
 
   const aiWrite = useCallback(
@@ -1104,6 +1207,8 @@ export default function WebmailInboxPage() {
                     }
                     onEmailClick={handleOpen}
                     loading={loadingList}
+                    sendTimes={sendTimes}
+                    onCancelScheduled={(id) => void cancelScheduledSend(id)}
                     onStarEmail={(id) => void toggleStar(id)}
                     onArchiveEmail={(id) => void archive([id])}
                     onTrashEmail={(id) => {
@@ -1228,6 +1333,7 @@ export default function WebmailInboxPage() {
           onDiscardDraft={discardDraft}
           existingDraftId={compose.draftId}
           contacts={contacts}
+          canSchedule={scheduleAvailable}
         />
       )}
     </div>

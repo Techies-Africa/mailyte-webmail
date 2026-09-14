@@ -1,4 +1,14 @@
-import { Inbox, Send, FileEdit, Trash2, Archive, AlertOctagon, Star, Search } from 'lucide-react';
+import {
+  Inbox,
+  Send,
+  FileEdit,
+  CalendarClock,
+  Trash2,
+  Archive,
+  AlertOctagon,
+  Star,
+  Search,
+} from 'lucide-react';
 
 type WebmailEmptyStateProps = {
   /** The IMAP folder name, or the starred/search pseudo-views. */
@@ -24,6 +34,11 @@ const COPY: Record<string, { icon: React.ReactNode; title: string; body: string 
     icon: <FileEdit size={28} />,
     title: 'No drafts',
     body: 'Half-written messages are saved here automatically.',
+  },
+  scheduled: {
+    icon: <CalendarClock size={28} />,
+    title: 'Nothing scheduled',
+    body: 'Use the arrow beside Send to write a message now and send it later.',
   },
   trash: {
     icon: <Trash2 size={28} />,
