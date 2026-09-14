@@ -1,0 +1,40 @@
+# Without this file a LOCAL build cannot work at all.
+#
+# The builder stage runs `npm ci` and then `COPY . .`, so anything present in
+# the working tree lands on top of that install. On a developer machine
+# node_modules holds host-native binaries -- @next/swc-darwin-arm64 and
+# sharp-darwin-arm64 here -- which replace the linux ones npm just installed,
+# and `npm run build` dies on "Failed to load SWC binary". CI never hit it
+# because actions/checkout produces a clean tree, so the break was invisible
+# until someone built the image by hand.
+#
+# Keeping the context clean also stops ~600MB of node_modules and .next being
+# shipped to the buildkit daemon on every build.
+node_modules
+.next
+out
+
+# Build metadata regenerated inside the image.
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# History and CI config: nothing in the image reads them, and .git alone is
+# tens of megabytes of context.
+.git
+.gitignore
+.github
+
+# Never bake a developer's environment into a published image. The real
+# configuration is read at RUN time (see MAILBOX_API_BASE_URL in the
+# Dockerfile); .env.example is documentation only.
+.env
+.env.*
+!.env.example
+
+# Local noise.
+.DS_Store
+*.log
+npm-debug.log*
+coverage
+.vscode
+.idea
