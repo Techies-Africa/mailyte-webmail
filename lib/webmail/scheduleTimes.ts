@@ -120,3 +120,50 @@ export function fromDateTimeLocalValue(value: string): Date | null {
 export function earliestPickable(now: Date = new Date()): string {
   return toDateTimeLocalValue(new Date(now.getTime() + MIN_LEAD_MINUTES * 60_000));
 }
+
+/**
+ * What the custom picker opens on: the next WHOLE hour.
+ *
+ * It used to open on `now + 1 hour`, which is a reasonable default almost
+ * everywhere and a terrible one here. At 02:13 in Lagos (UTC+1) the field
+ * read 03:12 -- a time exactly one hour ahead, carrying the current minutes,
+ * which is indistinguishable from a picker quietly applying the UTC offset.
+ * It was reported as a timezone bug, and it looked like one.
+ *
+ * A whole hour cannot be misread that way: 02:13 opens on 03:00, and no
+ * offset produces a time ending in :00 from one ending in :13. It is also
+ * the tidier default -- nobody schedules mail for 03:12.
+ */
+export function defaultPickerTime(now: Date = new Date()): Date {
+  const next = new Date(now);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  // 09:59 would otherwise open on a 10:00 the field's own `min` rejects.
+  if (!canSchedule(next, now)) next.setHours(next.getHours() + 1);
+  return next;
+}
+
+/**
+ * "UTC+1" -- which clock the picker is speaking, said out loud.
+ *
+ * Every time in this feature is the viewer's local time, but a scheduling
+ * control gives nobody a reason to believe that, so it says so.
+ *
+ * Built from getTimezoneOffset rather than
+ * `Intl.DateTimeFormat().resolvedOptions().timeZone`, which would give a
+ * nicer "Africa/Lagos" and is exactly the no-locale Intl call that THROWS on
+ * Android devices with a malformed default locale -- the crash lib/webmail/
+ * dates.ts exists to keep out of this app.
+ */
+export function localZoneLabel(now: Date = new Date()): string {
+  // getTimezoneOffset returns minutes to ADD to local to reach UTC, so it is
+  // positive west of Greenwich -- the opposite sign to how a zone is written.
+  const minutes = -now.getTimezoneOffset();
+  const sign = minutes < 0 ? '-' : '+';
+  const absolute = Math.abs(minutes);
+  const hours = Math.floor(absolute / 60);
+  const rest = absolute % 60;
+  return rest
+    ? `UTC${sign}${hours}:${String(rest).padStart(2, '0')}`
+    : `UTC${sign}${hours}`;
+}

@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, ChevronUp } from 'lucide-react';
 import {
   canSchedule,
+  defaultPickerTime,
   earliestPickable,
   fromDateTimeLocalValue,
+  localZoneLabel,
   schedulePresets,
   toDateTimeLocalValue,
 } from '@/lib/webmail/scheduleTimes';
@@ -31,6 +33,10 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
   const [presets, setPresets] = useState(() => schedulePresets());
   const [custom, setCustom] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Read when the menu opens, not during render: this component only ever
+  // mounts behind a click, but reading the browser's clock during a render
+  // Next may also run on the server is how a hydration mismatch starts.
+  const [zone, setZone] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,7 +64,8 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
   const openMenu = () => {
     const now = new Date();
     setPresets(schedulePresets(now));
-    setCustom(toDateTimeLocalValue(new Date(now.getTime() + 60 * 60_000)));
+    setCustom(toDateTimeLocalValue(defaultPickerTime(now)));
+    setZone(localZoneLabel(now));
     setError(null);
     setPicking(false);
     setOpen((v) => !v);
@@ -157,7 +164,17 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
                 }}
                 className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20"
               />
-              {error && <p className="text-xs text-destructive">{error}</p>}
+              {/* Said out loud because a scheduling control gives nobody a
+                  reason to assume it. The first question anyone asks of one
+                  is "whose clock is that?" -- and the answer being "yours"
+                  is only obvious once it is written down. */}
+              {error ? (
+                <p className="text-xs text-destructive">{error}</p>
+              ) : (
+                <p className="text-xs text-gray-400">
+                  Your local time{zone ? ` (${zone})` : ''}.
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
