@@ -120,6 +120,35 @@ export function listContacts(onUnauthorized: () => void, book = 'default') {
   );
 }
 
+/** One book's worth of contacts, with the book it came from. */
+export type BookContacts = { book: AddressBook; contacts: Contact[] };
+
+/**
+ * Every book this mailbox can see, and what is in each.
+ *
+ * For compose autocomplete, which wants the company directory as well as the
+ * personal book -- colleagues that nobody has written to yet exist only in
+ * the directory, and before this they simply did not complete.
+ *
+ * Books are fetched in parallel and a book that fails is dropped rather than
+ * failing the set: autocomplete is an addition, and losing the personal book
+ * because a shared one timed out would be a worse trade than one missing
+ * name. An empty array is a normal answer, not an error.
+ */
+export async function listAllContacts(onUnauthorized: () => void): Promise<BookContacts[]> {
+  const books = await listAddressBooks(onUnauthorized);
+  if (!books.success) return [];
+
+  const loaded = await Promise.all(
+    books.data.map(async (book) => {
+      const contacts = await listContacts(onUnauthorized, book.uri);
+      return contacts.success ? { book, contacts: contacts.data } : null;
+    }),
+  );
+
+  return loaded.filter((entry): entry is BookContacts => entry !== null);
+}
+
 export function createContact(
   draft: ContactDraft,
   onUnauthorized: () => void,

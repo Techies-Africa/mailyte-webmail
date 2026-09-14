@@ -63,7 +63,18 @@ export interface WebmailMessage extends WebmailListItem {
 export interface WebmailContact {
   name: string | null;
   email: string;
-  saved?: boolean;
+  /**
+   * Which list this suggestion came from, and the order they rank in.
+   *
+   * `saved` -- a card the holder chose to keep. `directory` -- a colleague,
+   * from the company directory. Absent -- harvested from message headers,
+   * which covers everyone written to but nobody deliberately.
+   *
+   * One field rather than a boolean per source: they are mutually exclusive
+   * (the merge in app/page.tsx keeps the first occurrence of an address), and
+   * two independent flags would let a contact claim to be both.
+   */
+  source?: 'saved' | 'directory';
 }
 
 export interface WebmailSettings {

@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  listContacts as listSavedContacts,
-  displayName as contactName,
-} from '@/lib/webmail/contacts';
+import { listAllContacts, displayName as contactName } from '@/lib/webmail/contacts';
 import { Trash2, Check } from 'lucide-react';
 import WebmailSidebar, { STARRED_VIEW } from '@/components/webmail/WebmailSidebar';
 import WebmailHeader from '@/components/webmail/WebmailHeader';
@@ -362,27 +359,54 @@ export default function WebmailInboxPage() {
     void listContacts(handleUnauthorized).then((result) => {
       if (result.success) setContacts(result.data.map(toContact));
     });
-    // Saved contacts are merged in ahead of the harvested ones, de-duplicated
-    // by address. Both are kept: harvested addresses cover everyone written
-    // to, saved cards cover the people deliberately kept, and a curated
-    // record should win when the same address appears in both. Failure is
-    // silent by design -- the address book is an addition to autocomplete,
-    // not a prerequisite for it.
-    void listSavedContacts(handleUnauthorized).then((result) => {
-      if (!result.success) return;
-      const saved = result.data
-        .flatMap((contact) =>
-          contact.emails.map((email) => ({
-            name: contactName(contact),
-            email: email.address,
-            saved: true,
-          })),
-        )
-        .filter((entry) => entry.email);
-      if (saved.length === 0) return;
+    // Three sources, merged in this order and de-duplicated by address:
+    //
+    //   saved      cards the holder deliberately kept
+    //   directory  colleagues, generated from the mailbox list
+    //   harvested  everyone written to or heard from, by frequency
+    //
+    // All three are kept. A curated record should win over a generated one,
+    // and a generated one over an address that merely appeared in a header --
+    // but the harvested list is the only one that knows who you ACTUALLY
+    // write to, so it is never dropped, only outranked.
+    //
+    // The directory is why this reads every book rather than just the
+    // personal one: a colleague nobody has emailed yet exists in no other
+    // list, and before this they did not complete at all.
+    //
+    // Failure is silent by design -- the address book is an addition to
+    // autocomplete, not a prerequisite for it.
+    void listAllContacts(handleUnauthorized).then((books) => {
+      const flatten = (entries: typeof books, wanted: 'saved' | 'directory') =>
+        entries
+          .filter((entry) => (entry.book.read_only ? 'directory' : 'saved') === wanted)
+          .flatMap((entry) =>
+            entry.contacts.flatMap((contact) =>
+              contact.emails.map((email) => ({
+                name: contactName(contact),
+                email: email.address,
+                source: wanted,
+              })),
+            ),
+          )
+          .filter((entry) => entry.email);
+
+      // read_only is the server's own answer about the collection, not a
+      // guess from its name -- the same signal the address book screen uses
+      // to decide whether to offer editing controls.
+      const ranked = [...flatten(books, 'saved'), ...flatten(books, 'directory')];
+      if (ranked.length === 0) return;
+
       setContacts((current) => {
-        const seen = new Set(saved.map((entry) => entry.email.toLowerCase()));
-        return [...saved, ...current.filter((c) => !seen.has(c.email.toLowerCase()))];
+        const seen = new Set<string>();
+        const merged: WebmailContact[] = [];
+        for (const entry of [...ranked, ...current]) {
+          const key = entry.email.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(entry);
+        }
+        return merged;
       });
     });
     void getSettings(handleUnauthorized).then((result) => {
