@@ -22,7 +22,7 @@ type Props = {
 };
 
 const CHOICES: { value: RsvpResponse; label: string; icon: typeof Check; tone: string }[] = [
-  { value: 'accepted', label: 'Yes', icon: Check, tone: 'bg-teal-600 text-white' },
+  { value: 'accepted', label: 'Yes', icon: Check, tone: 'bg-primary text-primary-foreground hover:bg-primary/90' },
   {
     value: 'tentative',
     label: 'Maybe',

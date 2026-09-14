@@ -197,7 +197,7 @@ export default function CalendarSettings({ onUnauthorized }: SettingsSectionProp
           type="button"
           onClick={create}
           disabled={busy}
-          className="flex items-center gap-1.5 rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           <Plus size={15} /> Create a subscription link
         </button>

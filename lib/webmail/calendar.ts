@@ -192,6 +192,24 @@ export function deleteEvent(
   );
 }
 
+export type Room = {
+  email: string;
+  name: string;
+  /** ROOM is a space, RESOURCE is a thing that moves -- a projector, a car. */
+  type: 'ROOM' | 'RESOURCE';
+  capacity: number | null;
+  location: string | null;
+};
+
+/**
+ * Rooms this mailbox may invite. Empty for most organizations, and that is
+ * the normal case rather than a failure -- a company with no bookable rooms
+ * should see no room controls at all, not an empty picker.
+ */
+export function listRooms(onUnauthorized: () => void) {
+  return call<Room[]>('/api/webmail/calendar/rooms', undefined, onUnauthorized);
+}
+
 export function listSubscriptions(onUnauthorized: () => void) {
   return call<SubscriptionLink[]>(
     '/api/webmail/calendar/subscriptions',

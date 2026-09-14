@@ -244,7 +244,7 @@ export default function CalendarPage() {
           This mail server does not run a calendar service, so there is nothing
           to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm text-teal-600 underline dark:text-teal-400">
+        <a href="/" className="text-sm text-primary underline">
           Back to mail
         </a>
       </div>
@@ -308,7 +308,7 @@ export default function CalendarPage() {
                 className={[
                   'px-2.5 py-1 text-sm capitalize',
                   view === mode
-                    ? 'bg-teal-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'hover:bg-neutral-100 dark:hover:bg-neutral-800',
                 ].join(' ')}
               >
@@ -330,7 +330,7 @@ export default function CalendarPage() {
             <button
               type="button"
               onClick={() => openNew(new Date(), false)}
-              className="flex items-center gap-1.5 rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white"
+              className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               <Plus size={15} /> New
             </button>
