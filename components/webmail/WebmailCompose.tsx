@@ -154,6 +154,9 @@ export default function WebmailCompose({
     initialDraft(mode, replyTo, selfAddress, initialValues),
   );
 
+  /** Both halves of the split Send button turn off together. */
+  const sendDisabled = isSending || !draft.to.trim();
+
   const [draftId, setDraftId] = useState<string | undefined>(existingDraftId);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -675,24 +678,43 @@ export default function WebmailCompose({
                   message -- an older mail server ignores send_at and posts
                   the message immediately, and a scheduling control that
                   silently sends now is worse than no control. */}
-              <div className="flex items-stretch">
+              {/* ONE surface, two halves. The colour and the rounding live on
+                  the wrapper and each half is transparent over it, so the
+                  control reads as a single button with a divider rather than
+                  two buttons pushed together -- which is what the previous
+                  version looked like: each half carried its own bg-primary
+                  and the seam between them was a full-height light border
+                  running right into the rounded corners.
+
+                  Hover is a dark overlay rather than the hover:bg-primary/90
+                  used elsewhere, because a 90% primary tint laid over a
+                  primary surface is the same colour: the hover would not
+                  show at all. No overflow-hidden, so a keyboard focus ring
+                  is not clipped off. */}
+              <div
+                className={`flex items-stretch rounded-md bg-primary text-primary-foreground ${
+                  sendDisabled ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
                 <button
                   onClick={() => void handleSend()}
-                  disabled={isSending || !draft.to.trim()}
-                  className={`px-4 py-2 bg-primary text-primary-foreground flex items-center disabled:opacity-50 disabled:cursor-not-allowed ${
-                    canSchedule ? 'rounded-l-md' : 'rounded-md'
+                  disabled={sendDisabled}
+                  className={`px-4 py-2 flex items-center gap-2 rounded-l-md transition-colors hover:bg-black/10 disabled:cursor-not-allowed ${
+                    canSchedule ? '' : 'rounded-r-md'
                   }`}
                 >
                   {isSending ? (
-                    <span className="animate-spin h-4 w-4 border-2 border-black border-t-transparent rounded-full mr-2" />
+                    // Was border-black: a black spinner on deep indigo, left
+                    // over from the gold brand it was drawn against.
+                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
-                    <Send size={16} className="mr-2" />
+                    <Send size={16} />
                   )}
                   {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : 'Send'}
                 </button>
                 {canSchedule && (
                   <ScheduleSendMenu
-                    disabled={isSending || !draft.to.trim()}
+                    disabled={sendDisabled}
                     onSchedule={(at) => void handleSend(at)}
                   />
                 )}

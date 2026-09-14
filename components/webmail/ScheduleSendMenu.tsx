@@ -84,12 +84,19 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
   };
 
   return (
-    <div className="relative" ref={containerRef}>
+    // `flex items-stretch` so the caret half is exactly as tall as Send; the
+    // wrapper carries no colour of its own because the split button's single
+    // surface is painted by its parent (see WebmailCompose).
+    <div className="relative flex items-stretch" ref={containerRef}>
+      {/* Inset by my-2 so it reads as a divider WITHIN one control. A
+          full-height rule runs into the rounded corners and makes the caret
+          look like a second button stuck on the side. */}
+      <span aria-hidden className="my-2 w-px bg-primary-foreground/30" />
       <button
         type="button"
         onClick={openMenu}
         disabled={disabled}
-        className="px-2 py-2 bg-primary text-primary-foreground rounded-r-md border-l border-primary-foreground/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-2.5 flex items-center justify-center rounded-r-md transition-colors hover:bg-black/10 disabled:cursor-not-allowed"
         title="Schedule send"
         aria-label="Schedule send"
         aria-haspopup="menu"
@@ -101,7 +108,7 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-2 w-72 rounded-lg border border-border bg-card shadow-xl z-20 overflow-hidden"
+          className="absolute bottom-full right-0 mb-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-xl z-20 overflow-hidden"
         >
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
             <CalendarClock size={16} className="text-gray-400" />
@@ -118,8 +125,13 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
                   onClick={() => choose(preset.at)}
                   className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted"
                 >
-                  <span>{preset.label}</span>
-                  <span className="text-xs text-gray-400 flex-shrink-0">{preset.when}</span>
+                  {/* Neither side wraps: a label folding onto a second line
+                      leaves one row taller than the others and the menu
+                      reads as broken rather than as a list. */}
+                  <span className="whitespace-nowrap">{preset.label}</span>
+                  <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                    {preset.when}
+                  </span>
                 </button>
               ))}
               <button

@@ -27,7 +27,7 @@ export interface SchedulePreset {
   key: string;
   /** "Tomorrow morning" */
   label: string;
-  /** "Tue, Sep 15, 8:00 AM" */
+  /** "Sep 15, 8:00 AM" */
   when: string;
   at: Date;
 }
@@ -38,9 +38,23 @@ function atHour(day: Date, hour: number): Date {
   return result;
 }
 
-/** "Tue, Sep 15, 8:00 AM" -- how a scheduled time is written everywhere. */
+/**
+ * "Tue, Sep 15, 8:00 AM" -- a scheduled time on its own, in the message list
+ * and in the confirmation. The weekday earns its place there: it answers
+ * "when is this going out" without the reader working it out from a date.
+ */
 export function formatSendAt(date: Date): string {
   return isValid(date) ? format(date, 'EEE, MMM d, h:mm a') : '—';
+}
+
+/**
+ * "Sep 15, 8:00 AM" -- the same time beside a preset that already names the
+ * day. "Monday morning ... Mon, Sep 21" says Monday twice, and the extra
+ * four characters were enough to wrap "Tomorrow afternoon" onto a second
+ * line and leave the menu with uneven rows.
+ */
+export function formatScheduleHint(date: Date): string {
+  return isValid(date) ? format(date, 'MMM d, h:mm a') : '—';
 }
 
 /**
@@ -72,7 +86,7 @@ export function schedulePresets(now: Date = new Date()): SchedulePreset[] {
       return true;
     })
     .sort((a, b) => a.at.getTime() - b.at.getTime())
-    .map((candidate) => ({ ...candidate, when: formatSendAt(candidate.at) }));
+    .map((candidate) => ({ ...candidate, when: formatScheduleHint(candidate.at) }));
 }
 
 /** Whether a chosen time is far enough ahead to be accepted. */
