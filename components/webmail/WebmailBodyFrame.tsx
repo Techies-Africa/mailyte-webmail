@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageOff } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
 import type { WebmailAttachment } from './types';
 
@@ -46,11 +47,21 @@ import type { WebmailAttachment } from './types';
  * not to try. Every major mail client renders HTML mail on white in dark mode
  * for the same reason. `color-scheme: light` stops the browser dark-styling
  * form controls and scrollbars inside the frame too.
+ *
+ * What DOES follow the theme is how bright that light is. Pure white against
+ * a 4%-lightness page is a lightbox in the middle of the screen; in dark mode
+ * the surface dims to a warm paper instead (--email-surface in globals.css),
+ * which is a change of brightness rather than of hue, so every colour the
+ * sender chose still sits on the light ground it was chosen for.
+ *
+ * A sender who paints their own white -- a table cell, a wrapper div -- still
+ * gets white, and should: that is their design, and second-guessing it is the
+ * inversion this deliberately does not do.
  */
-function emailSafeReset() {
+function emailSafeReset(surface: string) {
   return `<style>
   :root { color-scheme: light; }
-  html, body { max-width: 100%; overflow-x: hidden; background: #ffffff; color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  html, body { max-width: 100%; overflow-x: hidden; background: ${surface}; color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
   /* The frame is sized to the body's height, so the body's height must never
      depend on the frame's -- a message shipping "body { height: 100% }"
      would otherwise resolve to the viewport and grow every time we resized
@@ -86,6 +97,26 @@ export default function WebmailBodyFrame({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [height, setHeight] = useState(150);
 
+  /**
+   * --email-surface, resolved. The frame is a separate document and cannot
+   * read this page's custom properties, so the value is looked up here and
+   * written into its stylesheet.
+   *
+   * Read during render rather than in an effect: an effect would paint the
+   * light-mode white first and correct it a frame later, which is a flash of
+   * exactly the glare this removes. `resolvedTheme` is the dependency, so a
+   * theme toggle re-reads it -- `theme` alone would be "system" and never
+   * change when the OS does.
+   */
+  const { resolvedTheme } = useTheme();
+  const surface = useMemo(() => {
+    if (typeof document === 'undefined') return 'white';
+    const token = getComputedStyle(document.documentElement)
+      .getPropertyValue('--email-surface')
+      .trim();
+    return token ? `hsl(${token})` : 'white';
+  }, [resolvedTheme]);
+
   const sanitized = useMemo(
     () => sanitizeEmailHtml(html, { attachments, attachmentHref, allowRemoteImages }),
     [html, attachments, attachmentHref, allowRemoteImages],
@@ -104,7 +135,7 @@ export default function WebmailBodyFrame({
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
-      srcDoc={emailSafeReset() + sanitized.html}
+      srcDoc={emailSafeReset(surface) + sanitized.html}
       onLoad={() => {
         const doc = iframeRef.current?.contentWindow?.document;
         if (!doc?.documentElement) return;

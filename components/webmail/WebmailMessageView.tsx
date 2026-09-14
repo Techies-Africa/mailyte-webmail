@@ -12,6 +12,7 @@ import {
   Hash,
   Paperclip,
   Download,
+  CalendarClock,
 } from 'lucide-react';
 import type { WebmailAttachment, WebmailFolder, WebmailListItem, WebmailMessage } from './types';
 import WebmailBodyFrame, { BlockedImagesBar } from './WebmailBodyFrame';
@@ -56,6 +57,16 @@ type WebmailMessageViewProps = {
   onAiWrite?: (instruction: string, existingBody: string) => Promise<string>;
   /** Absent when the server reports no AI endpoint -- same rule as onAiWrite. */
   onSummarize?: () => Promise<string>;
+  /**
+   * Set when this message is waiting in the Scheduled folder.
+   *
+   * Opening one otherwise looked exactly like opening any other message: the
+   * only date on screen was the header date, which is when it was WRITTEN.
+   * Nothing said it had not been sent, and nothing said when it would be.
+   */
+  scheduled?: { label: string; failed: boolean; error: string | null };
+  /** Cancel the scheduled send; the message goes back to Drafts. */
+  onCancelScheduled?: () => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -104,6 +115,8 @@ export default function WebmailMessageView({
   onComposeWithBody,
   onAiWrite,
   onSummarize,
+  scheduled,
+  onCancelScheduled,
 }: WebmailMessageViewProps) {
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showDeleteForeverModal, setShowDeleteForeverModal] = useState(false);
@@ -250,6 +263,42 @@ export default function WebmailMessageView({
               </div>
             </div>
           </div>
+
+          {/* Above the body, not below it: the one thing a reader needs to
+              know about this message is that it has not been sent yet, and
+              they need it before they read a word of it. */}
+          {scheduled && (
+            <div
+              className={`mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-sm ${
+                scheduled.failed
+                  ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                  : 'border-primary/30 bg-primary/10 text-foreground'
+              }`}
+            >
+              <CalendarClock size={16} className="flex-shrink-0" />
+              <span className="flex-1 min-w-[12rem]">
+                {scheduled.failed ? (
+                  <>
+                    <strong className="font-medium">This message was not sent.</strong>
+                    {scheduled.error ? ` ${scheduled.error}` : ''}
+                  </>
+                ) : (
+                  <>
+                    <strong className="font-medium">Waiting to send.</strong> It goes out{' '}
+                    {scheduled.label}.
+                  </>
+                )}
+              </span>
+              {onCancelScheduled && (
+                <button
+                  onClick={onCancelScheduled}
+                  className="flex-shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground hover:bg-muted"
+                >
+                  {scheduled.failed ? 'Move to drafts' : 'Cancel send'}
+                </button>
+              )}
+            </div>
+          )}
 
           <BlockedImagesBar
             count={allowRemoteImages ? 0 : blockedImages}

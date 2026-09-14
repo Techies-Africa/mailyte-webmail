@@ -1254,6 +1254,19 @@ export default function WebmailInboxPage() {
                 }
                 onStar={() => void toggleStar(openMessage.id)}
                 onMove={(folder) => void move([openMessage.id], folder)}
+                scheduled={sendTimes[openMessage.id]}
+                onCancelScheduled={
+                  sendTimes[openMessage.id]
+                    ? () => {
+                        // Close the reading pane first: the message is about
+                        // to move to Drafts, so the id being read here stops
+                        // resolving the moment the cancel lands.
+                        setOpenMessage(null);
+                        pushUrlState(activeFolder, null);
+                        void cancelScheduledSend(openMessage.id);
+                      }
+                    : undefined
+                }
                 onReply={() => openCompose('reply')}
                 onReplyAll={() => openCompose('replyAll')}
                 onForward={() => openCompose('forward')}

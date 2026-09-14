@@ -30,6 +30,14 @@
   --destructive-foreground: 0 0% 100%;
   --ring: 244 54.5% 41.4%;
   --radius: 0.5rem;
+
+  /* The surface an EMAIL BODY is painted on, inside its sandboxed frame.
+     Its own token because it is not a UI surface: HTML mail is authored
+     against a light background and paints its own colours over it, so this
+     one stays light in both themes (see WebmailBodyFrame) and only its
+     brightness changes. Read from JS and injected into the frame, because
+     the frame is a separate document that cannot see these variables. */
+  --email-surface: 0 0% 100%;
 }
 
 .dark {
@@ -55,6 +63,13 @@
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
   --ring: 243 61.3% 58.4%;
+
+  /* Still light -- it has to be, the sender's colours assume it -- but not a
+     sheet of pure white glaring out of a 4%-lightness page. Dimmed to a warm
+     paper, which reads as a page rather than a lightbox and leaves the
+     sender's dark text at ~14:1. Not inverted: nothing here can know which of
+     a sender's colours were chosen for a light ground. */
+  --email-surface: 36 12% 89%;
 }
 
 /* ---------------------------------------------------------------------------
