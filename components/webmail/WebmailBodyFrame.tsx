@@ -157,7 +157,10 @@ export default function WebmailBodyFrame({
       // hook, no reading the computed style, and no flash of the bright
       // version before a correction lands.
       style={{ height, filter: 'brightness(var(--email-dim, 1))' }}
-      className={`w-full border-0 bg-white rounded ${className ?? ''}`}
+      // Transparent in light mode (there is nothing to separate it from) --
+      // a real white border only in dark, where the frame is now dimmed dark
+      // enough that without one it would blend into the page around it.
+      className={`w-full border border-transparent dark:border-white/15 bg-white rounded ${className ?? ''}`}
     />
   );
 }

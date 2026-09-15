@@ -68,8 +68,13 @@
      background change reaches only the pixels the sender left transparent,
      and most marketing mail paints its own white. Scaling every pixel keeps
      the sender's relationships intact -- contrast ratios hold, and nothing
-     they chose reads worse than it did on white. */
-  --email-dim: 0.78;
+     they chose reads worse than it did on white.
+
+     Was 0.78, which read as a light-grey card rather than a dark surface --
+     the frame needs to sit dark like the rest of the page, with its own
+     border (see WebmailBodyFrame) doing the job of separating it from an
+     equally-dark background instead of relying on a lighter fill. */
+  --email-dim: 0.35;
 }
 
 /* ---------------------------------------------------------------------------
