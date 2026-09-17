@@ -31,11 +31,6 @@
   --ring: 244 54.5% 41.4%;
   --radius: 0.5rem;
 
-  /* How far down an EMAIL BODY's frame is dimmed (see WebmailBodyFrame).
-     Not a colour: HTML mail is authored against a light background and
-     paints its own over it, so the frame stays light in both themes and
-     only its brightness changes. 1 here means light mode is untouched. */
-  --email-dim: 1;
 }
 
 .dark {
@@ -62,19 +57,12 @@
   --destructive-foreground: 0 0% 98%;
   --ring: 243 61.3% 58.4%;
 
-  /* Still light -- it has to be, the sender's colours assume it -- but not a
-     sheet of pure white glaring out of a 4%-lightness page. The whole frame
-     is dimmed rather than inverted, and rather than merely recoloured: a
-     background change reaches only the pixels the sender left transparent,
-     and most marketing mail paints its own white. Scaling every pixel keeps
-     the sender's relationships intact -- contrast ratios hold, and nothing
-     they chose reads worse than it did on white.
-
-     Was 0.78, which read as a light-grey card rather than a dark surface --
-     the frame needs to sit dark like the rest of the page, with its own
-     border (see WebmailBodyFrame) doing the job of separating it from an
-     equally-dark background instead of relying on a lighter fill. */
-  --email-dim: 0.35;
+  /* --email-dim lived here and is gone. It dimmed an email body's whole
+     frame with filter: brightness() in dark mode, which took the sender's
+     brand colours and photographs down with the white background and made
+     designed templates look broken rather than dark. HTML mail now renders
+     untouched on white in both themes, and only plain text -- which we
+     author ourselves -- follows the theme. See WebmailBodyFrame. */
 }
 
 /* ---------------------------------------------------------------------------

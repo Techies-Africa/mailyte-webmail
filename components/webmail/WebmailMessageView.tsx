@@ -312,6 +312,10 @@ export default function WebmailMessageView({
 
           <WebmailBodyFrame
             html={message.body}
+            // Decides whether the frame is the sender's canvas or ours: an
+            // HTML part renders on white untouched, a plain-text body is our
+            // own wrapper and may follow the theme.
+            isHtml={message.bodyIsHtml}
             attachments={message.attachments}
             attachmentHref={(index) => attachmentHref(message.id, index)}
             allowRemoteImages={allowRemoteImages}

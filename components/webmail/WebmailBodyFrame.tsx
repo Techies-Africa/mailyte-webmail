@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from 'next-themes';
 import { ImageOff } from 'lucide-react';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
 import type { WebmailAttachment } from './types';
@@ -32,40 +33,50 @@ import type { WebmailAttachment } from './types';
 // in the document at all. Two independent layers, which is what "defence in
 // depth" was supposed to mean when only the iframe existed.
 /**
- * Message bodies always render light, whatever theme the app is in.
+ * Two kinds of message, two different answers.
  *
- * This used to follow the app theme and set `color: #e5e7eb` on the body in
- * dark mode. HTML mail is authored against a light background and paints its
- * own -- a white card, a table with a white cell -- but usually leaves the
- * text colour to be inherited. So the email supplied white, we supplied
- * near-white text, and the message came out almost invisible: the only
- * legible parts were the few words the sender had coloured explicitly.
+ * **HTML mail renders on white, untouched, in both themes.** It is authored
+ * against a light background and paints its own -- a white card, a table with
+ * a white cell -- but usually leaves the text colour to be inherited. Nothing
+ * here can know which of the sender's colours were meant for a light ground
+ * and which would survive inversion, so the safe answer is not to try. Every
+ * major mail client does the same.
  *
- * Nothing here can know which of the sender's colours were meant to sit on a
- * light background and which would survive inversion, so the safe answer is
- * not to try. Every major mail client renders HTML mail on white in dark mode
- * for the same reason. `color-scheme: light` stops the browser dark-styling
- * form controls and scrollbars inside the frame too.
+ * That used to mean dimming the whole frame with `filter: brightness()`, on
+ * the reasoning that pure white against a 4%-lightness page is a lightbox in
+ * the middle of the screen. It is, but the cure was worse: a designed
+ * template came out muddy and grey, its brand colours flattened, looking
+ * broken rather than dark. A filter cannot distinguish "the sender's white
+ * background" from "the sender's photograph". So HTML is now left exactly as
+ * the sender built it, and the frame simply reads as a white card on a dark
+ * page -- which is what Gmail and Apple Mail show too.
  *
- * What DOES follow the theme is how bright that light is. Pure white against
- * a 4%-lightness page is a lightbox in the middle of the screen, so in dark
- * mode the whole frame is dimmed with `filter: brightness()` (--email-dim,
- * set on the iframe below).
+ * **Plain text is ours, so it follows the theme properly.** A message with no
+ * HTML part is wrapped by `textToSafeHtml` -- we author every pixel of it,
+ * there is no sender CSS to fight, and a white sheet holding three lines of
+ * text is the case where the lightbox complaint was actually right. So in
+ * dark mode it gets a real dark background and light text, matching the page.
  *
- * Dimming the FRAME rather than recolouring the background is what makes this
- * safe, and it is the second attempt. Setting a darker background here only
- * reaches the pixels where OUR background shows through -- a sender who
- * paints their own white table cell or wrapper div, which is most marketing
- * mail, went on glaring. A filter dims everything the frame renders: the
- * sender's white, their images, their text, all by the same factor. Relative
- * luminance is scaled uniformly, so contrast ratios are preserved (they edge
- * up slightly as absolute luminance falls) and nothing the sender chose
- * becomes less readable than it was on white.
+ * That distinction is the whole design: recolouring is unsafe for HTML
+ * precisely because the sender painted their own background, and perfectly
+ * safe for plain text because we painted it.
+ *
+ * `color-scheme` follows the same split, so the browser's form controls and
+ * scrollbars inside the frame match whichever surface they sit on.
  */
-function emailSafeReset() {
+function emailSafeReset(darkPlainText: boolean) {
+  const surface = darkPlainText
+    // The app's own dark tokens, so the frame is continuous with the page
+    // behind it rather than a near-miss shade floating on top of it.
+    ? { scheme: 'dark', bg: 'hsl(240 10% 4%)', fg: 'hsl(0 0% 98%)', link: '#8b84ff' }
+    : { scheme: 'light', bg: 'white', fg: '#111827', link: '#3730a3' };
+
   return `<style>
-  :root { color-scheme: light; }
-  html, body { max-width: 100%; overflow-x: hidden; background: white; color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  :root { color-scheme: ${surface.scheme}; }
+  html, body { max-width: 100%; overflow-x: hidden; background: ${surface.bg}; color: ${surface.fg}; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  /* Only ever reached by plain text, where we wrote the markup -- an HTML
+     sender's own link colours are never overridden. */
+  a { color: ${surface.link}; }
   /* The frame is sized to the body's height, so the body's height must never
      depend on the frame's -- a message shipping "body { height: 100% }"
      would otherwise resolve to the viewport and grow every time we resized
@@ -79,6 +90,19 @@ function emailSafeReset() {
 
 type WebmailBodyFrameProps = {
   html: string;
+  /**
+   * Did the sender supply an HTML part? (`WebmailMessage.bodyIsHtml`.)
+   *
+   * Decides whether this frame is the sender's canvas or ours. True: render
+   * on white, unaltered, in both themes. False: the body is our own
+   * `textToSafeHtml` wrapper, so dark mode may recolour it safely.
+   *
+   * Defaults to true, which is the conservative direction -- treating HTML as
+   * plain text would recolour a sender's background out from under their
+   * text and could make a message unreadable; the reverse merely shows a
+   * white card where a dark one would have been prettier.
+   */
+  isHtml?: boolean;
   className?: string;
   /** The message's attachments, so cid: inline images resolve. */
   attachments?: WebmailAttachment[];
@@ -91,6 +115,7 @@ type WebmailBodyFrameProps = {
 
 export default function WebmailBodyFrame({
   html,
+  isHtml = true,
   className,
   attachments,
   attachmentHref,
@@ -101,6 +126,21 @@ export default function WebmailBodyFrame({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [height, setHeight] = useState(150);
 
+  // Seeded from the <html> class rather than from useTheme(), because
+  // next-themes resolves to undefined until after mount and its blocking
+  // script has already set that class before hydration. Reading it is
+  // therefore correct on the very first paint -- waiting for the hook would
+  // flash a white sheet behind a plain-text message in dark mode, which is
+  // exactly the thing this change exists to remove.
+  const { resolvedTheme } = useTheme();
+  const [isDark, setIsDark] = useState(
+    () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  );
+  useEffect(() => {
+    if (resolvedTheme) setIsDark(resolvedTheme === 'dark');
+  }, [resolvedTheme]);
+
+  const darkPlainText = !isHtml && isDark;
 
   const sanitized = useMemo(
     () => sanitizeEmailHtml(html, { attachments, attachmentHref, allowRemoteImages }),
@@ -120,7 +160,7 @@ export default function WebmailBodyFrame({
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
-      srcDoc={emailSafeReset() + sanitized.html}
+      srcDoc={emailSafeReset(darkPlainText) + sanitized.html}
       onLoad={() => {
         const doc = iframeRef.current?.contentWindow?.document;
         if (!doc?.documentElement) return;
@@ -151,16 +191,17 @@ export default function WebmailBodyFrame({
         observer.observe(doc.body);
         resizeObserverRef.current = observer;
       }}
-      // brightness() on the FRAME, not a colour inside it -- see
-      // emailSafeReset. --email-dim is 1 in light mode, so this is inert
-      // there. Applied here in the parent document, which means no theme
-      // hook, no reading the computed style, and no flash of the bright
-      // version before a correction lands.
-      style={{ height, filter: 'brightness(var(--email-dim, 1))' }}
-      // Transparent in light mode (there is nothing to separate it from) --
-      // a real white border only in dark, where the frame is now dimmed dark
-      // enough that without one it would blend into the page around it.
-      className={`w-full border border-transparent dark:border-white/15 bg-white rounded ${className ?? ''}`}
+      // No filter. A brightness() pass used to dim the whole frame in dark
+      // mode; it took the sender's brand colours and photographs down with
+      // the background and made designed templates look broken. See
+      // emailSafeReset.
+      style={{ height }}
+      // The border earns its keep only for a dark plain-text frame, which
+      // would otherwise have no edge against an equally dark page. A white
+      // HTML card already separates itself.
+      className={`w-full rounded border ${
+        darkPlainText ? 'border-white/15 bg-[hsl(240_10%_4%)]' : 'border-transparent bg-white'
+      } ${className ?? ''}`}
     />
   );
 }
