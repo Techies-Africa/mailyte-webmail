@@ -429,6 +429,8 @@ export function getSettings(onUnauthorized: () => void) {
 
 export function updateSettings(
   payload: {
+    /** The display name on outgoing mail. The server refuses a blank one. */
+    name?: string;
     signature_html?: string;
     signature_on_reply?: boolean;
     display_density?: "comfortable" | "compact";

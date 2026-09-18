@@ -23,6 +23,7 @@ export default function GeneralSettings({
   onSaved,
   onSettingsChanged,
 }: SettingsSectionProps) {
+  const [name, setName] = useState(settings.name ?? '');
   const [signature, setSignature] = useState(settings.signatureHtml);
   const [onReply, setOnReply] = useState(settings.signatureOnReply);
   const [density, setDensity] = useState(settings.displayDensity);
@@ -31,16 +32,31 @@ export default function GeneralSettings({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
     setOnReply(settings.signatureOnReply);
     setDensity(settings.displayDensity);
   }, [settings]);
 
   const save = async () => {
+    // Refused here as well as on the server, so the person is told before the
+    // round trip rather than after it. The server rejects a blank name because
+    // an empty display name is not a setting -- it is the absence of one, and
+    // it would strip the name off every message they send.
+    if (name.trim() === '') {
+      setError('Enter the name recipients should see, or leave your current one in place.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     const result = await updateSettings(
-      { signature_html: signature, signature_on_reply: onReply, display_density: density },
+      {
+        name: name.trim(),
+        signature_html: signature,
+        signature_on_reply: onReply,
+        display_density: density,
+      },
       onUnauthorized,
     );
     setSaving(false);
@@ -59,31 +75,43 @@ export default function GeneralSettings({
   return (
     <div className="space-y-6" data-shortcuts="off">
       {/*
-        The From line, shown because it was invisible.
+        The From line, which was both invisible and unreachable.
 
-        The holder had no way to see what recipients see. The display name
-        reached this settings payload as null for every mailbox -- the mail
-        server's session query never selected it -- so even had this section
-        existed it would have shown nothing. Both halves are fixed together:
-        there is no point rendering a name the API does not send.
+        The display name reached this payload as null for every mailbox -- the
+        mail server's session query never selected it -- so mail went out as a
+        bare address and nobody could see why.
 
-        Read-only on purpose. The name is org-owned: it is set when the
-        mailbox is provisioned and changed by an admin, which is how Google
-        Workspace and Zoho treat it, and it means nobody inside the
-        organization can quietly re-label themselves "IT Helpdesk" on mail
-        their colleagues will trust.
+        Editable by the holder, not just by an admin. It is their name on their
+        mail; an address book entry that can only be corrected by filing a
+        ticket is one that stays wrong. The admin path still exists and still
+        wins at provisioning time, and ReconcileMailboxesJob pulls a change
+        made here back into Laravel so the two copies cannot drift apart.
       */}
       <section>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          <AtSign size={15} /> How your mail is signed
-        </h3>
-        <p className="text-sm text-gray-700 dark:text-gray-300 font-mono break-all">
-          {settings.name ? `${settings.name} <${settings.emailAddress}>` : settings.emailAddress}
-        </p>
-        <p className="mt-1 text-xs text-gray-500">
-          {settings.name
-            ? 'This is what recipients see in their inbox. Ask an administrator to change it.'
-            : 'This mailbox has no display name, so recipients see the address alone. An administrator can set one.'}
+        <label
+          htmlFor="display-name"
+          className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
+          <AtSign size={15} /> Display name
+        </label>
+        <input
+          id="display-name"
+          type="text"
+          value={name}
+          maxLength={255}
+          onChange={(e) => {
+            setName(e.target.value);
+            onDirty?.();
+          }}
+          placeholder="Your name"
+          className="w-full max-w-sm text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
+        />
+        <p className="mt-1.5 text-xs text-gray-500 break-all">
+          Recipients see{' '}
+          <span className="font-mono">
+            {name.trim() ? `${name.trim()} <${settings.emailAddress}>` : settings.emailAddress}
+          </span>
+          . Takes effect on your next message.
         </p>
       </section>
 
