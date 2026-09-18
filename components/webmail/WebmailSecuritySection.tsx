@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldOff, Monitor, Info } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { ShieldCheck, ShieldOff, Monitor, Info } from "lucide-react";
 import {
   beginTwoFactor,
   confirmTwoFactor,
@@ -10,8 +10,8 @@ import {
   type ApiSecurity,
   type ApiSession,
   type ApiTwoFactorEnrolment,
-} from '@/lib/webmail/client';
-import { formatDateTime } from '@/lib/webmail/dates';
+} from "@/lib/webmail/client";
+import { formatDateTime } from "@/lib/webmail/dates";
 
 /**
  * Two-factor and sign-in history for the mailbox holder (PRD S3).
@@ -29,8 +29,10 @@ export default function WebmailSecuritySection({
 }) {
   const [security, setSecurity] = useState<ApiSecurity | null>(null);
   const [sessions, setSessions] = useState<ApiSession[]>([]);
-  const [enrolment, setEnrolment] = useState<ApiTwoFactorEnrolment | null>(null);
-  const [code, setCode] = useState('');
+  const [enrolment, setEnrolment] = useState<ApiTwoFactorEnrolment | null>(
+    null,
+  );
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [disarming, setDisarming] = useState(false);
@@ -40,8 +42,24 @@ export default function WebmailSecuritySection({
       getSecurity(onUnauthorized),
       listSessions(onUnauthorized),
     ]);
-    if (status.success) setSecurity(status.data);
-    if (history.success) setSessions(history.data.sessions);
+    // `success` does not promise a payload.
+    //
+    // call() accepts the mail server's `{type,msg,data}` envelope and returns
+    // `body.data as T` -- a cast, not a check. Any endpoint declared without a
+    // `response_model` answers `type: 'success'` with NO `data` key at all, so
+    // the cast hands back undefined while claiming otherwise. That is what
+    // reached the render here: setSessions(undefined) turned the next paint
+    // into `undefined.slice(0, 8)` and took the whole settings page down to
+    // the error boundary. Seen live on mail.mailyte.com/settings/security.
+    //
+    // Guarded where the value enters state rather than where it is read, so
+    // there is one place to be right and the render can trust its own props.
+    if (status.success) setSecurity(status.data ?? null);
+    if (history.success) {
+      setSessions(
+        Array.isArray(history.data?.sessions) ? history.data.sessions : [],
+      );
+    }
   };
 
   useEffect(() => {
@@ -62,6 +80,18 @@ export default function WebmailSecuritySection({
       setError(result.message);
       return;
     }
+
+    // Same reason as the guard in refresh(): a success envelope with no
+    // payload would otherwise put undefined into state and render an
+    // enrolment panel with no secret and no QR code, which looks like the
+    // feature is broken rather than the response.
+    if (!result.data) {
+      setError(
+        "The mail server did not return an enrolment. Please try again.",
+      );
+      return;
+    }
+
     setEnrolment(result.data);
   };
 
@@ -75,7 +105,7 @@ export default function WebmailSecuritySection({
       return;
     }
     setEnrolment(null);
-    setCode('');
+    setCode("");
     await refresh();
   };
 
@@ -89,7 +119,7 @@ export default function WebmailSecuritySection({
       return;
     }
     setDisarming(false);
-    setCode('');
+    setCode("");
     await refresh();
   };
 
@@ -97,18 +127,25 @@ export default function WebmailSecuritySection({
     <div className="space-y-5" data-shortcuts="off">
       <div>
         <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {security.two_factor_enabled ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}
+          {security.two_factor_enabled ? (
+            <ShieldCheck size={15} />
+          ) : (
+            <ShieldOff size={15} />
+          )}
           Two-factor authentication
         </h3>
 
         <p className="flex items-start gap-1.5 text-xs text-gray-500 mb-3">
           <Info size={13} className="mt-0.5 flex-shrink-0" />
-          Protects signing in to webmail. Mail apps set up with your mailbox password
-          (IMAP/SMTP) are not affected and will keep working.
+          Protects signing in to webmail. Mail apps set up with your mailbox
+          password (IMAP/SMTP) are not affected and will keep working.
         </p>
 
         {error && (
-          <p className="mb-3 text-sm text-red-600 dark:text-red-400" role="alert">
+          <p
+            className="mb-3 text-sm text-red-600 dark:text-red-400"
+            role="alert"
+          >
             {error}
           </p>
         )}
@@ -117,7 +154,7 @@ export default function WebmailSecuritySection({
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-sm text-green-700 dark:text-green-400">
               On · {security.recovery_codes_remaining} recovery code
-              {security.recovery_codes_remaining === 1 ? '' : 's'} left
+              {security.recovery_codes_remaining === 1 ? "" : "s"} left
             </span>
             <button
               onClick={() => {
@@ -142,7 +179,7 @@ export default function WebmailSecuritySection({
             />
             <button
               onClick={() => void turnOff()}
-              disabled={busy || code.trim() === ''}
+              disabled={busy || code.trim() === ""}
               className="px-3 py-1.5 text-sm rounded-md bg-red-600 text-white disabled:opacity-50"
             >
               Turn off
@@ -150,7 +187,7 @@ export default function WebmailSecuritySection({
             <button
               onClick={() => {
                 setDisarming(false);
-                setCode('');
+                setCode("");
               }}
               className="px-3 py-1.5 text-sm text-gray-500"
             >
@@ -165,14 +202,15 @@ export default function WebmailSecuritySection({
             disabled={busy}
             className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
           >
-            {busy ? 'Setting up…' : 'Set up'}
+            {busy ? "Setting up…" : "Set up"}
           </button>
         )}
 
         {!security.two_factor_enabled && enrolment && (
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Scan this with your authenticator app, then enter the code it shows.
+              Scan this with your authenticator app, then enter the code it
+              shows.
             </p>
             <div
               className="inline-block bg-white p-2 rounded border border-gray-200"
@@ -181,7 +219,9 @@ export default function WebmailSecuritySection({
               dangerouslySetInnerHTML={{ __html: enrolment.qr_code_svg }}
             />
             <details className="text-xs text-gray-500">
-              <summary className="cursor-pointer">Can&rsquo;t scan? Enter this key instead</summary>
+              <summary className="cursor-pointer">
+                Can&rsquo;t scan? Enter this key instead
+              </summary>
               <code className="mt-1 block break-all font-mono text-gray-700 dark:text-gray-300">
                 {enrolment.secret}
               </code>
@@ -192,8 +232,8 @@ export default function WebmailSecuritySection({
                 Save these recovery codes
               </p>
               <p className="text-xs text-gray-500 mb-1">
-                Each works once, and this is the only time they are shown. They are how you get
-                in if you lose your phone.
+                Each works once, and this is the only time they are shown. They
+                are how you get in if you lose your phone.
               </p>
               <div className="grid grid-cols-2 gap-1 font-mono text-xs text-gray-700 dark:text-gray-300">
                 {enrolment.recovery_codes.map((recovery) => (
@@ -212,15 +252,15 @@ export default function WebmailSecuritySection({
               />
               <button
                 onClick={() => void confirm()}
-                disabled={busy || code.trim() === ''}
+                disabled={busy || code.trim() === ""}
                 className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
               >
-                {busy ? 'Checking…' : 'Turn on'}
+                {busy ? "Checking…" : "Turn on"}
               </button>
               <button
                 onClick={() => {
                   setEnrolment(null);
-                  setCode('');
+                  setCode("");
                 }}
                 className="px-3 py-1.5 text-sm text-gray-500"
               >
@@ -236,24 +276,33 @@ export default function WebmailSecuritySection({
           <Monitor size={15} /> Recent webmail sign-ins
         </h3>
         <p className="text-xs text-gray-500 mb-2">
-          Webmail only — signing in from a mail app goes straight to the mail server and is not
-          listed here.
+          Webmail only — signing in from a mail app goes straight to the mail
+          server and is not listed here.
         </p>
 
         <ul className="divide-y divide-gray-100 dark:divide-gray-700">
           {sessions.slice(0, 8).map((session) => (
-            <li key={session.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+            <li
+              key={session.id}
+              className="py-2 flex items-center justify-between gap-3 text-sm"
+            >
               <div className="min-w-0">
                 <div className="text-gray-700 dark:text-gray-300">
                   {/* date-fns, never a bare toLocaleString(): that threw on a
                       phone with a malformed default locale and this whole
                       page became Next's error screen. lib/webmail/dates.ts. */}
-                  {session.signed_in_at ? formatDateTime(new Date(session.signed_in_at)) : '—'}
-                  {session.current && <span className="ml-2 text-xs text-primary">this device</span>}
+                  {session.signed_in_at
+                    ? formatDateTime(new Date(session.signed_in_at))
+                    : "—"}
+                  {session.current && (
+                    <span className="ml-2 text-xs text-primary">
+                      this device
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500 truncate">
-                  {session.ip_address ?? 'unknown address'}
-                  {session.user_agent ? ` · ${session.user_agent}` : ''}
+                  {session.ip_address ?? "unknown address"}
+                  {session.user_agent ? ` · ${session.user_agent}` : ""}
                 </div>
               </div>
               {session.active && !session.current && (
@@ -267,7 +316,9 @@ export default function WebmailSecuritySection({
                   Sign out
                 </button>
               )}
-              {session.revoked && <span className="text-xs text-gray-400">signed out</span>}
+              {session.revoked && (
+                <span className="text-xs text-gray-400">signed out</span>
+              )}
             </li>
           ))}
         </ul>
