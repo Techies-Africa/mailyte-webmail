@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { getVacation, updateVacation } from '@/lib/webmail/client';
-import type { SettingsSectionProps } from './types';
+import { useEffect, useState } from "react";
+import { getVacation, updateVacation } from "@/lib/webmail/client";
+import type { SettingsSectionProps } from "./types";
 
 /**
  * The vacation auto-responder (Sieve `vacation`).
@@ -16,10 +16,10 @@ export default function VacationSettings({
   onSaved,
 }: SettingsSectionProps) {
   const [enabled, setEnabled] = useState(false);
-  const [subject, setSubject] = useState('Out of Office');
-  const [message, setMessage] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [subject, setSubject] = useState("Out of Office");
+  const [message, setMessage] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -27,7 +27,28 @@ export default function VacationSettings({
 
   useEffect(() => {
     void getVacation(onUnauthorized).then((result) => {
-      if (result.success) setEnabled(result.data.enabled);
+      // Restore ALL of it, not just the checkbox.
+      //
+      // This read `result.data.enabled` alone, so a saved responder came back
+      // with its switch on and every other field redrawn from the defaults
+      // above -- the subject reverted to "Out of Office", the reply body and
+      // both dates came back empty, and it read as though the save had been
+      // thrown away. It had not: the mail server stores these on the Sieve
+      // script and returns them from parse_vacation. They were simply never
+      // asked for.
+      //
+      // `?.` on data for the same reason as elsewhere: a success envelope does
+      // not guarantee a payload.
+      if (result.success && result.data) {
+        setEnabled(result.data.enabled);
+        // Null means "never set", which is the default rather than an empty
+        // subject line -- an auto-reply with no subject is worse than one
+        // with a dull subject.
+        setSubject(result.data.subject || "Out of Office");
+        setMessage(result.data.message ?? "");
+        setStartDate(result.data.start_date ?? "");
+        setEndDate(result.data.end_date ?? "");
+      }
       setLoading(false);
     });
   }, [onUnauthorized]);
@@ -39,12 +60,14 @@ export default function VacationSettings({
 
   const save = async () => {
     setError(null);
-    if (enabled && message.trim() === '') {
-      setError('Write the reply people will receive, or turn the responder off.');
+    if (enabled && message.trim() === "") {
+      setError(
+        "Write the reply people will receive, or turn the responder off.",
+      );
       return;
     }
     if (startDate && endDate && endDate < startDate) {
-      setError('The end date is before the start date.');
+      setError("The end date is before the start date.");
       return;
     }
 
@@ -52,7 +75,7 @@ export default function VacationSettings({
     const result = await updateVacation(
       {
         enabled,
-        subject: subject.trim() || 'Out of Office',
+        subject: subject.trim() || "Out of Office",
         message,
         start_date: startDate || null,
         end_date: endDate || null,
@@ -70,7 +93,8 @@ export default function VacationSettings({
     setTimeout(() => setSaved(false), 2500);
   };
 
-  if (loading) return <p className="text-sm text-gray-500">Loading vacation settings…</p>;
+  if (loading)
+    return <p className="text-sm text-gray-500">Loading vacation settings…</p>;
 
   return (
     <div className="space-y-4" data-shortcuts="off">
@@ -89,9 +113,14 @@ export default function VacationSettings({
         </span>
       </label>
 
-      <div className={`space-y-3 ${enabled ? '' : 'opacity-50 pointer-events-none'}`}>
+      <div
+        className={`space-y-3 ${enabled ? "" : "opacity-50 pointer-events-none"}`}
+      >
         <div>
-          <label className="block text-xs text-gray-500 mb-1" htmlFor="vac-subject">
+          <label
+            className="block text-xs text-gray-500 mb-1"
+            htmlFor="vac-subject"
+          >
             Subject
           </label>
           <input
@@ -106,7 +135,10 @@ export default function VacationSettings({
         </div>
 
         <div>
-          <label className="block text-xs text-gray-500 mb-1" htmlFor="vac-message">
+          <label
+            className="block text-xs text-gray-500 mb-1"
+            htmlFor="vac-message"
+          >
             Reply
           </label>
           <textarea
@@ -124,7 +156,10 @@ export default function VacationSettings({
 
         <div className="flex flex-wrap gap-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1" htmlFor="vac-start">
+            <label
+              className="block text-xs text-gray-500 mb-1"
+              htmlFor="vac-start"
+            >
               Start (optional)
             </label>
             <input
@@ -139,7 +174,10 @@ export default function VacationSettings({
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1" htmlFor="vac-end">
+            <label
+              className="block text-xs text-gray-500 mb-1"
+              htmlFor="vac-end"
+            >
               End (optional)
             </label>
             <input
@@ -156,8 +194,8 @@ export default function VacationSettings({
         </div>
 
         <p className="text-xs text-gray-500">
-          Each sender receives at most one reply per day, so a conversation with another
-          autoresponder cannot loop.
+          Each sender receives at most one reply per day, so a conversation with
+          another autoresponder cannot loop.
         </p>
       </div>
 
@@ -173,7 +211,7 @@ export default function VacationSettings({
           disabled={saving}
           className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? "Saving…" : "Save"}
         </button>
         {saved && <span className="text-sm text-green-600">Saved</span>}
       </div>

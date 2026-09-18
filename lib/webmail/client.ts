@@ -9,9 +9,10 @@ import type {
   ApiMessageDetail,
   ApiMessageSummary,
   ApiSettings,
-} from './adapters';
+} from "./adapters";
 
-export type ApiResult<T> = { success: true; data: T } | { success: false; message: string };
+export type ApiResult<T> =
+  { success: true; data: T } | { success: false; message: string };
 
 async function call<T>(
   input: string,
@@ -22,12 +23,15 @@ async function call<T>(
   try {
     res = await fetch(input, init);
   } catch {
-    return { success: false, message: 'Could not reach the mail server. Check your connection.' };
+    return {
+      success: false,
+      message: "Could not reach the mail server. Check your connection.",
+    };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: 'Not logged in' };
+    return { success: false, message: "Not logged in" };
   }
 
   const data = await res.json().catch(() => ({}) as Record<string, unknown>);
@@ -44,13 +48,14 @@ async function call<T>(
   // leave a page that cannot load anything anyway.
   if (res.status === 403) {
     const code =
-      (data as { error_code?: string; detail?: { error_code?: string } })?.error_code ??
+      (data as { error_code?: string; detail?: { error_code?: string } })
+        ?.error_code ??
       (data as { detail?: { error_code?: string } })?.detail?.error_code;
-    if (code === 'password_change_required' && typeof window !== 'undefined') {
-      if (window.location.pathname !== '/change-password') {
-        window.location.assign('/change-password');
+    if (code === "password_change_required" && typeof window !== "undefined") {
+      if (window.location.pathname !== "/change-password") {
+        window.location.assign("/change-password");
       }
-      return { success: false, message: 'Set a new password to continue' };
+      return { success: false, message: "Set a new password to continue" };
     }
   }
 
@@ -69,10 +74,13 @@ async function call<T>(
     msg?: string;
     data?: T;
   };
-  const ok = body.success === true || body.type === 'success';
+  const ok = body.success === true || body.type === "success";
 
   if (!ok) {
-    return { success: false, message: body.message ?? body.msg ?? 'Request failed' };
+    return {
+      success: false,
+      message: body.message ?? body.msg ?? "Request failed",
+    };
   }
 
   return { success: true, data: body.data as T };
@@ -104,14 +112,14 @@ export interface ListOptions {
  */
 export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   const qs = new URLSearchParams();
-  if (options.folder) qs.set('folder', options.folder);
-  if (options.search) qs.set('search', options.search);
-  if (options.offset) qs.set('offset', String(options.offset));
-  if (options.limit) qs.set('limit', String(options.limit));
+  if (options.folder) qs.set("folder", options.folder);
+  if (options.search) qs.set("search", options.search);
+  if (options.offset) qs.set("offset", String(options.offset));
+  if (options.limit) qs.set("limit", String(options.limit));
 
   const query = qs.toString();
   return call<MessagePage>(
-    `/api/webmail/messages${query ? `?${query}` : ''}`,
+    `/api/webmail/messages${query ? `?${query}` : ""}`,
     undefined,
     onUnauthorized,
   );
@@ -163,20 +171,24 @@ export interface ApiCapabilities {
 }
 
 export function getCapabilities(onUnauthorized: () => void) {
-  return call<ApiCapabilities>('/api/webmail/capabilities', undefined, onUnauthorized);
+  return call<ApiCapabilities>(
+    "/api/webmail/capabilities",
+    undefined,
+    onUnauthorized,
+  );
 }
 
 /** Real folders with unread counts and the uid_next change token (P2/P4). */
 export function listFolders(onUnauthorized: () => void) {
-  return call<ApiFolder[]>('/api/webmail/folders', undefined, onUnauthorized);
+  return call<ApiFolder[]>("/api/webmail/folders", undefined, onUnauthorized);
 }
 
 export function createFolder(name: string, onUnauthorized: () => void) {
   return call<{ id: string; name: string }>(
-    '/api/webmail/folders',
+    "/api/webmail/folders",
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     },
     onUnauthorized,
@@ -217,8 +229,8 @@ function messageAction(
   return call<null>(
     `/api/webmail/messages/${encodeURIComponent(id)}/${action}`,
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
     },
     onUnauthorized,
@@ -226,15 +238,18 @@ function messageAction(
 }
 
 export const markRead = (id: string, onUnauthorized: () => void) =>
-  messageAction(id, 'mark-read', undefined, onUnauthorized);
+  messageAction(id, "mark-read", undefined, onUnauthorized);
 export const markUnread = (id: string, onUnauthorized: () => void) =>
-  messageAction(id, 'mark-unread', undefined, onUnauthorized);
+  messageAction(id, "mark-unread", undefined, onUnauthorized);
 export const star = (id: string, onUnauthorized: () => void) =>
-  messageAction(id, 'star', undefined, onUnauthorized);
+  messageAction(id, "star", undefined, onUnauthorized);
 export const unstar = (id: string, onUnauthorized: () => void) =>
-  messageAction(id, 'unstar', undefined, onUnauthorized);
-export const moveMessage = (id: string, folder: string, onUnauthorized: () => void) =>
-  messageAction(id, 'move', { folder }, onUnauthorized);
+  messageAction(id, "unstar", undefined, onUnauthorized);
+export const moveMessage = (
+  id: string,
+  folder: string,
+  onUnauthorized: () => void,
+) => messageAction(id, "move", { folder }, onUnauthorized);
 
 /**
  * Move to Trash -- recoverable, and what the delete button does everywhere
@@ -243,7 +258,7 @@ export const moveMessage = (id: string, folder: string, onUnauthorized: () => vo
  * and no way back (PRD SS7.4).
  */
 export const trashMessage = (id: string, onUnauthorized: () => void) =>
-  messageAction(id, 'trash', undefined, onUnauthorized);
+  messageAction(id, "trash", undefined, onUnauthorized);
 
 /**
  * Permanent expunge. The backend refuses unless the message is already in
@@ -252,7 +267,7 @@ export const trashMessage = (id: string, onUnauthorized: () => void) =>
 export function deleteForever(id: string, onUnauthorized: () => void) {
   return call<null>(
     `/api/webmail/messages/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
+    { method: "DELETE" },
     onUnauthorized,
   );
 }
@@ -299,10 +314,10 @@ export function sendMessage(
 ) {
   if (attachments.length === 0) {
     return call<SendResult>(
-      '/api/webmail/messages/send',
+      "/api/webmail/messages/send",
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       },
       onUnauthorized,
@@ -310,20 +325,20 @@ export function sendMessage(
   }
 
   const form = new FormData();
-  for (const address of payload.to) form.append('to[]', address);
-  for (const address of payload.cc ?? []) form.append('cc[]', address);
-  for (const address of payload.bcc ?? []) form.append('bcc[]', address);
-  form.append('subject', payload.subject);
-  if (payload.body_text) form.append('body_text', payload.body_text);
-  if (payload.body_html) form.append('body_html', payload.body_html);
-  if (payload.in_reply_to) form.append('in_reply_to', payload.in_reply_to);
-  if (payload.references) form.append('references', payload.references);
-  if (payload.send_at) form.append('send_at', payload.send_at);
-  for (const file of attachments) form.append('attachments[]', file, file.name);
+  for (const address of payload.to) form.append("to[]", address);
+  for (const address of payload.cc ?? []) form.append("cc[]", address);
+  for (const address of payload.bcc ?? []) form.append("bcc[]", address);
+  form.append("subject", payload.subject);
+  if (payload.body_text) form.append("body_text", payload.body_text);
+  if (payload.body_html) form.append("body_html", payload.body_html);
+  if (payload.in_reply_to) form.append("in_reply_to", payload.in_reply_to);
+  if (payload.references) form.append("references", payload.references);
+  if (payload.send_at) form.append("send_at", payload.send_at);
+  for (const file of attachments) form.append("attachments[]", file, file.name);
 
   return call<SendResult>(
-    '/api/webmail/messages/send',
-    { method: 'POST', body: form },
+    "/api/webmail/messages/send",
+    { method: "POST", body: form },
     onUnauthorized,
   );
 }
@@ -348,7 +363,7 @@ export interface ScheduledMessage {
 
 export function listScheduled(onUnauthorized: () => void) {
   return call<{ messages: ScheduledMessage[] }>(
-    '/api/webmail/messages/scheduled',
+    "/api/webmail/messages/scheduled",
     undefined,
     onUnauthorized,
   );
@@ -358,7 +373,7 @@ export function listScheduled(onUnauthorized: () => void) {
 export function cancelScheduled(id: string, onUnauthorized: () => void) {
   return call<{ id: string; folder: string }>(
     `/api/webmail/messages/scheduled/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
+    { method: "DELETE" },
     onUnauthorized,
   );
 }
@@ -385,10 +400,10 @@ export interface DraftPayload {
  */
 export function saveDraft(payload: DraftPayload, onUnauthorized: () => void) {
   return call<{ id: string }>(
-    '/api/webmail/messages/draft',
+    "/api/webmail/messages/draft",
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
     onUnauthorized,
@@ -398,35 +413,35 @@ export function saveDraft(payload: DraftPayload, onUnauthorized: () => void) {
 export function discardDraft(id: string, onUnauthorized: () => void) {
   return call<null>(
     `/api/webmail/messages/draft/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
+    { method: "DELETE" },
     onUnauthorized,
   );
 }
 
 /** Autocomplete suggestions harvested from message headers (PRD C2). */
 export function listContacts(onUnauthorized: () => void) {
-  return call<ApiContact[]>('/api/webmail/contacts', undefined, onUnauthorized);
+  return call<ApiContact[]>("/api/webmail/contacts", undefined, onUnauthorized);
 }
 
 export function getSettings(onUnauthorized: () => void) {
-  return call<ApiSettings>('/api/webmail/settings', undefined, onUnauthorized);
+  return call<ApiSettings>("/api/webmail/settings", undefined, onUnauthorized);
 }
 
 export function updateSettings(
   payload: {
     signature_html?: string;
     signature_on_reply?: boolean;
-    display_density?: 'comfortable' | 'compact';
+    display_density?: "comfortable" | "compact";
     undo_send_enabled?: boolean;
     undo_send_seconds?: number;
   },
   onUnauthorized: () => void,
 ) {
   return call<Partial<ApiSettings>>(
-    '/api/webmail/settings',
+    "/api/webmail/settings",
     {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
     onUnauthorized,
@@ -461,23 +476,23 @@ export interface ApiSession {
 }
 
 export function getSecurity(onUnauthorized: () => void) {
-  return call<ApiSecurity>('/api/webmail/security', undefined, onUnauthorized);
+  return call<ApiSecurity>("/api/webmail/security", undefined, onUnauthorized);
 }
 
 export function beginTwoFactor(onUnauthorized: () => void) {
   return call<ApiTwoFactorEnrolment>(
-    '/api/webmail/security/2fa/begin',
-    { method: 'POST' },
+    "/api/webmail/security/2fa/begin",
+    { method: "POST" },
     onUnauthorized,
   );
 }
 
 export function confirmTwoFactor(code: string, onUnauthorized: () => void) {
   return call<{ two_factor_enabled: boolean }>(
-    '/api/webmail/security/2fa/confirm',
+    "/api/webmail/security/2fa/confirm",
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
     },
     onUnauthorized,
@@ -486,10 +501,10 @@ export function confirmTwoFactor(code: string, onUnauthorized: () => void) {
 
 export function disableTwoFactor(code: string, onUnauthorized: () => void) {
   return call<{ two_factor_enabled: boolean }>(
-    '/api/webmail/security/2fa/disable',
+    "/api/webmail/security/2fa/disable",
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
     },
     onUnauthorized,
@@ -498,7 +513,7 @@ export function disableTwoFactor(code: string, onUnauthorized: () => void) {
 
 export function listSessions(onUnauthorized: () => void) {
   return call<{ scope: string; sessions: ApiSession[] }>(
-    '/api/webmail/security/sessions',
+    "/api/webmail/security/sessions",
     undefined,
     onUnauthorized,
   );
@@ -507,7 +522,7 @@ export function listSessions(onUnauthorized: () => void) {
 export function revokeSession(id: string, onUnauthorized: () => void) {
   return call<null>(
     `/api/webmail/security/sessions/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
+    { method: "DELETE" },
     onUnauthorized,
   );
 }
@@ -525,27 +540,38 @@ export interface ApiForwarding {
 export interface ApiRule {
   id?: string;
   name: string;
-  match?: 'all' | 'any';
+  match?: "all" | "any";
   enabled?: boolean;
   conditions: Array<{ field: string; operator?: string; value?: string }>;
   actions: Array<{ type: string; value?: string }>;
 }
 
 export function getForwarding(onUnauthorized: () => void) {
-  return call<ApiForwarding>('/api/webmail/forwarding', undefined, onUnauthorized);
+  return call<ApiForwarding>(
+    "/api/webmail/forwarding",
+    undefined,
+    onUnauthorized,
+  );
 }
 
-export function updateForwarding(payload: Omit<ApiForwarding, 'managed'>, onUnauthorized: () => void) {
+export function updateForwarding(
+  payload: Omit<ApiForwarding, "managed">,
+  onUnauthorized: () => void,
+) {
   return call<ApiForwarding>(
-    '/api/webmail/forwarding',
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+    "/api/webmail/forwarding",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
     onUnauthorized,
   );
 }
 
 export function getRules(onUnauthorized: () => void) {
   return call<{ rules: ApiRule[]; active: boolean; managed: boolean }>(
-    '/api/webmail/rules',
+    "/api/webmail/rules",
     undefined,
     onUnauthorized,
   );
@@ -553,8 +579,12 @@ export function getRules(onUnauthorized: () => void) {
 
 export function updateRules(rules: ApiRule[], onUnauthorized: () => void) {
   return call<{ rules: ApiRule[] }>(
-    '/api/webmail/rules',
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) },
+    "/api/webmail/rules",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules }),
+    },
     onUnauthorized,
   );
 }
@@ -567,18 +597,41 @@ export interface ApiVacation {
   end_date?: string | null;
 }
 
+/**
+ * The saved responder, as the mail server actually reports it.
+ *
+ * This was typed `{ enabled, raw }` -- a shape it has never returned. There is
+ * no `raw` key, and the four fields the settings form needs were all present
+ * and simply not described, so the page could only ever restore the checkbox
+ * and redrew everything else from its own defaults. `parse_vacation` in the
+ * mail server is the authority for this shape.
+ *
+ * Nullable throughout: a mailbox with no responder yet has a script with no
+ * markers, and every field comes back null.
+ */
 export function getVacation(onUnauthorized: () => void) {
-  return call<{ enabled: boolean; raw: string | null }>(
-    '/api/webmail/vacation',
-    undefined,
-    onUnauthorized,
-  );
+  return call<{
+    enabled: boolean;
+    subject: string | null;
+    message: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    /** False when the script was hand-edited outside this UI. */
+    managed?: boolean;
+  }>("/api/webmail/vacation", undefined, onUnauthorized);
 }
 
-export function updateVacation(payload: ApiVacation, onUnauthorized: () => void) {
+export function updateVacation(
+  payload: ApiVacation,
+  onUnauthorized: () => void,
+) {
   return call<{ enabled: boolean }>(
-    '/api/webmail/vacation',
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+    "/api/webmail/vacation",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
     onUnauthorized,
   );
 }
@@ -589,11 +642,14 @@ export function aiCompose(
   onUnauthorized: () => void,
 ) {
   return call<{ draft: string }>(
-    '/api/webmail/ai/compose',
+    "/api/webmail/ai/compose",
     {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instruction, existing_draft: existingDraft || undefined }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction,
+        existing_draft: existingDraft || undefined,
+      }),
     },
     onUnauthorized,
   );
@@ -602,11 +658,11 @@ export function aiCompose(
 export function aiSummarize(id: string, onUnauthorized: () => void) {
   return call<{ summary: string }>(
     `/api/webmail/ai/summarize/${encodeURIComponent(id)}`,
-    { method: 'POST' },
+    { method: "POST" },
     onUnauthorized,
   );
 }
 
 export async function logout() {
-  await fetch('/api/webmail-auth/logout', { method: 'POST' });
+  await fetch("/api/webmail-auth/logout", { method: "POST" });
 }
