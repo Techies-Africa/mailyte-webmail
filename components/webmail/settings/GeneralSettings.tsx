@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HardDrive, PenLine, Check } from 'lucide-react';
+import { HardDrive, PenLine, Check, AtSign } from 'lucide-react';
 import WebmailEditor from '../WebmailEditor';
 import { updateSettings } from '@/lib/webmail/client';
 import type { SettingsSectionProps } from './types';
@@ -58,6 +58,35 @@ export default function GeneralSettings({
 
   return (
     <div className="space-y-6" data-shortcuts="off">
+      {/*
+        The From line, shown because it was invisible.
+
+        The holder had no way to see what recipients see. The display name
+        reached this settings payload as null for every mailbox -- the mail
+        server's session query never selected it -- so even had this section
+        existed it would have shown nothing. Both halves are fixed together:
+        there is no point rendering a name the API does not send.
+
+        Read-only on purpose. The name is org-owned: it is set when the
+        mailbox is provisioned and changed by an admin, which is how Google
+        Workspace and Zoho treat it, and it means nobody inside the
+        organization can quietly re-label themselves "IT Helpdesk" on mail
+        their colleagues will trust.
+      */}
+      <section>
+        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <AtSign size={15} /> How your mail is signed
+        </h3>
+        <p className="text-sm text-gray-700 dark:text-gray-300 font-mono break-all">
+          {settings.name ? `${settings.name} <${settings.emailAddress}>` : settings.emailAddress}
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          {settings.name
+            ? 'This is what recipients see in their inbox. Ask an administrator to change it.'
+            : 'This mailbox has no display name, so recipients see the address alone. An administrator can set one.'}
+        </p>
+      </section>
+
       <section>
         <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           <PenLine size={15} /> Signature
