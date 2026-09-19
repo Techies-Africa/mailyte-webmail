@@ -7,6 +7,7 @@ import {
   Mail,
   FolderInput,
   AlertOctagon,
+  ShieldCheck,
   MoreHorizontal,
 } from 'lucide-react';
 
@@ -36,6 +37,13 @@ type WebmailToolbarProps = {
   onMarkUnreadSelected?: () => void;
   onMoveSelected?: () => void;
   onSpamSelected?: () => void;
+  /**
+   * The counterpart to onSpamSelected, and never shown beside it: one is
+   * offered outside Junk, the other only inside it. A folder that offers both
+   * "this is spam" and "this is not spam" at once is asking a question the
+   * reader has already answered by being where they are.
+   */
+  onNotSpamSelected?: () => void;
 };
 
 export default function WebmailToolbar({
@@ -55,6 +63,7 @@ export default function WebmailToolbar({
   onMarkUnreadSelected,
   onMoveSelected,
   onSpamSelected,
+  onNotSpamSelected,
 }: WebmailToolbarProps) {
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -109,6 +118,12 @@ export default function WebmailToolbar({
           <>
             {iconButton('archive', 'Archive', <Archive size={18} />, onArchiveSelected)}
             {iconButton('spam', 'Report spam', <AlertOctagon size={18} />, onSpamSelected)}
+            {iconButton(
+              'not-spam',
+              'Not spam — move to Inbox',
+              <ShieldCheck size={18} />,
+              onNotSpamSelected,
+            )}
             {iconButton('trash', 'Move to Trash', <Trash2 size={18} />, onTrashSelected)}
             {iconButton(
               'forever',

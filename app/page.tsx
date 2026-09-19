@@ -688,6 +688,29 @@ export default function WebmailInboxPage() {
     [runOnIds, handleUnauthorized, removeFromList],
   );
 
+  /**
+   * Not spam = back to the Inbox. The other half of markSpam, and the half
+   * that was missing: mail could be filed into Junk from anywhere, and once
+   * there the only way out was the generic Move dialog -- so a false positive
+   * cost the reader a folder picker, and most readers never found it.
+   *
+   * The destination is resolved from the folder ROLE rather than the literal
+   * "INBOX". Dovecot provisions it under that name here, but the role is what
+   * actually identifies it, and a mailbox migrated from another server can
+   * arrive with its inbox named something else.
+   *
+   * This files the message; it does not train a filter. Rspamd's bayes is not
+   * wired to this action, so the honest promise is "move it back", which is
+   * what the label says.
+   */
+  const markNotSpam = useCallback(
+    (ids: string[]) => {
+      const inbox = folders.find((f) => f.role === 'inbox')?.name ?? 'INBOX';
+      return runOnIds(ids, (id) => apiMove(id, inbox, handleUnauthorized), removeFromList);
+    },
+    [folders, runOnIds, handleUnauthorized, removeFromList],
+  );
+
   const saveDraft = useCallback(
     async (payload: ComposePayload, replaceId?: string) => {
       const result = await apiSaveDraft(
@@ -1217,6 +1240,11 @@ export default function WebmailInboxPage() {
                   onSpamSelected={
                     activeFolderMeta?.role === 'junk' ? undefined : () => void markSpam(selectedIds)
                   }
+                  onNotSpamSelected={
+                    activeFolderMeta?.role === 'junk'
+                      ? () => void markNotSpam(selectedIds)
+                      : undefined
+                  }
                 />
 
                 <div className="flex-1 overflow-y-auto">
@@ -1262,6 +1290,13 @@ export default function WebmailInboxPage() {
 
             {openMessage && !loadingMessage && (
               <WebmailMessageView
+                // Keyed on the message so opening a different one REMOUNTS
+                // the reader. Its state -- expanded thread rows and their
+                // fetched bodies, blocked-image counts, open modals -- all
+                // describes the message being read, so a fresh component is
+                // the reset, with no effect to clear it and no frame showing
+                // the previous conversation's rows.
+                key={openMessage.id}
                 message={openMessage}
                 thread={thread}
                 folders={folders}
@@ -1278,6 +1313,15 @@ export default function WebmailInboxPage() {
                 }
                 onStar={() => void toggleStar(openMessage.id)}
                 onMove={(folder) => void move([openMessage.id], folder)}
+                onNotSpam={
+                  activeFolderMeta?.role === 'junk'
+                    ? () => void markNotSpam([openMessage.id])
+                    : undefined
+                }
+                onLoadThreadMessage={async (id) => {
+                  const result = await getMessage(id, handleUnauthorized);
+                  return result.success && result.data ? toMessage(result.data) : null;
+                }}
                 scheduled={sendTimes[openMessage.id]}
                 onCancelScheduled={
                   sendTimes[openMessage.id]

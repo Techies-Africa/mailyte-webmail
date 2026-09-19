@@ -34,7 +34,20 @@ export interface WebmailListItem {
   isAnswered: boolean;
   isDraft: boolean;
   hasAttachment: boolean;
+  /**
+   * The date to DISPLAY. Never null -- a message whose header carried no date
+   * falls back to now, so every row has something to print.
+   *
+   * Do not sort on this. See `receivedAt`.
+   */
   timestamp: Date;
+  /**
+   * When the message was actually sent, or null if it said nothing.
+   *
+   * This is the one to sort on: the fallback in `timestamp` would make an
+   * undated message the newest in any conversation.
+   */
+  receivedAt: Date | null;
   folder: string;
 }
 

@@ -13,6 +13,9 @@ import {
   Paperclip,
   Download,
   CalendarClock,
+  ShieldCheck,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import type { WebmailAttachment, WebmailFolder, WebmailListItem, WebmailMessage } from './types';
 import WebmailBodyFrame, { BlockedImagesBar } from './WebmailBodyFrame';
@@ -67,7 +70,59 @@ type WebmailMessageViewProps = {
   scheduled?: { label: string; failed: boolean; error: string | null };
   /** Cancel the scheduled send; the message goes back to Drafts. */
   onCancelScheduled?: () => void;
+  /**
+   * Move this message out of Junk. Set only when reading one that is IN Junk
+   * -- the same rule as the list toolbar's counterpart, so the action appears
+   * exactly where it makes sense and nowhere else.
+   */
+  onNotSpam?: () => void;
+  /**
+   * Fetch one earlier message in the thread, for expanding it in place.
+   *
+   * The thread endpoint returns summaries, not bodies, so the body arrives
+   * only when someone actually asks for it. Passing the fetch in keeps this
+   * component free of the API client, as every other action here already is.
+   */
+  onLoadThreadMessage?: (id: string) => Promise<WebmailMessage | null>;
 };
+
+/**
+ * Everything the thread accordion holds.
+ *
+ * One object rather than four useStates because every part of it belongs to
+ * ONE conversation and goes stale together.
+ */
+type ThreadState = {
+  expanded: string[];
+  bodies: Record<string, WebmailMessage>;
+  errors: Record<string, string>;
+  /** The one row currently fetching, if any. */
+  loadingId: string | null;
+};
+
+const EMPTY_THREAD_STATE: ThreadState = {
+  expanded: [],
+  bodies: {},
+  errors: {},
+  loadingId: null,
+};
+
+/**
+ * Newest first, with undated messages last.
+ *
+ * Exported so the rule can be tested and stated once rather than inlined in a
+ * render. The null handling is the part worth having a name for: a message
+ * whose header carried no date must NOT be presented as the most recent thing
+ * in a conversation, which is what would happen if this sorted on `timestamp`
+ * (that field falls back to now so every row has something to print). Same
+ * rule the mobile client documents in message_detail_state.dart.
+ */
+export function byNewestFirst(a: WebmailListItem, b: WebmailListItem): number {
+  if (!a.receivedAt && !b.receivedAt) return 0;
+  if (!a.receivedAt) return 1;
+  if (!b.receivedAt) return -1;
+  return b.receivedAt.getTime() - a.receivedAt.getTime();
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -117,6 +172,8 @@ export default function WebmailMessageView({
   onSummarize,
   scheduled,
   onCancelScheduled,
+  onNotSpam,
+  onLoadThreadMessage,
 }: WebmailMessageViewProps) {
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showDeleteForeverModal, setShowDeleteForeverModal] = useState(false);
@@ -126,7 +183,104 @@ export default function WebmailMessageView({
   const [blockedImages, setBlockedImages] = useState(0);
   const [showImagesOnce, setShowImagesOnce] = useState(false);
 
-  const earlier = thread.filter((m) => m.id !== message.id);
+  /*
+    Newest first, and sorted here rather than at the fetch.
+
+    WHY NOT THE SERVER. The thread endpoint is documented as oldest-first and
+    that is published in the API reference, so the order is a contract rather
+    than an internal detail. It is also the right order for the OTHER readers
+    of the same data: mobile merges the open message into one list, this view
+    keeps it at the top with a backlog beneath, and no single server order
+    serves both. Nothing depends on the server sorting it newest-first --
+    mobile already re-sorts client-side -- so the sort belongs wherever the
+    presentation is decided, which is here.
+
+    (If this endpoint ever grows a page limit, revisit: truncating an
+    oldest-first list server-side would drop the newest replies entirely, and
+    no amount of client sorting recovers messages that were never sent.)
+
+    WHY NOT reverse(). Reversing inherits its correctness from the server's
+    sort. Sorting on the date says what we mean, and matches the rule mobile
+    already documents -- including the part that matters: an undated message
+    sinks to the BOTTOM. It cannot be shown as the latest word in a
+    conversation on the strength of a missing header, which is exactly what
+    sorting on `timestamp` (which falls back to now) would do.
+
+    filter() has already copied the array, so sorting does not touch the prop
+    -- and must not: ThreadSummaryModal reads thread[0] and thread[length-1]
+    as the conversation's first and last, off the original.
+  */
+  const earlier = thread.filter((m) => m.id !== message.id).sort(byNewestFirst);
+
+  /*
+    Which earlier messages are open, and the bodies fetched for them.
+
+    Opening one used to REPLACE the whole reading pane with that message,
+    which lost the message you were reading and your place in the thread --
+    getting back meant finding it again in the list. They expand in place
+    instead, so the conversation stays on one screen.
+
+    RESET BY REMOUNTING. There is no reset logic here because there needs to
+    be none: the parent keys this component on the open message's id, so
+    reading a different message builds a fresh component and this starts empty.
+    An effect that cleared it would paint the previous conversation's expanded
+    rows for a frame before clearing them, and trips
+    react-hooks/set-state-in-effect besides.
+
+    That also removes the need for a stale-response guard below: a fetch still
+    in flight when the reader moves on resolves into an unmounted component,
+    which React discards, rather than into the next conversation's state.
+  */
+  const [threadState, setThreadState] = useState<ThreadState>(EMPTY_THREAD_STATE);
+
+  const toggleEarlier = useCallback(
+    async (item: WebmailListItem) => {
+      if (threadState.expanded.includes(item.id)) {
+        setThreadState((prev) => ({
+          ...prev,
+          expanded: prev.expanded.filter((id) => id !== item.id),
+        }));
+        return;
+      }
+
+      // Fetched once. A second expand reads what is already here, so
+      // collapsing and reopening costs nothing.
+      const alreadyLoaded = Boolean(threadState.bodies[item.id]);
+
+      setThreadState((prev) => {
+        const errors = { ...prev.errors };
+        delete errors[item.id];
+        return {
+          ...prev,
+          expanded: [...prev.expanded, item.id],
+          errors,
+          loadingId: alreadyLoaded ? prev.loadingId : item.id,
+        };
+      });
+
+      if (alreadyLoaded || !onLoadThreadMessage) return;
+
+      const loaded = await onLoadThreadMessage(item.id);
+
+      setThreadState((prev) => {
+        const loadingId = prev.loadingId === item.id ? null : prev.loadingId;
+
+        if (!loaded) {
+          return {
+            ...prev,
+            loadingId,
+            errors: {
+              ...prev.errors,
+              [item.id]: 'This message could not be loaded. It may have been moved or deleted.',
+            },
+          };
+        }
+
+        return { ...prev, loadingId, bodies: { ...prev.bodies, [item.id]: loaded } };
+      });
+    },
+    [threadState, onLoadThreadMessage],
+  );
 
   // Resolved once per message rather than read from storage on every render.
   // Re-checked when the sender changes, which is what opening a different
@@ -189,6 +343,8 @@ export default function WebmailMessageView({
                 () => setShowDeleteForeverModal(true),
                 true,
               )}
+            {onNotSpam &&
+              toolbarButton('Not spam — move to Inbox', <ShieldCheck size={20} />, onNotSpam)}
             {toolbarButton('Move to folder', <FolderInput size={20} />, () => setShowMoveModal(true))}
             <div className="h-6 border-l border-border mx-1" />
             {toolbarButton('Reply', <Reply size={20} />, onReply)}
@@ -349,25 +505,98 @@ export default function WebmailMessageView({
               Earlier in this conversation ({earlier.length})
             </h3>
             <div className="space-y-2">
-              {earlier.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => onOpenMessage(m)}
-                  className="w-full text-left border border-border rounded-lg p-3 hover:bg-muted"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-sm truncate">{m.from}</span>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">
-                      {formatDateTime(m.timestamp)}
-                    </span>
+              {earlier.map((m) => {
+                const expanded = threadState.expanded.includes(m.id);
+                const loaded = threadState.bodies[m.id];
+                const failed = threadState.errors[m.id];
+
+                return (
+                  <div key={m.id} className="border border-border rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => void toggleEarlier(m)}
+                      aria-expanded={expanded}
+                      className="w-full text-left p-3 hover:bg-muted"
+                    >
+                      <div className="flex items-center gap-2">
+                        {expanded ? (
+                          <ChevronDown size={15} className="text-gray-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight size={15} className="text-gray-400 flex-shrink-0" />
+                        )}
+                        <span className="font-medium text-sm truncate flex-1">{m.from}</span>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          {formatDateTime(m.timestamp)}
+                        </span>
+                      </div>
+                      {/* The preview is the closed state's whole value, so it
+                          goes away when the real body is on screen below. */}
+                      {!expanded && m.preview && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 pl-[23px]">
+                          {m.preview}
+                        </p>
+                      )}
+                    </button>
+
+                    {expanded && (
+                      <div className="border-t border-border px-3 py-3">
+                        {threadState.loadingId === m.id && (
+                          <p className="text-sm text-gray-500">Loading…</p>
+                        )}
+
+                        {failed && (
+                          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                            {failed}
+                          </p>
+                        )}
+
+                        {loaded && (
+                          <>
+                            {/* Same frame as the message above, so an expanded
+                                reply gets the identical sanitising and remote-
+                                image blocking. A cheaper render here would be a
+                                second, weaker path for the same hostile HTML. */}
+                            <WebmailBodyFrame
+                              html={loaded.body}
+                              isHtml={loaded.bodyIsHtml}
+                              attachments={loaded.attachments}
+                              attachmentHref={(index) => attachmentHref(loaded.id, index)}
+                              allowRemoteImages={allowRemoteImages}
+                              // onBlockedCount is deliberately NOT passed. It
+                              // drives the single "N images blocked" bar for
+                              // the message above, and an expanded reply
+                              // reporting into it would overwrite that count
+                              // with its own.
+                            />
+
+                            {loaded.attachments.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {loaded.attachments.map((attachment) => (
+                                  <AttachmentChip
+                                    key={`${loaded.id}-${attachment.index}`}
+                                    attachment={attachment}
+                                    href={attachmentHref(loaded.id, attachment.index)}
+                                  />
+                                ))}
+                              </div>
+                            )}
+
+                            {/* The old behaviour, kept as a deliberate choice
+                                rather than the only one: some readers do want
+                                the full pane, with its own reply and move
+                                actions. */}
+                            <button
+                              onClick={() => onOpenMessage(m)}
+                              className="mt-3 text-xs text-primary hover:underline underline-offset-2"
+                            >
+                              Open this message on its own
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {m.preview && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                      {m.preview}
-                    </p>
-                  )}
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

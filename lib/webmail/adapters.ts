@@ -128,6 +128,17 @@ export function toListItem(m: ApiMessageSummary): WebmailListItem {
     isDraft: m.is_draft ?? false,
     hasAttachment: m.has_attachment,
     timestamp: m.received_at ? new Date(m.received_at) : new Date(),
+    // The real header date, kept separate from `timestamp` because the two
+    // answer different questions: `timestamp` is "what do I print", and falls
+    // back to now so every row has something to show; this one is "when was
+    // this actually sent", and says null rather than guessing.
+    //
+    // Sorting needs the second. Sorting on `timestamp` would read an undated
+    // message as having arrived this instant and float it to the top of a
+    // newest-first list as the latest word in the conversation -- on the
+    // strength of a missing header. The mobile client has always kept this
+    // distinction (message_detail_state.dart); webmail threw it away here.
+    receivedAt: m.received_at ? new Date(m.received_at) : null,
     folder: m.folder,
   };
 }
