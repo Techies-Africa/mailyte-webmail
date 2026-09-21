@@ -38,6 +38,13 @@ const REPEATS: { label: string; value: string | null }[] = [
   { label: 'Every year', value: 'FREQ=YEARLY' },
 ];
 
+/**
+ * Matches the server's cap. Each reminder becomes a VALARM that every synced
+ * device turns into its own alert, so the ceiling is a kindness rather than
+ * a restriction.
+ */
+const REMINDER_LIMIT = 10;
+
 const REMINDERS: { label: string; value: number | null }[] = [
   { label: 'No reminder', value: null },
   { label: '5 minutes before', value: 5 },
@@ -113,7 +120,16 @@ export default function EventModal({
       ? (REPEATS.find((r) => r.value !== null && event.rrule?.startsWith(r.value))?.value ?? null)
       : null,
   );
-  const [reminder, setReminder] = useState<number | null>(event?.alarms ? 15 : null);
+  /*
+   * The event's OWN reminders, not a guess.
+   *
+   * This read `event?.alarms ? 15 : null` — the API returned only a count,
+   * so the modal showed "15 minutes before" for any event that had a
+   * reminder at all, and then saved that. Opening an event with a one-hour
+   * reminder and changing its title silently moved the reminder to fifteen
+   * minutes. The API now returns the real offsets.
+   */
+  const [reminders, setReminders] = useState<number[]>(event?.reminders ?? []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [guests, setGuests] = useState<string[]>(
     () => (event?.attendees ?? []).map((a) => a.email),
@@ -193,7 +209,7 @@ export default function EventModal({
       location: location.trim() || null,
       description: description.trim() || null,
       rrule,
-      reminder_minutes: reminder,
+      reminders,
       attendees: guests.map((email) => ({ email })),
     });
   }
@@ -290,21 +306,83 @@ export default function EventModal({
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Check size={16} className="shrink-0 text-neutral-400" />
-            <select
-              id="event-reminder"
-              value={reminder ?? ''}
-              disabled={readOnly}
-              onChange={(e) => setReminder(e.target.value ? Number(e.target.value) : null)}
-              className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-            >
-              {REMINDERS.map((option) => (
-                <option key={option.label} value={option.value ?? ''}>
-                  {option.label}
-                </option>
+          {/* One row per reminder. A calendar people already use lets them
+              set "a day before" AND "ten minutes before"; a single select
+              could only ever hold the last one they picked. */}
+          <div className="flex gap-2">
+            <Check size={16} className="mt-2 shrink-0 text-neutral-400" />
+            <div className="flex flex-1 flex-col gap-2">
+              {reminders.length === 0 && (
+                <select
+                  id="event-reminder"
+                  value=""
+                  disabled={readOnly}
+                  onChange={(e) => e.target.value && setReminders([Number(e.target.value)])}
+                  className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                >
+                  {REMINDERS.map((option) => (
+                    <option key={option.label} value={option.value ?? ''}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {reminders.map((minutes, index) => (
+                <div key={`${minutes}-${index}`} className="flex items-center gap-2">
+                  <select
+                    id={index === 0 ? 'event-reminder' : undefined}
+                    value={minutes}
+                    disabled={readOnly}
+                    aria-label={`Reminder ${index + 1}`}
+                    onChange={(e) => {
+                      const next = [...reminders];
+                      if (!e.target.value) next.splice(index, 1);
+                      else next[index] = Number(e.target.value);
+                      setReminders(next);
+                    }}
+                    className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                  >
+                    {REMINDERS.map((option) => (
+                      <option key={option.label} value={option.value ?? ''}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setReminders(reminders.filter((_, i) => i !== index))}
+                      aria-label={`Remove reminder ${index + 1}`}
+                      className="shrink-0 rounded p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
               ))}
-            </select>
+
+              {/* Offered only once there is something to add to, and only
+                  while an unused option remains — a chooser whose every
+                  entry is already taken is a dead control. */}
+              {!readOnly
+                && reminders.length > 0
+                && reminders.length < REMINDER_LIMIT
+                && REMINDERS.some((o) => o.value !== null && !reminders.includes(o.value)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const free = REMINDERS.find(
+                      (o) => o.value !== null && !reminders.includes(o.value),
+                    );
+                    if (free?.value != null) setReminders([...reminders, free.value]);
+                  }}
+                  className="self-start text-xs text-primary hover:underline"
+                >
+                  Add another reminder
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

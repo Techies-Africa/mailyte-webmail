@@ -57,7 +57,21 @@ export type CalendarEvent = {
   sequence: number;
   organizer: { email: string; name: string | null } | null;
   attendees: EventAttendee[];
+  /** How many reminders the event carries. Prefer `reminders`. */
   alarms: number;
+  /**
+   * Each reminder, in minutes BEFORE the start, furthest-out first.
+   *
+   * `alarms` alone was a count, so a client could tell that a reminder
+   * existed but not what it was set to — and this one filled the gap by
+   * assuming 15, then saving the assumption. Editing an event's title moved
+   * its one-hour reminder to fifteen minutes.
+   *
+   * Absolute triggers and ones counted from the event's END are omitted
+   * rather than converted: they have no honest value in "minutes before the
+   * start", and a guess would move somebody's reminder on the next save.
+   */
+  reminders: number[];
 };
 
 export type EventDraft = {
@@ -69,7 +83,10 @@ export type EventDraft = {
   description?: string | null;
   location?: string | null;
   rrule?: string | null;
+  /** A single reminder. Kept for callers that only ever set one. */
   reminder_minutes?: number | null;
+  /** Several reminders, in minutes before the start. Merged with the above. */
+  reminders?: number[];
   attendees?: { email: string; name?: string | null }[];
 };
 
