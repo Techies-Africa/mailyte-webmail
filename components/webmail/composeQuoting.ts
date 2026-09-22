@@ -89,7 +89,13 @@ export function quotedBody(mode: ComposeMode, message: WebmailMessage): string {
     return (
       '<p><br></p><p><br></p>' +
       `<p>On ${escapeHtml(when)}, ${who} wrote:</p>` +
-      `<blockquote style="border-left:2px solid #ccc;padding-left:10px;margin-left:5px;color:#666;">${message.body}</blockquote>`
+      // No inline style: TipTap’s stock Blockquote node declares no attributes,
+      // so ProseMirror strips `style` the moment this is parsed into the editor.
+      // Leaving it here made the sent body depend on whether the user had typed:
+      // an untouched reply carried it, an edited one did not. A bare <blockquote>
+      // keeps the semantic, and each mail client indents it to its own
+      // conventions -- in its own dark mode, which a hardcoded #ccc never could.
+      `<blockquote>${message.body}</blockquote>`
     );
   }
 

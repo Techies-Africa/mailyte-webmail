@@ -133,7 +133,7 @@ export default function WebmailEditor({
     editorProps: {
       attributes: {
         class:
-          'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[12rem] px-3 py-2',
+          'max-w-none focus:outline-none min-h-[12rem] px-3 py-2',
         'aria-label': 'Message body',
       },
       // A screenshot on the clipboard arrives as a file, not as HTML.
@@ -208,7 +208,7 @@ export default function WebmailEditor({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center flex-wrap gap-0.5 px-2 py-1 border-b border-border bg-muted">
+      <div className="flex items-center flex-wrap gap-0.5 pl-1.5 pr-3 py-1 border-b border-border bg-muted">
         <ToolButton editor={editor} label="Bold" mark="bold" onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold size={15} />
         </ToolButton>
@@ -295,7 +295,7 @@ export default function WebmailEditor({
       </div>
 
       {linkOpen && (
-        <div className="flex items-center gap-2 px-2 py-2 border-b border-border bg-card">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card">
           <input
             autoFocus
             value={linkValue}

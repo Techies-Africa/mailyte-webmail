@@ -445,12 +445,15 @@ export default function WebmailCompose({
     >
       <div
         ref={dragRef}
-        className={`flex items-center justify-between px-4 py-2 border-b border-border bg-muted ${
+        className={`flex items-center justify-between px-3 py-2 border-b border-border bg-muted ${
           isMobile || isMaximized ? '' : 'cursor-move rounded-t-lg'
         }`}
       >
         <h3 className="font-medium text-gray-700 dark:text-gray-300">{title}</h3>
-        <div className="flex items-center space-x-2">
+        {/* -mr-1 cancels each button's own p-1 so the last icon's box edge
+            lands on the same 12px right ruler as Send and Cc/Bcc below, rather
+            than 4px inside it. */}
+        <div className="flex items-center space-x-2 -mr-1">
           {/* A chevron, not Minimize2. Both controls used to be diagonal
               arrows -- inward for "collapse to the title bar", outward for
               "fill the screen" -- which read as two expand buttons sitting
@@ -496,14 +499,14 @@ export default function WebmailCompose({
         <div className="p-3 truncate">{draft.subject || 'New message'}</div>
       ) : (
         <>
-          <div className="flex-1 flex flex-col overflow-hidden p-4">
+          <div className="flex-1 flex flex-col overflow-hidden py-4">
             {sendError && (
-              <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="mx-3 mb-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                 {sendError}
               </div>
             )}
 
-            <div className="mb-3 -mx-4 border-t border-gray-100 dark:border-gray-700">
+            <div className="mb-3 border-t border-gray-100 dark:border-gray-700">
               <WebmailRecipientInput
                 label="To"
                 value={draft.to}
@@ -514,7 +517,7 @@ export default function WebmailCompose({
                 contacts={contacts}
                 autoFocus={mode === 'compose'}
                 trailing={
-                  <div className="flex gap-2 pr-1">
+                  <div className="flex gap-2">
                     <button
                       onClick={() => setShowCc((v) => !v)}
                       className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
@@ -556,7 +559,7 @@ export default function WebmailCompose({
               )}
 
               <div className="flex items-center px-3 py-1.5 border-b border-border">
-                <span className="text-sm text-gray-500 dark:text-gray-400 w-10 flex-shrink-0">
+                <span className="text-sm text-gray-500 dark:text-gray-400 w-9 flex-shrink-0">
                   Subj
                 </span>
                 <input
