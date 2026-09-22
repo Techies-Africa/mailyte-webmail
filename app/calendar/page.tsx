@@ -39,6 +39,7 @@ import {
   type Invitation,
   type RsvpResponse,
 } from '@/lib/webmail/calendar';
+import Spinner from '@/components/Spinner';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -232,7 +233,7 @@ export default function CalendarPage() {
   }
 
   if (supported === null) {
-    return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
+    return <Spinner fullArea size="lg" label="Loading calendar" className="min-h-screen" />;
   }
 
   if (supported === false) {

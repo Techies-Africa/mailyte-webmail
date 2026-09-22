@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getVacation, updateVacation } from "@/lib/webmail/client";
 import type { SettingsSectionProps } from "./types";
+import Spinner from '@/components/Spinner';
 
 /**
  * The vacation auto-responder (Sieve `vacation`).
@@ -94,7 +95,7 @@ export default function VacationSettings({
   };
 
   if (loading)
-    return <p className="text-sm text-gray-500">Loading vacation settings…</p>;
+    return <Spinner fullArea label="Loading vacation settings" className="py-12" />;
 
   return (
     <div className="space-y-4" data-shortcuts="off">

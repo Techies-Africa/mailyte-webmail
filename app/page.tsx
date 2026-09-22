@@ -65,6 +65,7 @@ import {
   toListItem,
   toMessage,
 } from '@/lib/webmail/adapters';
+import Spinner from '@/components/Spinner';
 
 /**
  * Delta poll interval (PRD P4, phase-04's realtime rules). This was 10s and
@@ -1283,9 +1284,7 @@ export default function WebmailInboxPage() {
             )}
 
             {loadingMessage && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary" />
-              </div>
+              <Spinner fullArea size="lg" label="Loading message" />
             )}
 
             {openMessage && !loadingMessage && (

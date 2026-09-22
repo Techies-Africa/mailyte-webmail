@@ -7,6 +7,7 @@ import { SETTINGS_SECTIONS } from '@/components/webmail/settings/sections';
 import { getSettings, logout as apiLogout } from '@/lib/webmail/client';
 import { toSettings } from '@/lib/webmail/adapters';
 import type { WebmailSettings } from '@/components/webmail/types';
+import Spinner from '@/components/Spinner';
 
 /**
  * Settings, as a page rather than a modal.
@@ -215,7 +216,7 @@ export default function WebmailSettingsPage() {
                   />
                 </div>
               ) : (
-                !error && <p className="text-sm text-gray-500">Loading settings…</p>
+                !error && <Spinner fullArea label="Loading settings" className="py-12" />
               )}
             </div>
           </div>

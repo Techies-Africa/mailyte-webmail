@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { X, Hash, RefreshCcw, Copy, Check } from 'lucide-react';
 import type { WebmailListItem } from '../types';
 import { formatDateTime } from '@/lib/webmail/dates';
+import Spinner from '@/components/Spinner';
 
 type ThreadSummaryModalProps = {
   isOpen: boolean;
@@ -69,10 +70,7 @@ export default function ThreadSummaryModal({
 
         <div className="p-6">
           {isGenerating ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <div className="animate-spin h-8 w-8 border-2 border-violet-500 border-t-transparent rounded-full mb-4" />
-              <p className="text-gray-500">Reading the conversation…</p>
-            </div>
+            <Spinner fullArea showLabel label="Reading the conversation…" className="py-8" />
           ) : error ? (
             <div className="text-center py-8">
               <p className="text-destructive mb-3">{error}</p>

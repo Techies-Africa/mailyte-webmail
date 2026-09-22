@@ -22,6 +22,7 @@ import {
   ImagePlus,
 } from 'lucide-react';
 import { ACCEPTED_IMAGE_TYPES, imageFileToDataUrl, isAcceptedImage } from '@/lib/webmail/images';
+import Spinner from '@/components/Spinner';
 
 /**
  * The compose editor (PRD C1).
@@ -191,7 +192,7 @@ export default function WebmailEditor({
   }, [editor]);
 
   if (!editor) {
-    return <div className="flex-1 px-3 py-2 text-sm text-gray-400">Loading editor…</div>;
+    return <Spinner fullArea size="sm" label="Loading editor" className="min-h-[12rem] px-3 py-2" />;
   }
 
   const applyLink = () => {

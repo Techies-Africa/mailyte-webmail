@@ -28,6 +28,7 @@ import {
   type Contact,
   type ContactDraft,
 } from '@/lib/webmail/contacts';
+import Spinner from '@/components/Spinner';
 
 const EMPTY_DRAFT: ContactDraft = {
   first_name: '',
@@ -173,7 +174,7 @@ export default function AddressBookPage() {
   }
 
   if (supported === null) {
-    return <div className="p-8 text-sm text-neutral-500">Loading&hellip;</div>;
+    return <Spinner fullArea size="lg" label="Loading contacts" className="min-h-screen" />;
   }
 
   if (supported === false) {
@@ -274,7 +275,7 @@ export default function AddressBookPage() {
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <p className="p-6 text-sm text-neutral-500">Loading&hellip;</p>
+          <Spinner fullArea label="Loading contacts" className="py-16" />
         ) : shown.length === 0 ? (
           <div className="flex flex-col items-center gap-2 p-12 text-center">
             <BookUser size={26} className="text-neutral-300 dark:text-neutral-600" />

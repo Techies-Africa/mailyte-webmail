@@ -12,6 +12,7 @@ import {
   type ApiTwoFactorEnrolment,
 } from "@/lib/webmail/client";
 import { formatDateTime } from "@/lib/webmail/dates";
+import Spinner from '@/components/Spinner';
 
 /**
  * Two-factor and sign-in history for the mailbox holder (PRD S3).
@@ -68,7 +69,7 @@ export default function WebmailSecuritySection({
   }, []);
 
   if (!security) {
-    return <p className="text-sm text-gray-500">Loading security settings…</p>;
+    return <Spinner fullArea label="Loading security settings" className="py-12" />;
   }
 
   const start = async () => {

@@ -26,6 +26,7 @@ import {
   type SubscriptionLink,
 } from '@/lib/webmail/calendar';
 import type { SettingsSectionProps } from './types';
+import Spinner from '@/components/Spinner';
 
 export default function CalendarSettings({ onUnauthorized }: SettingsSectionProps) {
   const [links, setLinks] = useState<SubscriptionLink[]>([]);
@@ -120,7 +121,7 @@ export default function CalendarSettings({ onUnauthorized }: SettingsSectionProp
         )}
 
         {loading ? (
-          <p className="text-sm text-neutral-500">Loading&hellip;</p>
+          <Spinner size="sm" label="Loading subscription links" className="mb-3" />
         ) : links.length === 0 ? (
           <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
             No subscription links yet.

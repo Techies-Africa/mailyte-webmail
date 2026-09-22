@@ -25,6 +25,7 @@ import ConfirmModal from './modals/ConfirmModal';
 import MoveEmailModal from './modals/MoveEmailModal';
 import AiWriterModal from './modals/AiWriterModal';
 import ThreadSummaryModal from './modals/ThreadSummaryModal';
+import Spinner from '@/components/Spinner';
 
 type WebmailMessageViewProps = {
   message: WebmailMessage;
@@ -540,7 +541,7 @@ export default function WebmailMessageView({
                     {expanded && (
                       <div className="border-t border-border px-3 py-3">
                         {threadState.loadingId === m.id && (
-                          <p className="text-sm text-gray-500">Loading…</p>
+                          <Spinner size="sm" label="Loading message" />
                         )}
 
                         {failed && (

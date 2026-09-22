@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Forward, X } from 'lucide-react';
 import { getForwarding, updateForwarding } from '@/lib/webmail/client';
 import type { SettingsSectionProps } from './types';
+import Spinner from '@/components/Spinner';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -96,7 +97,7 @@ export default function ForwardingSettings({
   };
 
   if (loading) {
-    return <p className="text-sm text-gray-500">Loading forwarding…</p>;
+    return <Spinner fullArea label="Loading forwarding" className="py-12" />;
   }
 
   return (
