@@ -133,6 +133,28 @@ export default function WebmailInboxPage() {
     [openMessage, compose, signatureSeed],
   );
 
+  const [replySignal, setReplySignal] = useState(0);
+
+  /**
+   * Open the inline reply, or bring it back into view when it is already
+   * open. The counter is what makes a second Reply do something: the mode
+   * alone would not change, and React skips a render for a value it has.
+   */
+  const startReply = useCallback((mode: 'reply' | 'replyAll') => {
+    setQuickReply(mode);
+    setReplySignal((n) => n + 1);
+  }, []);
+
+  // Stable, so the reading pane's Escape listener is not re-attached on
+  // every render of this page.
+  const changeQuickReply = useCallback(
+    (mode: QuickReplyMode) => {
+      if (mode) startReply(mode);
+      else setQuickReply(null);
+    },
+    [startReply],
+  );
+
   const send = useCallback(
     (payload: ComposePayload, context: SendContext) => mailbox.send(payload, context),
     [mailbox],
@@ -214,8 +236,8 @@ export default function WebmailInboxPage() {
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts(
     {
       compose: () => openNewMessage(),
-      reply: openMessage ? () => setQuickReply('reply') : undefined,
-      replyAll: openMessage ? () => setQuickReply('replyAll') : undefined,
+      reply: openMessage ? () => startReply('reply') : undefined,
+      replyAll: openMessage ? () => startReply('replyAll') : undefined,
       forward: openMessage ? () => openReplyInComposer('forward') : undefined,
       next: () => step(1),
       previous: () => step(-1),
@@ -346,7 +368,8 @@ export default function WebmailInboxPage() {
           mailbox={mailbox}
           isMobile={isMobile}
           quickReply={quickReply}
-          onQuickReplyChange={setQuickReply}
+          onQuickReplyChange={changeQuickReply}
+          replySignal={replySignal}
           onForward={() => openReplyInComposer('forward')}
           onOpenInComposer={(mode, body) => openReplyInComposer(mode, body)}
           onQuickReplySend={(payload, mode) =>

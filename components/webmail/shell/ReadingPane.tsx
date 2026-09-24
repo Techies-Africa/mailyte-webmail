@@ -61,6 +61,12 @@ type ReadingPaneProps = {
   /** The AI writer's "Use this": a new message starting with that body. */
   onComposeWithBody: (body: string) => void;
   onDeleteForever: () => void;
+  /**
+   * Bumped on every Reply / Reply all request -- including a repeat of the
+   * mode already open, which changes nothing else and so would otherwise do
+   * nothing. The reply box brings itself back into view on it.
+   */
+  replySignal?: number;
 };
 
 /**
@@ -150,12 +156,20 @@ export default function ReadingPane({
   onQuickReplySend,
   onComposeWithBody,
   onDeleteForever,
+  replySignal,
 }: ReadingPaneProps) {
   const { openMessage: message, loadingMessage } = mailbox;
 
   if (loadingMessage && !message) {
     return (
-      <section className="flex min-w-0 flex-1 flex-col bg-pane">
+      // Over the list on a phone, where the list fills the width: in the row
+      // beside it this spinner had no width at all, and a tapped message
+      // looked like nothing had happened until it arrived.
+      <section
+        aria-label="Message"
+        aria-busy="true"
+        className={`flex min-w-0 flex-1 flex-col bg-pane ${isMobile ? 'absolute inset-0 z-20' : ''}`}
+      >
         <div className="flex flex-1 items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
@@ -190,6 +204,7 @@ export default function ReadingPane({
       onQuickReplySend={onQuickReplySend}
       onComposeWithBody={onComposeWithBody}
       onDeleteForever={onDeleteForever}
+      replySignal={replySignal}
     />
   );
 }
@@ -210,6 +225,7 @@ function MessageReader({
   onQuickReplySend,
   onComposeWithBody,
   onDeleteForever,
+  replySignal,
 }: ReadingPaneProps & { message: WebmailMessage }) {
   const {
     thread,
@@ -264,11 +280,17 @@ function MessageReader({
 
   // Escape closes the inline reply before it closes the message -- but not
   // when it has just closed a menu or the link box above the reply. On
-  // window, so those (on document) have had the key first.
+  // window, so those (on document) have had the key first. ProseMirror marks
+  // every Escape typed in an editor as handled without acting on it, so one
+  // from the reply's own editor (an editor not inside a compose window or
+  // dialog) still closes the reply, as it always has.
   useEffect(() => {
     if (!quickReply) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.key !== 'Escape') return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const fromReplyEditor = !!target?.isContentEditable && !target.closest('[role="dialog"]');
+      if (event.defaultPrevented && !fromReplyEditor) return;
       event.preventDefault();
       onQuickReplyChange(null);
     };
@@ -322,6 +344,13 @@ function MessageReader({
   };
 
   const moreItems = [
+    // A phone's header has room for Reply alone; the other two live here.
+    ...(isMobile
+      ? [
+          { key: 'replyAll', label: 'Reply all', icon: <ReplyAll size={14} />, onSelect: () => onQuickReplyChange('replyAll') },
+          { key: 'forward', label: 'Forward', icon: <Forward size={14} />, onSelect: onForward },
+        ]
+      : []),
     { key: 'labels', label: 'Label…', icon: <TagIcon size={14} />, onSelect: () => setShowLabels(true) },
     { key: 'move', label: 'Move to folder…', icon: <FolderInput size={14} />, onSelect: () => setShowMove(true) },
     {
@@ -333,6 +362,11 @@ function MessageReader({
         close();
       },
     },
+    // Also here at every width, like Mark as unread: the toolbar's own spam
+    // button is hidden on a phone, where it was otherwise unreachable.
+    ...(!inJunk
+      ? [{ key: 'spam', label: 'Mark as spam', icon: <AlertOctagon size={14} />, onSelect: () => void markSpam([message.id]) }]
+      : []),
     ...(aiAvailable
       ? [
           { key: 'summary', label: 'Summarize conversation', icon: <Hash size={14} />, onSelect: () => setShowSummary(true) },
@@ -383,6 +417,9 @@ function MessageReader({
     </>
   );
 
+  // Touch-sized on a phone.
+  const tool = isMobile ? 'lg' : 'md';
+
   return (
     <section
       aria-label="Message"
@@ -390,26 +427,47 @@ function MessageReader({
     >
       {/* Header */}
       <div className="shrink-0 border-b border-border bg-card px-4 pb-3 pt-3.5 sm:px-6">
-        <div className="mb-3 flex items-center gap-2">
+        {/* One DOM order everywhere -- Back, subject, tools -- so a screen
+            reader hears the subject before the actions. On a phone the
+            subject drops to its own row (order-last) and wraps: beside five
+            buttons it had about 150px, some fifteen characters. */}
+        <div className={isMobile ? 'mb-3 flex flex-wrap items-center gap-x-1 gap-y-2' : 'mb-3 flex items-center gap-2'}>
           {isMobile && (
-            <IconButton label="Back to list" size="md" onClick={close}>
+            <IconButton label="Back to list" size="lg" onClick={close}>
               <ArrowLeft size={16} />
             </IconButton>
           )}
-          <h1 className="min-w-0 flex-1 truncate font-display text-[17px] font-bold tracking-tight" title={message.subject}>
+          <h1
+            className={
+              isMobile
+                ? 'order-last line-clamp-3 w-full break-words font-display text-[17px] font-bold leading-snug tracking-tight'
+                : 'min-w-0 flex-1 truncate font-display text-[17px] font-bold tracking-tight'
+            }
+            title={message.subject}
+          >
             {message.subject}
           </h1>
-          <div className="flex shrink-0 items-center gap-1">
-            {!isMobile && replyButtons('header')}
-            {!isMobile && <span className="mx-0.5 h-[18px] w-px bg-border" />}
+          <div className={`flex shrink-0 items-center gap-1 ${isMobile ? 'ml-auto' : ''}`}>
+            {isMobile ? (
+              // Reply at the top on a phone too: it used to be only at the very
+              // end of the message and the conversation below it.
+              <IconButton label="Reply" size="lg" outlined tone="primary" onClick={() => onQuickReplyChange('reply')}>
+                <Reply size={15} strokeWidth={2.4} />
+              </IconButton>
+            ) : (
+              <>
+                {replyButtons('header')}
+                <span className="mx-0.5 h-[18px] w-px bg-border" />
+              </>
+            )}
             {!inTrash && (
-              <IconButton label="Archive (e)" size="md" outlined onClick={() => void archive([message.id])}>
+              <IconButton label="Archive (e)" size={tool} outlined onClick={() => void archive([message.id])}>
                 <Archive size={13} />
               </IconButton>
             )}
             <IconButton
               label="Mark unread (u)"
-              size="md"
+              size={tool}
               outlined
               onClick={() => {
                 void setRead([message.id], false);
@@ -421,7 +479,7 @@ function MessageReader({
             </IconButton>
             <IconButton
               label={message.isStarred ? 'Unstar (s)' : 'Star (s)'}
-              size="md"
+              size={tool}
               outlined
               onClick={() => void toggleStar(message.id)}
               className={message.isStarred ? '!text-[hsl(38,85%,55%)]' : ''}
@@ -429,20 +487,20 @@ function MessageReader({
               <Star size={13} className={message.isStarred ? 'fill-current' : ''} />
             </IconButton>
             {inJunk ? (
-              <IconButton label="Not spam — move to Inbox" size="md" outlined onClick={() => void markNotSpam([message.id])}>
+              <IconButton label="Not spam — move to Inbox" size={tool} outlined onClick={() => void markNotSpam([message.id])}>
                 <ShieldCheck size={13} />
               </IconButton>
             ) : (
-              <IconButton label="Mark as spam" size="md" outlined onClick={() => void markSpam([message.id])} className="hidden sm:inline-flex">
+              <IconButton label="Mark as spam" size={tool} outlined onClick={() => void markSpam([message.id])} className="hidden sm:inline-flex">
                 <AlertOctagon size={13} />
               </IconButton>
             )}
             {inTrash ? (
-              <IconButton label="Delete forever" size="md" outlined tone="danger" onClick={onDeleteForever}>
+              <IconButton label="Delete forever" size={tool} outlined tone="danger" onClick={onDeleteForever}>
                 <Trash2 size={13} />
               </IconButton>
             ) : (
-              <IconButton label="Delete (#)" size="md" outlined tone="danger" onClick={() => void trash([message.id])}>
+              <IconButton label="Delete (#)" size={tool} outlined tone="danger" onClick={() => void trash([message.id])}>
                 <Trash2 size={13} />
               </IconButton>
             )}
@@ -451,7 +509,7 @@ function MessageReader({
               align="right"
               items={moreItems}
               trigger={({ toggle, open }) => (
-                <IconButton label="More" size="md" outlined onClick={toggle} active={open}>
+                <IconButton label="More" size={tool} outlined onClick={toggle} active={open}>
                   <MoreHorizontal size={13} />
                 </IconButton>
               )}
@@ -499,7 +557,9 @@ function MessageReader({
       </div>
 
       {/* Body */}
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      {/* scrollbar-gutter: a scrollbar appearing or going would change the
+          message frame's width, and a wide email re-fits to every width. */}
+      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable] sm:px-6 sm:py-5">
         <div className="mx-auto max-w-[760px]">
           {scheduled && (
             <div
@@ -538,7 +598,10 @@ function MessageReader({
             }}
           />
 
-          <div className="rounded-xl border border-border bg-card p-3 sm:p-5">
+          {/* Edge to edge on a phone, as phone mail clients draw it: the
+              card's padding and the pane's took about 60px of a 360px
+              screen from the message. -mx-4 undoes the pane's px-4. */}
+          <div className="-mx-4 border-y border-border bg-card px-2 py-3 sm:mx-0 sm:rounded-xl sm:border sm:p-5">
             <WebmailBodyFrame
               html={message.body}
               isHtml={message.bodyIsHtml}
@@ -664,6 +727,7 @@ function MessageReader({
                 onSend={onQuickReplySend}
                 onCancel={() => onQuickReplyChange(null)}
                 onExpand={(body) => onOpenInComposer(quickReply, body)}
+                revealSignal={replySignal}
               />
             ) : (
               <div className="flex gap-2">{replyButtons('dashed')}</div>

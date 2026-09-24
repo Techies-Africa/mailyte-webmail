@@ -53,6 +53,14 @@ type WebmailEditorProps = {
   /** Focus at the start when mounted. Off for the signature editor. */
   autoFocus?: boolean;
   minHeightClass?: string;
+  /**
+   * Called once the editor is on the page -- after the autofocus, when that
+   * is on. The inline reply scrolls itself into view from here: until now it
+   * held the one-line "Loading editor…" stand-in (immediatelyRender is
+   * false), so an earlier scroll would stop short. Only the inline reply
+   * passes it; the compose window and the signature editor are untouched.
+   */
+  onReady?: (editor: Editor) => void;
 };
 
 export default function WebmailEditor({
@@ -64,6 +72,7 @@ export default function WebmailEditor({
   compact = false,
   autoFocus = true,
   minHeightClass,
+  onReady,
 }: WebmailEditorProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
@@ -162,7 +171,33 @@ export default function WebmailEditor({
     } catch (error) {
       console.warn('Could not focus the editor', error);
     }
+    // Once more next frame, if focus has fallen to <body>. React's Strict
+    // Mode (development) unmounts and remounts a new tree once, and
+    // EditorContent takes the editor's DOM out and puts it back as it does --
+    // the focus placed above was dropped, and typing went to the keyboard
+    // shortcuts instead (`e` archived the message). Never taken from anything
+    // else the person has since moved to.
+    const frame = requestAnimationFrame(() => {
+      if (editor.isDestroyed || !editor.view.dom.isConnected) return;
+      const active = document.activeElement;
+      if (active === null || active === document.body) editor.view.focus();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [editor, autoFocus]);
+
+  // Read through a ref, so a fresh arrow from the parent is not "ready again".
+  const onReadyRef = useRef(onReady);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  // Declared after the autofocus effect on purpose: effects run in the order
+  // they are declared, so the caret is already placed when the parent hears.
+  // EditorContent has attached the editor's DOM by now (it does so while
+  // mounting), so the parent measures the real height.
+  useEffect(() => {
+    if (editor) onReadyRef.current?.(editor);
+  }, [editor]);
 
   if (!editor) {
     return <div className="flex-1 px-4 py-3 text-sm text-muted-foreground">Loading editor…</div>;
