@@ -8,6 +8,11 @@ export type ComposePayload = ComposeDraft & {
   sendAt?: string;
   /** Send as a shared mailbox address the session may send from. */
   from?: string;
+  /**
+   * The draft this message was autosaved as. It is removed once the message
+   * has actually gone -- not before, so an Undo or a failed send still has it.
+   */
+  draftId?: string;
 };
 
 export type ComposeLayout = 'open' | 'minimized' | 'fullscreen';

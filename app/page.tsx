@@ -154,6 +154,23 @@ export default function WebmailInboxPage() {
     });
   }, [mailbox, compose]);
 
+  // A send that failed can be put back in front of the person to fix and retry.
+  const { openCompose } = compose;
+  const reopenFailedSend = useCallback(
+    (payload: ComposePayload, context: SendContext) => {
+      openCompose({
+        mode: context.mode,
+        replyTo: context.replyTo,
+        initialBody: payload.body,
+        draftId: payload.draftId ?? context.draftId,
+        resumed: { to: payload.to, cc: payload.cc, bcc: payload.bcc, subject: payload.subject },
+      });
+    },
+    [openCompose],
+  );
+  const { setSendFailureHandler } = mailbox;
+  useEffect(() => setSendFailureHandler(reopenFailedSend), [setSendFailureHandler, reopenFailedSend]);
+
   const fromOptions = useMemo(
     () =>
       sharedMailboxes
@@ -383,7 +400,13 @@ export default function WebmailInboxPage() {
       {helpOpen && <WebmailShortcutHelp onClose={() => setHelpOpen(false)} />}
 
       {mailbox.pendingSend && (
-        <WebmailUndoToast subject={mailbox.pendingSend.subject} until={mailbox.pendingSend.until} onUndo={undoSend} />
+        <WebmailUndoToast
+          // A second send inside the window is a new countdown, not the old one's remainder.
+          key={mailbox.pendingSend.until}
+          subject={mailbox.pendingSend.subject}
+          until={mailbox.pendingSend.until}
+          onUndo={undoSend}
+        />
       )}
     </div>
   );

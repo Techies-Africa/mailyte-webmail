@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { notifyManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
-import type { ComposeMode, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
+import type { ComposeMode, WebmailFolder, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import {
   listMessages,
@@ -47,7 +47,7 @@ import {
 } from '@/lib/webmail/client';
 import type { SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
-import { FALLBACK_FOLDERS } from '@/lib/webmail/adapters';
+import { FALLBACK_FOLDERS, toFolder } from '@/lib/webmail/adapters';
 import {
   useCapabilities,
   useLabels,
@@ -923,39 +923,74 @@ export function useMailbox() {
 
   // --- Folders -------------------------------------------------------------------
 
+  // Each waits for the server -- a name can be refused -- but only for the
+  // one request: the answer goes straight into the rail, and the full folder
+  // list is fetched behind it instead of in front of it.
+
+  /** Forget every cached list of a folder that no longer exists under that name. */
+  const forgetFolderLists = useCallback(
+    (name: string) =>
+      queryClient.removeQueries({ queryKey: qk.lists, predicate: (q) => listParamsOf(q.queryKey).folder === name }),
+    [queryClient],
+  );
+
   const createFolder = useCallback(
     async (name: string) => {
       const result = await apiCreateFolder(name, handleUnauthorized);
       if (!result.success) return result.message;
-      await refreshFolders();
+      const created = result.data;
+      if (created?.name) {
+        queryClient.setQueryData<WebmailFolder[]>(qk.folders, (prev) =>
+          prev && !prev.some((f) => f.name === created.name)
+            ? [
+                ...prev,
+                {
+                  id: created.id ?? created.name,
+                  name: created.name,
+                  role: null,
+                  totalEmails: 0,
+                  unreadEmails: 0,
+                  uidNext: 0,
+                  uidValidity: 0,
+                },
+              ]
+            : prev,
+        );
+      }
+      void refreshFolders();
       toast(`Created ${name}`);
       return null;
     },
-    [handleUnauthorized, refreshFolders, toast],
+    [handleUnauthorized, queryClient, refreshFolders, toast],
   );
 
   const renameFolder = useCallback(
     async (folder: { id: string; name: string }, name: string) => {
       const result = await apiRenameFolder(folder.id, name, handleUnauthorized);
       if (!result.success) return result.message;
-      await refreshFolders();
+      // The server answers with the whole new folder list, subfolders included.
+      if (Array.isArray(result.data?.folders)) queryClient.setQueryData(qk.folders, result.data.folders.map(toFolder));
+      forgetFolderLists(folder.name);
+      void refreshFolders();
       if (activeFolder === folder.name && result.data?.name) setFolder(result.data.name);
       toast(`Renamed to ${result.data?.name ?? name}`);
       return null;
     },
-    [handleUnauthorized, refreshFolders, activeFolder, setFolder, toast],
+    [handleUnauthorized, queryClient, forgetFolderLists, refreshFolders, activeFolder, setFolder, toast],
   );
 
   const deleteFolder = useCallback(
     async (folder: { id: string; name: string }) => {
       const result = await apiDeleteFolder(folder.id, handleUnauthorized);
       if (!result.success) return result.message;
-      await refreshFolders();
+      queryClient.setQueryData<WebmailFolder[]>(qk.folders, (prev) => prev?.filter((f) => f.name !== folder.name));
+      forgetFolderLists(folder.name);
+      void refreshFolders();
       if (activeFolder === folder.name) setFolder('INBOX');
       toast(`Deleted ${folder.name}`);
       return null;
     },
-    [handleUnauthorized, refreshFolders, activeFolder, setFolder, toast],
+    [handleUnauthorized, queryClient, forgetFolderLists, refreshFolders, activeFolder, setFolder, toast],
   );
 
   // --- Drafts --------------------------------------------------------------------
@@ -995,9 +1030,24 @@ export function useMailbox() {
   // --- Sending -------------------------------------------------------------------
 
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The message in the undo window, readable from the timer that sends it.
+  const heldSendRef = useRef<{ payload: ComposePayload; context: SendContext } | null>(null);
+
+  // What the page does with a send that failed: put it back in a compose
+  // window. Registered by the page, which owns the compose windows.
+  const sendFailureRef = useRef<((payload: ComposePayload, context: SendContext) => void) | null>(null);
+  const setSendFailureHandler = useCallback(
+    (handler: ((payload: ComposePayload, context: SendContext) => void) | null) => {
+      sendFailureRef.current = handler;
+      return () => {
+        if (sendFailureRef.current === handler) sendFailureRef.current = null;
+      };
+    },
+    [],
+  );
 
   const deliver = useCallback(
-    async (payload: ComposePayload) => {
+    async (payload: ComposePayload, context: SendContext) => {
       const result = await apiSend(
         {
           to: splitAddresses(payload.to),
@@ -1016,12 +1066,18 @@ export function useMailbox() {
 
       if (!result.success) {
         const verb = payload.sendAt ? 'was not scheduled' : 'was not sent';
+        const reopen = sendFailureRef.current;
         toast(`"${payload.subject || '(no subject)'}" ${verb}: ${result.message}`, {
           tone: 'error',
+          // Its draft is still in Drafts; Reopen brings back the rest as well.
+          action: reopen ? { label: 'Reopen', onClick: () => reopen(payload, context) } : undefined,
         });
         return;
       }
 
+      // It has gone: the draft it was saved as is not a draft any more.
+      const draftId = payload.draftId ?? context.draftId;
+      if (draftId) void discardDraft(draftId);
       void refreshFolders();
 
       if (payload.sendAt) {
@@ -1045,7 +1101,7 @@ export function useMailbox() {
       void invalidateFolderLists(queryClient, [sentFolder]);
       void queryClient.invalidateQueries({ queryKey: qk.threads });
     },
-    [handleUnauthorized, toast, refreshFolders, queryClient, loadScheduled, sentFolder],
+    [handleUnauthorized, toast, discardDraft, refreshFolders, queryClient, loadScheduled, sentFolder],
   );
 
   /**
@@ -1054,20 +1110,29 @@ export function useMailbox() {
    * and nothing on screen offers an Undo that would no longer work.
    */
   const send = useCallback(
-    async (payload: ComposePayload, context: SendContext) => {
+    async (payload: ComposePayload, sendContext: SendContext) => {
+      const context = { ...sendContext, draftId: payload.draftId ?? sendContext.draftId };
       // A scheduled message skips the hold; it can be called back from the
       // Scheduled folder for the whole of the wait.
       if (payload.sendAt || !settings?.undoSendEnabled) {
-        void deliver(payload);
+        void deliver(payload, context);
         return { success: true as const };
       }
 
-      const windowMs = (settings.undoSendSeconds || DEFAULT_UNDO_SECONDS) * 1000;
+      // A second message inside the first one's window: the first goes now.
+      // Replacing it used to drop it without a word.
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      const earlier = heldSendRef.current;
+      if (earlier) void deliver(earlier.payload, earlier.context);
+
+      const windowMs = (settings.undoSendSeconds || DEFAULT_UNDO_SECONDS) * 1000;
+      heldSendRef.current = { payload, context };
       undoTimerRef.current = setTimeout(() => {
         undoTimerRef.current = null;
+        const held = heldSendRef.current;
+        heldSendRef.current = null;
         setPendingSend(null);
-        void deliver(payload);
+        if (held) void deliver(held.payload, held.context);
       }, windowMs);
 
       setPendingSend({
@@ -1085,9 +1150,21 @@ export function useMailbox() {
   const cancelUndo = useCallback((): PendingSend | null => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     undoTimerRef.current = null;
+    heldSendRef.current = null;
     const held = pendingSend;
     setPendingSend(null);
     return held;
+  }, [pendingSend]);
+
+  // Closing the tab inside the undo window would lose the message: ask first.
+  useEffect(() => {
+    if (!pendingSend) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [pendingSend]);
 
   /** Send times keyed by message id, for the list to render. */
@@ -1237,6 +1314,7 @@ export function useMailbox() {
     send,
     pendingSend,
     cancelUndo,
+    setSendFailureHandler,
     aiWrite,
     summarize,
     signatureSeed,

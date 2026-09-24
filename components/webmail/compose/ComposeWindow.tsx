@@ -310,17 +310,17 @@ export default function ComposeWindow({
         attachments,
         sendAt: sendAt?.toISOString(),
         from: from !== selfAddress ? from : undefined,
+        draftId: draftIdRef.current,
       });
       if (!result.success) {
         setSendError(result.message ?? 'Could not send this message');
         return;
       }
-      // Sent: its draft is not a draft any more. Clear the dirty flag first
-      // so the unload guard does not fire on the close.
+      // Handed over. Its draft stays in Drafts until the message has really
+      // gone (useMailbox removes it then), so an undone or failed send loses
+      // nothing. Clear the dirty flag first so the unload guard stays quiet.
       sentRef.current = true;
       dirtyRef.current = false;
-      const saved = draftIdRef.current;
-      if (saved) void onDiscardDraft(saved);
       onClose();
     } finally {
       setIsSending(false);
