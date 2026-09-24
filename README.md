@@ -29,6 +29,9 @@ server that implements the same mailbox API.
   compiled to Sieve.
 - Signature (rich text, with pictures), display density, light and dark
   themes, and accent colours.
+- Several mailboxes signed in at once, switched from the account menu. The
+  browser holds one HttpOnly cookie with every session; the page only ever
+  sees addresses.
 - Optional two-factor authentication on webmail sign-in.
 - Optional AI compose and thread summary, against any OpenAI-compatible
   endpoint you point it at.

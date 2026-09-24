@@ -51,7 +51,6 @@ import {
   renameFolder as apiRenameFolder,
   deleteFolder as apiDeleteFolder,
   blockSender as apiBlockSender,
-  logout as apiLogout,
 } from '@/lib/webmail/client';
 import type { ApiCapabilities, ScheduledMessage, SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
@@ -954,12 +953,6 @@ export function useMailbox() {
     [handleUnauthorized],
   );
 
-  const logout = useCallback(async () => {
-    await apiLogout();
-    sessionStorage.removeItem('mailyte_mailbox_display');
-    router.push('/login');
-  }, [router]);
-
   // --- Derived ---------------------------------------------------------------------
 
   /** The page, minus what the page-local attachments pill hides. */
@@ -1002,7 +995,6 @@ export function useMailbox() {
     sharedMailboxes,
     contacts,
     handleUnauthorized,
-    logout,
     // folders
     folders,
     activeFolder,

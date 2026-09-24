@@ -130,10 +130,13 @@ const server = http.createServer(async (req, res) => {
   if (path === '/mailbox-auth/login' && req.method === 'POST') {
     if (json.password === 'wrong') return fail(res, 401, 'Invalid email address or password');
     if (json.password === '2fa' && !json.two_factor_code) return ok(res, 'Enter your code', { two_factor_required: true });
+    // The token names the mailbox, so several accounts can be signed in at
+    // once and every mailbox call can answer for the right one.
+    const who = (json.email_address || SELF).trim().toLowerCase();
     return ok(res, 'Signed in', {
-      token: TOKEN,
+      token: `${TOKEN}:${who}`,
       expires_at: new Date(Date.now() + 86400000).toISOString(),
-      email_account: { email_address: json.email_address || SELF },
+      email_account: { email_address: who },
       must_change_password: json.password === 'temp',
       password_change_reason: json.password === 'temp' ? 'temporary' : null,
     });
@@ -141,11 +144,13 @@ const server = http.createServer(async (req, res) => {
   if (path === '/mailbox-auth/logout') return ok(res, 'Signed out', null);
 
   const auth = req.headers.authorization || '';
-  if (auth !== `Bearer ${TOKEN}`) return fail(res, 401, 'Not logged in');
+  if (!auth.startsWith(`Bearer ${TOKEN}`)) return fail(res, 401, 'Not logged in');
+  // Whose session this is; the pre-multi-account bare token means the default mailbox.
+  const me = auth.slice(`Bearer ${TOKEN}`.length).replace(/^:/, '') || SELF;
 
   if (path === '/mailbox/capabilities') {
     return ok(res, 'ok', {
-      email_address: SELF,
+      email_address: me,
       capabilities: { mail: true, send: true, settings: true, two_factor: true, rules: true, forwarding: true, vacation: true, ai: true, calendar: true, contacts: true, scheduled_send: true },
       shared_mailboxes: [{ address: 'sales@techies.africa', name: 'Sales', permission: 'send_as', can_send: true }],
     });
@@ -207,7 +212,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === '/mailbox/contacts') return ok(res, 'ok', people.map(([name, email], i) => ({ name, email, count: 10 - i })));
-  if (path === '/mailbox/settings' && req.method === 'GET') return ok(res, 'ok', { email_address: SELF, name: 'DevOps', signature_html: '<p>— DevOps, Techies Africa</p>', signature_on_reply: true, display_density: 'comfortable', undo_send_enabled: true, undo_send_seconds: 10, storage: { used_mb: 812, quota_mb: 5120, percentage: 16 } });
+  if (path === '/mailbox/settings' && req.method === 'GET') return ok(res, 'ok', { email_address: me, name: me === SELF ? 'DevOps' : me.split('@')[0], signature_html: '<p>— DevOps, Techies Africa</p>', signature_on_reply: true, display_density: 'comfortable', undo_send_enabled: true, undo_send_seconds: 10, storage: { used_mb: 812, quota_mb: 5120, percentage: 16 } });
   if (path === '/mailbox/settings' && req.method === 'PUT') return ok(res, 'Saved', json);
   if (path === '/mailbox/security') return ok(res, 'ok', { two_factor_enabled: false, two_factor_confirmed_at: null, recovery_codes_remaining: 0, protects: 'webmail_sign_in_only' });
   if (path === '/mailbox/security/sessions') return ok(res, 'ok', { scope: 'webmail', sessions: [{ id: 's1', signed_in_at: new Date().toISOString(), expires_at: null, ip_address: '102.89.1.4', user_agent: 'Chrome on macOS', revoked: false, active: true, current: true }] });

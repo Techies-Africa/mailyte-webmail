@@ -8,7 +8,7 @@ import Sidebar from '@/components/webmail/shell/Sidebar';
 import SidebarItem, { SidebarDivider, SidebarEyebrow } from '@/components/webmail/shell/SidebarItem';
 import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
 import IconButton from '@/components/ui/IconButton';
-import { getSettings, logout as apiLogout } from '@/lib/webmail/client';
+import { getSettings } from '@/lib/webmail/client';
 import { toSettings } from '@/lib/webmail/adapters';
 import type { WebmailSettings } from '@/components/webmail/types';
 
@@ -68,12 +68,6 @@ export default function WebmailSettingsPage() {
     router.push(href);
   };
 
-  const signOut = async () => {
-    await apiLogout();
-    sessionStorage.removeItem('mailyte_mailbox_display');
-    router.push('/login');
-  };
-
   return (
     <div className="relative flex h-screen overflow-hidden bg-pane">
       <Sidebar
@@ -83,7 +77,7 @@ export default function WebmailSettingsPage() {
         email={settings?.emailAddress ?? ''}
         name={settings?.name ?? null}
         onOpenSettings={() => goTo(SETTINGS_SECTIONS[0].id)}
-        onLogout={() => void signOut()}
+        onOpenSecurity={() => goTo('security')}
         mobileOpen={menuOpen}
         onCloseMobile={() => setMenuOpen(false)}
       >

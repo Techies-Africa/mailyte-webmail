@@ -247,7 +247,6 @@ export default function WebmailInboxPage() {
         onOpenSettings={() => router.push('/settings')}
         onOpenSecurity={() => router.push('/settings/security')}
         onShowShortcuts={() => setHelpOpen(true)}
-        onLogout={() => void mailbox.logout()}
         mobileOpen={menuOpen}
         onCloseMobile={() => setMenuOpen(false)}
       >

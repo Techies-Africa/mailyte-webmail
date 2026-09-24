@@ -756,6 +756,78 @@ export function aiSummarize(id: string, onUnauthorized: () => void) {
   );
 }
 
+// --- Accounts on this browser --------------------------------------------
+
+export interface AccountSummary {
+  email: string;
+  active: boolean;
+  expires_at: string | null;
+}
+
+/** Every mailbox signed in on this browser. 200 with an empty list when none. */
+export function listAccounts() {
+  return call<{ accounts: AccountSummary[] }>(
+    "/api/webmail-auth/accounts",
+    { cache: "no-store" },
+    () => {
+      // The accounts endpoint never answers 401; nothing to redirect for.
+    },
+  );
+}
+
+/**
+ * Make another signed-in mailbox the active one, then start over on the
+ * inbox. A reload, not a state reset: every piece of mailbox state on the
+ * page belongs to the previous account, and the compose windows' own
+ * unload guard gets its say before anything is lost.
+ */
+export async function switchAccount(email: string): Promise<string | null> {
+  const result = await call<{ accounts: AccountSummary[] }>(
+    "/api/webmail-auth/accounts",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    () => {},
+  );
+  if (!result.success) return result.message;
+  forgetDisplayAddress();
+  window.location.assign("/");
+  return null;
+}
+
+/**
+ * Sign out of the active mailbox, or of every mailbox on this browser.
+ * Lands on the next account's inbox when one remains, else on the login page.
+ */
+export async function signOut(all = false): Promise<void> {
+  const res = await fetch("/api/webmail-auth/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ all }),
+  }).catch(() => null);
+  const body = (await res?.json().catch(() => ({}))) as {
+    data?: { remaining?: number };
+  };
+  forgetDisplayAddress();
+  window.location.assign(body?.data?.remaining ? "/" : "/login");
+}
+
+/** The cached "whose mailbox is this" placeholder; must not outlive the account it describes. */
+export function forgetDisplayAddress(): void {
+  try {
+    sessionStorage.removeItem("mailyte_mailbox_display");
+  } catch {
+    // Storage unavailable; nothing cached to forget.
+  }
+}
+
+/** @deprecated Use signOut(); kept for callers that manage their own redirect. */
 export async function logout() {
-  await fetch("/api/webmail-auth/logout", { method: "POST" });
+  await fetch("/api/webmail-auth/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ all: false }),
+  });
 }

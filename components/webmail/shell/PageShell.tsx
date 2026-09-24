@@ -6,7 +6,7 @@ import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
-import { getCapabilities, getSettings, logout as apiLogout } from '@/lib/webmail/client';
+import { getCapabilities, getSettings } from '@/lib/webmail/client';
 
 type PageShellProps = {
   /** Which rail row is lit. */
@@ -72,11 +72,6 @@ export default function PageShell({ current, children, onCapabilities }: PageShe
         name={name}
         onOpenSettings={() => router.push('/settings')}
         onOpenSecurity={() => router.push('/settings/security')}
-        onLogout={async () => {
-          await apiLogout();
-          sessionStorage.removeItem('mailyte_mailbox_display');
-          router.push('/login');
-        }}
         mobileOpen={menuOpen}
         onCloseMobile={() => setMenuOpen(false)}
       >
