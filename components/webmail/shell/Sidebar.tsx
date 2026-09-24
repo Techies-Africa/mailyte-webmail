@@ -125,6 +125,8 @@ export default function Sidebar({
   const others = accounts.filter((a) => !a.active && a.email !== email.toLowerCase());
 
   const isMobile = useIsMobile();
+  // Read when the menu renders -- only ever after a click -- so no hydration question arises.
+  const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const asideRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -385,7 +387,8 @@ export default function Sidebar({
                       }}
                     />
                   )}
-                  {onShowShortcuts && (
+                  {/* Not on a touch screen, where there is no keyboard to use them. */}
+                  {onShowShortcuts && canHover && (
                     <ProfileMenuItem
                       icon={<Keyboard size={13} />}
                       label="Keyboard shortcuts"

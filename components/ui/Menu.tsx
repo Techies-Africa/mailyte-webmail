@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useDismiss } from './useDismiss';
+import { useKeepOnScreen } from './useKeepOnScreen';
 
 export interface MenuItem {
   key: string;
@@ -33,16 +34,19 @@ export default function Menu({ trigger, items, align = 'left', direction = 'down
   const ref = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(ref, open, close);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useKeepOnScreen(panelRef, open);
 
   return (
     <div ref={ref} className="relative inline-flex">
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
       {open && (
         <div
+          ref={panelRef}
           role="menu"
           aria-label={label}
           className={[
-            'absolute z-30 min-w-[210px] max-w-[320px] animate-fade-in rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-panel',
+            'absolute z-30 min-w-[210px] max-w-[min(320px,calc(100vw-1rem))] animate-fade-in rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-panel',
             align === 'right' ? 'right-0' : 'left-0',
             direction === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
           ].join(' ')}
@@ -64,8 +68,9 @@ export default function Menu({ trigger, items, align = 'left', direction = 'down
                   : 'text-foreground hover:bg-muted',
               ].join(' ')}
             >
-              {item.icon && <span className="text-muted-foreground">{item.icon}</span>}
-              {item.label}
+              {item.icon && <span className="shrink-0 text-muted-foreground">{item.icon}</span>}
+              {/* A long label (Block someone@a-long-domain) truncates inside a phone's width. */}
+              <span className="min-w-0 truncate">{item.label}</span>
             </button>
           ))}
         </div>
