@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { HardDrive, PenLine, Check, AtSign, Rows3 } from 'lucide-react';
+import { HardDrive, PenLine, Check, AtSign, Rows3, ImageIcon } from 'lucide-react';
 import WebmailEditor from '../WebmailEditor';
 import { updateSettings } from '@/lib/webmail/client';
+import { remoteImagePolicy, setRemoteImagePolicy, type RemoteImagePolicy } from '@/lib/webmail/sanitize';
 import Button from '@/components/ui/Button';
 import { Hint, Input, Label, Switch } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
@@ -36,6 +37,14 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Per-browser, applied on click, never part of the Save below: the same
+  // arrangement as the accent colour.
+  const [images, setImages] = useState<RemoteImagePolicy>('always');
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setImages(remoteImagePolicy());
+  }, []);
 
   useEffect(() => {
     // Re-seed from the server copy after a save re-reads it.
@@ -145,6 +154,56 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
           ))}
         </div>
         <Hint>Compact hides the preview line and tightens each row.</Hint>
+      </section>
+
+      <section>
+        <SectionTitle icon={<ImageIcon size={15} />}>Pictures in messages</SectionTitle>
+        <div className="space-y-2">
+          {(
+            [
+              {
+                id: 'always',
+                label: 'Show pictures',
+                hint: 'Loaded through this server, so senders never see your address or device. They can still tell the message was opened.',
+              },
+              {
+                id: 'ask',
+                label: 'Ask first',
+                hint: 'Nothing loads until you say so, per message or per sender. Senders cannot tell a message was read.',
+              },
+            ] as { id: RemoteImagePolicy; label: string; hint: string }[]
+          ).map((option) => {
+            const isOn = images === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={isOn}
+                onClick={() => {
+                  setImages(option.id);
+                  setRemoteImagePolicy(option.id);
+                }}
+                className={`flex w-full max-w-lg items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+                  isOn ? 'border-primary bg-primary/[0.06]' : 'border-border hover:border-foreground/30'
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                    isOn ? 'border-primary' : 'border-muted-foreground/50'
+                  }`}
+                >
+                  {isOn && <span className="h-2 w-2 rounded-full bg-primary" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold">{option.label}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{option.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <Hint>Applies on this browser, from the next message you open.</Hint>
       </section>
 
       <section>

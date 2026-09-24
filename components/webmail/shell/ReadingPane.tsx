@@ -29,7 +29,7 @@ import type { ComposeMode, SendResult, WebmailAttachment, WebmailListItem, Webma
 import type { ComposePayload } from '../compose/types';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
 import { attachmentUrl, rawMessageUrl } from '@/lib/webmail/client';
-import { allowImageSender, isImageSenderAllowed } from '@/lib/webmail/sanitize';
+import { allowImageSender, isImageSenderAllowed, remoteImagePolicy } from '@/lib/webmail/sanitize';
 import { formatDateTime, formatShortDateTime } from '@/lib/webmail/dates';
 import WebmailBodyFrame, { BlockedImagesBar } from '../WebmailBodyFrame';
 import Avatar from '@/components/ui/Avatar';
@@ -214,8 +214,13 @@ function MessageReader({
     [thread, message.id],
   );
 
+  // Whether remote images load on open. The policy is the reader's own
+  // (Settings › General); under `ask` the per-sender allowance and the
+  // "show once" button still apply. Read per message rather than once, so
+  // changing the setting takes effect on the next message opened.
+  const policy = useMemo(() => remoteImagePolicy(), [message.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const senderAllowed = useMemo(() => isImageSenderAllowed(message.fromEmail), [message.fromEmail]);
-  const allowRemoteImages = senderAllowed || showImagesOnce;
+  const allowRemoteImages = policy === 'always' || senderAllowed || showImagesOnce;
   const handleBlockedCount = useCallback((count: number) => setBlockedImages(count), []);
 
   // Escape closes the inline reply before it closes the message.

@@ -102,8 +102,13 @@ Choices worth knowing about, because they constrain contributions:
 
 - **Message HTML is sanitised with DOMPurify and rendered in a sandboxed
   iframe.** Both, not either.
-- **Remote images are blocked by default**, with a per-sender allow. Loading
-  them silently tells a sender when, and roughly where, a message was opened.
+- **Remote images never load directly.** They come through the app's own
+  image proxy, which fetches anonymously from this host (no cookies, no
+  referrer, no reader address), accepts only image bytes under a size cap,
+  and refuses anything that resolves to a private address. With that in
+  place they load on open by default, the way Gmail's do; a sender can still
+  tell a message was opened. Settings › General offers "Ask first" for anyone
+  who wants nothing to load until they say so, per message or per sender.
 - **Signatures are sanitised on the way in**, against an allowlist. A
   signature is HTML the server later attaches to outgoing mail. The one
   `data:` URI it admits is a base64 raster image on `<img src>` — how the
