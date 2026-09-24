@@ -267,6 +267,85 @@
   }
 }
 
+/* --- Pane widths -----------------------------------------------------------
+ * The rail and the message list are the person's to drag at md and up
+ * (PaneResizeHandle). The numbers mirror lib/webmail/paneLayout.ts; change both.
+ *
+ *   --rail-w / --list-w      what they chose: copied onto <html> from
+ *                            localStorage by the <head> script before first
+ *                            paint, then written live by the handles
+ *   --rail-now / --list-now  what the panes are: the choice held back so the
+ *                            reading pane keeps 420px while the window allows
+ *
+ * clamp() does it with no resize listener: the list gives way first, then the
+ * rail. When even their floors do not fit (a 768px tablet), the floors win --
+ * clamp's minimum beats a smaller maximum.
+ *
+ * Deliberately outside any @layer: always emitted (no class to purge), and
+ * after the utilities, so it wins over them. */
+:root {
+  --rail-w: 228px;
+  --list-w: 360px;
+  --rail-now: clamp(200px, var(--rail-w), calc(100vw - 740px)); /* 740 = list floor 320 + reading 420 */
+  --list-now: clamp(320px, var(--list-w), calc(100vw - var(--rail-now) - 420px));
+}
+:root[data-rail='collapsed'] {
+  --rail-now: 58px;
+}
+
+/* Phones: the drawer is always 228px and the list always full width. A stored
+   width is a desktop choice. */
+.pane-rail {
+  width: 228px;
+}
+.pane-list {
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .pane-rail {
+    width: var(--rail-now);
+  }
+  .pane-list {
+    width: var(--list-now);
+  }
+  /* Skeleton pieces a collapsed rail has no room for. */
+  :root[data-rail='collapsed'] .rail-open-only {
+    display: none;
+  }
+  /* A server-rendered rail (Calendar, Contacts, Settings) is 58px from the
+     first paint once the head script has run, but its HTML still has labels
+     until React hydrates. Paint the ink column empty rather than a squashed
+     full rail; the icons arrive with hydration. */
+  :root[data-rail='collapsed'] [data-sidebar]:not([data-collapsed]) > * {
+    visibility: hidden;
+  }
+}
+
+/* While a pane edge or a compose window is dragged (data-dragging on <html>):
+   the cursor holds everywhere, nothing selects, email iframes stop swallowing
+   the pointer (pointer capture alone does not keep events out of an iframe in
+   every browser), and the rail's width transition is off so it follows the
+   pointer instead of trailing it by 200ms. */
+:root[data-dragging='col-resize'],
+:root[data-dragging='col-resize'] * {
+  cursor: col-resize !important;
+}
+:root[data-dragging='grabbing'],
+:root[data-dragging='grabbing'] * {
+  cursor: grabbing !important;
+}
+:root[data-dragging],
+:root[data-dragging] * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+:root[data-dragging] iframe {
+  pointer-events: none;
+}
+:root[data-dragging] [data-sidebar] {
+  transition: none;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

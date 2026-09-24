@@ -262,14 +262,18 @@ function MessageReader({
   const allowRemoteImages = policy === 'always' || senderAllowed || showImagesOnce;
   const handleBlockedCount = useCallback((count: number) => setBlockedImages(count), []);
 
-  // Escape closes the inline reply before it closes the message.
+  // Escape closes the inline reply before it closes the message -- but not
+  // when it has just closed a menu or the link box above the reply. On
+  // window, so those (on document) have had the key first.
   useEffect(() => {
     if (!quickReply) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onQuickReplyChange(null);
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      onQuickReplyChange(null);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [quickReply, onQuickReplyChange]);
 
   const toggleEarlier = useCallback(

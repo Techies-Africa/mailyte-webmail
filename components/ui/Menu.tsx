@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useDismiss } from './useDismiss';
 
 export interface MenuItem {
   key: string;
@@ -25,27 +26,13 @@ type MenuProps = {
  * A small action menu: trigger + list, closing on outside click, Escape or
  * a pick. Used for the folder "…" menu, the reading pane's overflow, and the
  * bulk "More" menu, which previously each carried their own copy of the same
- * outside-click effect.
+ * outside-click effect (now useDismiss, shared with SelectMenu).
  */
 export default function Menu({ trigger, items, align = 'left', direction = 'down', label }: MenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, close);
 
   return (
     <div ref={ref} className="relative inline-flex">

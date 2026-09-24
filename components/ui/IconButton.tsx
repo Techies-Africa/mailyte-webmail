@@ -3,14 +3,15 @@ import { forwardRef } from 'react';
 type IconButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
   /** The accessible name AND the hover tooltip. Required: an icon alone says nothing. */
   label: string;
-  size?: 'xs' | 'sm' | 'md';
+  /** `lg` (36px) is for touch: the reading pane's toolbar on a phone. */
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   tone?: 'default' | 'danger' | 'primary' | 'onDark';
   /** Draws the 1px border the reading-pane toolbar uses. */
   outlined?: boolean;
   active?: boolean;
 };
 
-const SIZES = { xs: 'h-6 w-6', sm: 'h-7 w-7', md: 'h-[30px] w-[30px]' };
+const SIZES = { xs: 'h-6 w-6', sm: 'h-7 w-7', md: 'h-[30px] w-[30px]', lg: 'h-9 w-9' };
 
 const TONES = {
   default: 'text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground',

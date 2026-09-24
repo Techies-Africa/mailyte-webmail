@@ -249,6 +249,7 @@ export default function MessageListPane({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') submitSearch();
                   if (e.key === 'Escape') {
+                    e.preventDefault(); // handled: an open reply or message stays put
                     closeSearch();
                     (e.target as HTMLInputElement).blur();
                   }

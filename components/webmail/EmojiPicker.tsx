@@ -45,7 +45,9 @@ export default function EmojiPicker({ onPick, onClose, direction = 'up' }: Emoji
       if (ref.current && !ref.current.contains(event.target as Node)) onClose();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault(); // handled: nothing further out closes on the same key
+      onClose();
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);

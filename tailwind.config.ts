@@ -2,6 +2,7 @@
 // this webmail is a stylesheet edit -- no Tailwind change, no rebuild of the
 // class names. Fonts are CSS variables set by next/font in app/layout.tsx.
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
 
 const config: Config = {
   darkMode: ['class'],
@@ -102,7 +103,12 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // can-hover: a mouse or a trackpad. Controls that appear on hover exist
+    // only there; on touch they were invisible but still tappable, so a tap
+    // under a row's date could archive a message nobody saw a button for.
+    plugin(({ addVariant }) => addVariant('can-hover', '@media (hover: hover) and (pointer: fine)')),
+  ],
 };
 
 export default config;

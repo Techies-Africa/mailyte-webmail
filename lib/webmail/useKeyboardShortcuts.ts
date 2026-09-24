@@ -53,7 +53,11 @@ export const SHORTCUT_HELP: Array<{ keys: string; description: string }> = [
   { keys: '?', description: 'This help' },
 ];
 
-function isTypingTarget(target: EventTarget | null): boolean {
+/**
+ * Somewhere a letter is a letter, not a command. Exported so other key
+ * handlers -- the phone drawer's Escape -- stand aside in the same places.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName.toLowerCase();
 
@@ -76,6 +80,10 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
+      // Already handled -- an Escape that closed a menu or a dialog must not
+      // also close the message behind it. Popups listen on document, so they
+      // have run by the time this window listener hears the key.
+      if (event.defaultPrevented) return;
 
       // Escape is the one key that must work everywhere, including out of
       // the help overlay itself.

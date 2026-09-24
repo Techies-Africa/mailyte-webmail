@@ -210,7 +210,11 @@ export default function FolderNav({
         onChange={(e) => setDraftName(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submitInline();
-          if (e.key === 'Escape') cancelInline();
+          if (e.key === 'Escape') {
+            // Handled: cancels the edit, and only the edit.
+            e.preventDefault();
+            cancelInline();
+          }
         }}
         onBlur={() => void submitInline()}
         disabled={busy}

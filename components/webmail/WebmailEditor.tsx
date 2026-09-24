@@ -312,7 +312,11 @@ export default function WebmailEditor({
             e.preventDefault();
             applyLink();
           }
-          if (e.key === 'Escape') setLinkOpen(false);
+          if (e.key === 'Escape') {
+            // Handled: the inline reply this editor may sit in stays open.
+            e.preventDefault();
+            setLinkOpen(false);
+          }
         }}
         placeholder="https://example.com  (empty removes the link)"
         className="flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-[12.5px] focus:border-primary focus:outline-none"

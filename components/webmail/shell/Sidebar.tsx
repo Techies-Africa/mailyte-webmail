@@ -96,7 +96,10 @@ export default function Sidebar({
   useEffect(() => {
     if (!profileOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setProfileOpen(false);
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Handled, so the phone drawer around it stays open.
+      event.preventDefault();
+      setProfileOpen(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
