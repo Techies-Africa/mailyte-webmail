@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
@@ -62,9 +63,11 @@ function draftFrom(contact: Contact): ContactDraft {
 }
 
 export default function AddressBookPage() {
-  const [supported, setSupported] = useState<boolean | null>(null);
+  // Null until the server has answered once; cached after that, so a revisit gates at once.
+  const capabilities = useCapabilities().data;
+  const supported = capabilities ? capabilities.capabilities?.contacts === true : null;
   return (
-    <PageShell current="contacts" onCapabilities={(caps) => setSupported(caps.contacts)}>
+    <PageShell current="contacts">
       <AddressBookScreen supported={supported} />
     </PageShell>
   );

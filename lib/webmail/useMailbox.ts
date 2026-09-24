@@ -13,17 +13,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { listAllContacts, displayName as contactName } from '@/lib/webmail/contacts';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
-import type {
-  ComposeMode,
-  WebmailContact,
-  WebmailFolder,
-  WebmailListItem,
-  WebmailMessage,
-  WebmailSettings,
-} from '@/components/webmail/types';
+import type { ComposeMode, WebmailFolder, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import {
   listMessages,
@@ -42,29 +34,25 @@ import {
   aiSummarize as apiAiSummarize,
   saveDraft as apiSaveDraft,
   discardDraft as apiDiscardDraft,
-  listContacts,
-  getSettings,
-  getCapabilities,
-  listScheduled,
   cancelScheduled as apiCancelScheduled,
   createFolder as apiCreateFolder,
   renameFolder as apiRenameFolder,
   deleteFolder as apiDeleteFolder,
   blockSender as apiBlockSender,
   setLabels as apiSetLabels,
-  listLabels,
 } from '@/lib/webmail/client';
-import type { ApiCapabilities, ScheduledMessage, SharedMailbox } from '@/lib/webmail/client';
+import type { SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
+import { FALLBACK_FOLDERS, foldersFingerprint, toFolder, toListItem, toMessage } from '@/lib/webmail/adapters';
 import {
-  FALLBACK_FOLDERS,
-  foldersFingerprint,
-  toContact,
-  toFolder,
-  toSettings,
-  toListItem,
-  toMessage,
-} from '@/lib/webmail/adapters';
+  useCapabilities,
+  useLabels,
+  useScheduled,
+  useSettings,
+  useSuggestions,
+} from '@/lib/webmail/query/accountQueries';
+import { qk } from '@/lib/webmail/query/keys';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 
 /**
  * Delta poll interval (PRD P4). A tick is one folders call that transfers no
@@ -147,11 +135,28 @@ export interface PendingSend {
   context: SendContext;
 }
 
-export function useMailbox() {
-  const router = useRouter();
-  const { toast } = useToast();
+const NO_SHARED_MAILBOXES: SharedMailbox[] = [];
 
-  const [displayEmail, setDisplayEmail] = useState('');
+export function useMailbox() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const handleUnauthorized = useUnauthorizedHandler();
+
+  // Mailbox-wide data, shared with every other screen through the query cache.
+  const capabilitiesQuery = useCapabilities();
+  const settings = useSettings().data ?? null;
+  const contacts = useSuggestions();
+  const scheduled = useScheduled();
+  const labels = useLabels();
+  const capabilities = capabilitiesQuery.data?.capabilities ?? null;
+  const sharedMailboxes = capabilitiesQuery.data?.shared_mailboxes ?? NO_SHARED_MAILBOXES;
+
+  // A placeholder only, so the profile chip is not blank on first paint. The
+  // authoritative address is the SERVER's, from capabilities -- the only
+  // thing that knows whose session this actually is.
+  const [placeholderEmail, setPlaceholderEmail] = useState('');
+  const displayEmail = capabilitiesQuery.data?.email_address || placeholderEmail;
+
   const [folders, setFolders] = useState<WebmailFolder[]>(FALLBACK_FOLDERS);
   const [activeFolder, setActiveFolder] = useState(() => readUrlState().folder ?? 'INBOX');
   const [messages, setMessages] = useState<WebmailListItem[]>([]);
@@ -175,12 +180,6 @@ export function useMailbox() {
   const [searchScope, setSearchScope] = useState<SearchScope>('folder');
   const [filter, setFilterState] = useState<ListFilter>('all');
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
-  const [contacts, setContacts] = useState<WebmailContact[]>([]);
-  const [settings, setSettings] = useState<WebmailSettings | null>(null);
-  const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
-  const [sharedMailboxes, setSharedMailboxes] = useState<SharedMailbox[]>([]);
-  const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
-  const [labels, setLabels] = useState<string[]>([]);
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
@@ -196,12 +195,6 @@ export function useMailbox() {
   const activeFolderMeta = folders.find((f) => f.name === activeFolder) ?? null;
   const inTrash = activeFolderMeta?.role === 'trash';
   const inJunk = activeFolderMeta?.role === 'junk';
-
-  const handleUnauthorized = useCallback(() => {
-    // Deliberately does NOT set sessionChecked: the gate stays closed so the
-    // mailbox never paints on the way out to the login page.
-    router.push('/login');
-  }, [router]);
 
   // --- Loading ---------------------------------------------------------------
 
@@ -285,99 +278,43 @@ export function useMailbox() {
     return { changed };
   }, [handleUnauthorized]);
 
-  /** When each message in the Scheduled folder is due. */
-  const loadScheduled = useCallback(async () => {
-    const result = await listScheduled(handleUnauthorized);
-    setScheduled(result.success ? (result.data?.messages ?? []) : []);
-  }, [handleUnauthorized]);
-
-  /** Every label in use, for the rail and the picker. Quiet on failure: an older server has no labels. */
-  const loadLabels = useCallback(async () => {
-    const result = await listLabels(handleUnauthorized);
-    if (result.success && Array.isArray(result.data?.labels)) setLabels(result.data.labels);
-  }, [handleUnauthorized]);
+  // Both are account-wide queries now; after a change, ask them to look again.
+  const loadScheduled = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk.scheduled }),
+    [queryClient],
+  );
+  const loadLabels = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk.labels }),
+    [queryClient],
+  );
 
   useEffect(() => {
     void loadMessages(activeFolder, { search: activeSearch, scope: searchScope, filter });
     void loadFolders();
-    void loadScheduled();
-    void loadLabels();
-    // A placeholder only, so the profile chip is not blank on first paint.
-    // The authoritative address arrives from /capabilities below.
-    const raw = sessionStorage.getItem('mailyte_mailbox_display');
-    if (raw) {
-      try {
-        setDisplayEmail(JSON.parse(raw).email_address ?? '');
-      } catch {
-        // display-only, safe to ignore
-      }
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFolder, activeSearch, searchScope, filter]);
 
-  // Autocomplete suggestions, settings and capabilities: loaded once.
   useEffect(() => {
-    void listContacts(handleUnauthorized).then((result) => {
-      if (result.success && Array.isArray(result.data)) setContacts(result.data.map(toContact));
-    });
-    // Three sources, merged in this order and de-duplicated by address:
-    // saved cards, the directory, then everyone harvested from headers. A
-    // curated record outranks a generated one; the harvested list is the only
-    // one that knows who you actually write to, so it is never dropped.
-    void listAllContacts(handleUnauthorized).then((books) => {
-      const flatten = (entries: typeof books, wanted: 'saved' | 'directory') =>
-        entries
-          .filter((entry) => (entry.book.read_only ? 'directory' : 'saved') === wanted)
-          .flatMap((entry) =>
-            entry.contacts.flatMap((contact) =>
-              contact.emails.map((email) => ({
-                name: contactName(contact),
-                email: email.address,
-                source: wanted,
-              })),
-            ),
-          )
-          .filter((entry) => entry.email);
+    const raw = sessionStorage.getItem('mailyte_mailbox_display');
+    if (!raw) return;
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPlaceholderEmail(JSON.parse(raw).email_address ?? '');
+    } catch {
+      // display-only, safe to ignore
+    }
+  }, []);
 
-      const ranked = [...flatten(books, 'saved'), ...flatten(books, 'directory')];
-      if (ranked.length === 0) return;
-
-      setContacts((current) => {
-        const seen = new Set<string>();
-        const merged: WebmailContact[] = [];
-        for (const entry of [...ranked, ...current]) {
-          const key = entry.email.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          merged.push(entry);
-        }
-        return merged;
-      });
-    });
-    void getSettings(handleUnauthorized).then((result) => {
-      if (result.success && result.data) setSettings(toSettings(result.data));
-    });
-    void getCapabilities(handleUnauthorized).then((result) => {
-      if (!result.success || !result.data) return;
-      setCapabilities(result.data.capabilities);
-      setSharedMailboxes(
-        Array.isArray(result.data.shared_mailboxes) ? result.data.shared_mailboxes : [],
-      );
-      // The signed-in address according to the SERVER, which is the only
-      // thing that knows whose session this actually is.
-      if (result.data.email_address) {
-        setDisplayEmail(result.data.email_address);
-        try {
-          sessionStorage.setItem(
-            'mailyte_mailbox_display',
-            JSON.stringify({ email_address: result.data.email_address }),
-          );
-        } catch {
-          // Storage unavailable (private mode); the state above is what renders.
-        }
-      }
-    });
-  }, [handleUnauthorized]);
+  // Remember the server's answer for the next first paint.
+  const serverEmail = capabilitiesQuery.data?.email_address;
+  useEffect(() => {
+    if (!serverEmail) return;
+    try {
+      sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify({ email_address: serverEmail }));
+    } catch {
+      // Storage unavailable (private mode); the query is what renders.
+    }
+  }, [serverEmail]);
 
   /**
    * Delta sync (P4). Paused while the tab is hidden, and run once on

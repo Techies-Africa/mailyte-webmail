@@ -17,6 +17,7 @@ import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/cal
 import EventModal from '@/components/calendar/EventModal';
 import InvitationsPanel from '@/components/calendar/InvitationsPanel';
 import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
 import { FilterPill } from '@/components/ui/Pill';
@@ -52,9 +53,11 @@ function initialAnchor(): Date {
 }
 
 export default function CalendarPage() {
-  const [supported, setSupported] = useState<boolean | null>(null);
+  // Null until the server has answered once; cached after that, so a revisit gates at once.
+  const capabilities = useCapabilities().data;
+  const supported = capabilities ? capabilities.capabilities?.calendar === true : null;
   return (
-    <PageShell current="calendar" onCapabilities={(caps) => setSupported(caps.calendar)}>
+    <PageShell current="calendar">
       <CalendarScreen supported={supported} />
     </PageShell>
   );

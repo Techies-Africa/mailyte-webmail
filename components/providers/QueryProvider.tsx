@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
+import { onAccountChange } from '@/lib/webmail/query/session';
 
 /**
  * The query cache for the whole app.
@@ -15,6 +16,19 @@ import { makeQueryClient } from '@/lib/webmail/query/queryClient';
  */
 export default function QueryProvider({ children }: { children: React.ReactNode }) {
   const [client] = useState(makeQueryClient);
+
+  // Another tab signed in, switched mailbox or signed out: whatever this tab
+  // holds belongs to the previous account. Forget it and start over.
+  useEffect(
+    () =>
+      onAccountChange(() => {
+        client.clear();
+        // The sign-in screens hold no mail, and are mid-way through a session change of their own.
+        if (window.location.pathname === '/login' || window.location.pathname === '/change-password') return;
+        window.location.assign('/');
+      }),
+    [client],
+  );
 
   return (
     <QueryClientProvider client={client}>

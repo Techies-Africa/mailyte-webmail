@@ -1,16 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Menu as MenuIcon } from 'lucide-react';
 import { SETTINGS_SECTIONS } from '@/components/webmail/settings/sections';
 import Sidebar from '@/components/webmail/shell/Sidebar';
 import SidebarItem, { SidebarDivider, SidebarEyebrow } from '@/components/webmail/shell/SidebarItem';
 import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
 import IconButton from '@/components/ui/IconButton';
-import { getSettings } from '@/lib/webmail/client';
-import { toSettings } from '@/lib/webmail/adapters';
-import type { WebmailSettings } from '@/components/webmail/types';
+import { useSettings } from '@/lib/webmail/query/accountQueries';
+import { qk } from '@/lib/webmail/query/keys';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 
 /**
  * Settings, inside the same shell as the mailbox: the rail stays, with the
@@ -25,30 +26,18 @@ export default function WebmailSettingsPage() {
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [settings, setSettings] = useState<WebmailSettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Shared with the inbox, and cached: moving between sections, or back
+  // here from mail, does not load it again.
+  const queryClient = useQueryClient();
+  const settingsQuery = useSettings();
+  const settings = settingsQuery.data ?? null;
+  const error = settingsQuery.error && !settings ? settingsQuery.error.message : null;
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
   const active = SETTINGS_SECTIONS.find((s) => s.id === requested) ?? SETTINGS_SECTIONS[0];
   const ActiveComponent = active.component;
 
-  const handleUnauthorized = useCallback(() => {
-    router.push('/login');
-  }, [router]);
-
-  const loadSettings = useCallback(async () => {
-    const result = await getSettings(handleUnauthorized);
-    if (result.success && result.data) {
-      setSettings(toSettings(result.data));
-      setError(null);
-    } else if (!result.success) {
-      setError(result.message);
-    }
-  }, [handleUnauthorized]);
-
-  useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
+  const handleUnauthorized = useUnauthorizedHandler();
 
   /** Sections save explicitly, so navigating away from an edited one asks first. */
   const confirmLeave = () => {
@@ -125,7 +114,7 @@ export default function WebmailSettingsPage() {
                 key={active.id}
                 settings={settings}
                 onUnauthorized={handleUnauthorized}
-                onSettingsChanged={() => void loadSettings()}
+                onSettingsChanged={() => void queryClient.invalidateQueries({ queryKey: qk.settings })}
                 onDirty={() => setDirty((prev) => ({ ...prev, [active.id]: true }))}
                 onSaved={() => setDirty((prev) => ({ ...prev, [active.id]: false }))}
               />

@@ -10,6 +10,7 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
+import { announceAccountChange } from "./query/session";
 
 /**
  * `status` on a failure is the HTTP status, or 0 when the server was never
@@ -854,6 +855,7 @@ export async function switchAccount(email: string): Promise<string | null> {
   );
   if (!result.success) return result.message;
   forgetDisplayAddress();
+  announceAccountChange();
   window.location.assign("/");
   return null;
 }
@@ -872,6 +874,7 @@ export async function signOut(all = false): Promise<void> {
     data?: { remaining?: number };
   };
   forgetDisplayAddress();
+  announceAccountChange();
   window.location.assign(body?.data?.remaining ? "/" : "/login");
 }
 

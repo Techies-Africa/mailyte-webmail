@@ -1,19 +1,17 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
-import { getCapabilities, getSettings } from '@/lib/webmail/client';
+import { useCapabilities, useSettings } from '@/lib/webmail/query/accountQueries';
 
 type PageShellProps = {
   /** Which rail row is lit. */
   current: 'calendar' | 'contacts';
   children: React.ReactNode;
-  /** Reported up so the page can gate itself; the page shows nothing until the server answers. */
-  onCapabilities?: (caps: { calendar: boolean; contacts: boolean }) => void;
 };
 
 const PageMenuContext = createContext<() => void>(() => {});
@@ -31,33 +29,20 @@ export function useOpenPageMenu(): () => void {
  * composes (it lands on the inbox with a window open), and the account chip
  * still opens settings and signs out.
  */
-export default function PageShell({ current, children, onCapabilities }: PageShellProps) {
+export default function PageShell({ current, children }: PageShellProps) {
   const router = useRouter();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState<string | null>(null);
-  const [caps, setCaps] = useState<{ calendar: boolean; contacts: boolean } | null>(null);
-
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
-
-  useEffect(() => {
-    void getCapabilities(onUnauthorized).then((result) => {
-      if (!result.success || !result.data) return;
-      const next = {
-        calendar: result.data.capabilities?.calendar === true,
-        contacts: result.data.capabilities?.contacts === true,
-      };
-      setCaps(next);
-      onCapabilities?.(next);
-      if (result.data.email_address) setEmail(result.data.email_address);
-    });
-    void getSettings(onUnauthorized).then((result) => {
-      if (result.success && result.data) setName(result.data.name ?? null);
-    });
-    // onCapabilities is a page-level setter; re-running on its identity would refetch for nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onUnauthorized]);
+  // Shared with the inbox and every other screen: a revisit paints at once.
+  const capabilities = useCapabilities().data;
+  const email = capabilities?.email_address ?? '';
+  const name = useSettings().data?.name ?? null;
+  const caps = capabilities
+    ? {
+        calendar: capabilities.capabilities?.calendar === true,
+        contacts: capabilities.capabilities?.contacts === true,
+      }
+    : null;
 
   const rail = collapsed && !menuOpen;
   const openMenu = useCallback(() => setMenuOpen(true), []);

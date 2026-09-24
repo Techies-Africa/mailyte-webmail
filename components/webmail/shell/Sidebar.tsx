@@ -21,7 +21,8 @@ import { BrandLockup } from '@/components/brand/BrandMark';
 import Avatar from '@/components/ui/Avatar';
 import IconButton from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
-import { listAccounts, signOut, switchAccount, type AccountSummary } from '@/lib/webmail/client';
+import { signOut, switchAccount } from '@/lib/webmail/client';
+import { useAccounts } from '@/lib/webmail/query/accountQueries';
 
 export const SIDEBAR_OPEN_WIDTH = 228;
 export const SIDEBAR_COLLAPSED_WIDTH = 58;
@@ -71,20 +72,15 @@ export default function Sidebar({
   const router = useRouter();
   const { toast } = useToast();
   const [profileOpen, setProfileOpen] = useState(false);
-  const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && resolvedTheme === 'dark';
 
-  // Who else is signed in here. Loaded once; the list only changes through
-  // this menu or the login page, both of which reload the document.
-  useEffect(() => {
-    void listAccounts().then((result) => {
-      if (result.success && Array.isArray(result.data?.accounts)) setAccounts(result.data.accounts);
-    });
-  }, []);
+  // Who else is signed in here. Loaded once per tab; the list only changes
+  // through this menu or the login page, both of which reload the document.
+  const accounts = useAccounts().data ?? [];
 
   // Escape closes the account menu, like every other floating panel here.
   useEffect(() => {

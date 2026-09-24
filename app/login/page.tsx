@@ -9,6 +9,7 @@ import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Field';
 import { listAccounts, switchAccount, type AccountSummary } from '@/lib/webmail/client';
+import { announceAccountChange, resetSessionState } from '@/lib/webmail/query/session';
 
 export default function WebmailLoginPage() {
   const router = useRouter();
@@ -35,6 +36,7 @@ export default function WebmailLoginPage() {
   const queryClient = useQueryClient();
   useEffect(() => {
     queryClient.clear();
+    resetSessionState();
   }, [queryClient]);
 
   useEffect(() => {
@@ -78,6 +80,8 @@ export default function WebmailLoginPage() {
       // Non-sensitive display info only -- the session token itself lives in
       // an HttpOnly cookie the login route just set, never here.
       sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify(data.email_account));
+      // This mailbox is now the active one for every tab on this browser.
+      announceAccountChange();
 
       // A temporary or admin-reset password buys a session that can do
       // exactly two things: set a real password, and sign out.
