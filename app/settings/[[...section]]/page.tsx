@@ -2,36 +2,28 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, LogOut } from 'lucide-react';
+import { ArrowLeft, Menu as MenuIcon } from 'lucide-react';
 import { SETTINGS_SECTIONS } from '@/components/webmail/settings/sections';
+import Sidebar from '@/components/webmail/shell/Sidebar';
+import SidebarItem, { SidebarDivider, SidebarEyebrow } from '@/components/webmail/shell/SidebarItem';
+import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
+import IconButton from '@/components/ui/IconButton';
 import { getSettings, logout as apiLogout } from '@/lib/webmail/client';
 import { toSettings } from '@/lib/webmail/adapters';
 import type { WebmailSettings } from '@/components/webmail/types';
 
 /**
- * Settings, as a page rather than a modal.
- *
- * A dialog was the wrong container the moment settings stopped being one
- * short form: it capped the content at a dialog's height, put a scroll
- * region inside a scroll region, could not be linked to, and ignored the
- * back button. As a route each section gets a real URL
- * (/webmail/settings/forwarding) and there is room to grow.
- *
- * The chrome deliberately MATCHES the mailbox: same full-height sidebar
- * (w-56, same border and surface), same header geometry with a w-56 left
- * block so the divider lines up, and content that fills the width. The
- * first attempt centred a narrow card in the viewport, which read as a
- * different application that happened to share a colour scheme -- settings
- * should feel like the same product with the folder list swapped for a
- * section list, which is what SOGo does and what was asked for.
- *
- * An unknown section id falls back to the first rather than 404ing -- a
- * stale bookmark should open settings, not an error.
+ * Settings, inside the same shell as the mailbox: the rail stays, with the
+ * folder list swapped for the section list, so moving between mail and
+ * settings does not read as leaving the product. Each section gets a real
+ * URL (/settings/forwarding); an unknown one falls back to the first.
  */
 export default function WebmailSettingsPage() {
   const router = useRouter();
   const params = useParams<{ section?: string[] }>();
   const requested = params?.section?.[0];
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [settings, setSettings] = useState<WebmailSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +38,10 @@ export default function WebmailSettingsPage() {
 
   const loadSettings = useCallback(async () => {
     const result = await getSettings(handleUnauthorized);
-    if (result.success) {
+    if (result.success && result.data) {
       setSettings(toSettings(result.data));
       setError(null);
-    } else {
+    } else if (!result.success) {
       setError(result.message);
     }
   }, [handleUnauthorized]);
@@ -58,11 +50,7 @@ export default function WebmailSettingsPage() {
     void loadSettings();
   }, [loadSettings]);
 
-  /**
-   * Sections save explicitly, so navigating away from an edited one loses
-   * it. Guarding the in-app moves is the useful half; a full page leave is
-   * the limit of what a client route can honestly promise to catch.
-   */
+  /** Sections save explicitly, so navigating away from an edited one asks first. */
   const confirmLeave = () => {
     if (!Object.values(dirty).some(Boolean)) return true;
     return window.confirm('You have unsaved changes in settings. Leave anyway?');
@@ -71,12 +59,13 @@ export default function WebmailSettingsPage() {
   const goTo = (id: string) => {
     if (!confirmLeave()) return;
     setDirty({});
+    setMenuOpen(false);
     router.push(id === SETTINGS_SECTIONS[0].id ? '/settings' : `/settings/${id}`);
   };
 
-  const backToMail = () => {
+  const leave = (href: string) => {
     if (!confirmLeave()) return;
-    router.push('/');
+    router.push(href);
   };
 
   const signOut = async () => {
@@ -86,141 +75,72 @@ export default function WebmailSettingsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Same geometry as WebmailHeader: a w-56 left block so the header's
-          divider lines up with the sidebar edge below it, instead of the two
-          columns disagreeing about where the app starts. */}
-      <header className="border-b border-border py-2 px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 min-w-0 lg:w-56 shrink-0">
-            <button
-              onClick={backToMail}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-muted"
-            >
-              <ArrowLeft size={16} />
-              <span>Back to mail</span>
-            </button>
-          </div>
+    <div className="relative flex h-screen overflow-hidden bg-pane">
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        onCompose={() => leave('/?compose=new')}
+        email={settings?.emailAddress ?? ''}
+        name={settings?.name ?? null}
+        onOpenSettings={() => goTo(SETTINGS_SECTIONS[0].id)}
+        onLogout={() => void signOut()}
+        mobileOpen={menuOpen}
+        onCloseMobile={() => setMenuOpen(false)}
+      >
+        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed && !menuOpen} onClick={() => leave('/')} />
+        <SidebarDivider />
+        <SidebarEyebrow collapsed={collapsed && !menuOpen}>Settings</SidebarEyebrow>
+        {SETTINGS_SECTIONS.map((section) => {
+          const Icon = section.icon;
+          return (
+            <SidebarItem
+              key={section.id}
+              icon={<Icon />}
+              label={section.label}
+              active={section.id === active.id}
+              collapsed={collapsed && !menuOpen}
+              badge={dirty[section.id] ? '•' : undefined}
+              badgeTone="muted"
+              onClick={() => goTo(section.id)}
+            />
+          );
+        })}
+      </Sidebar>
 
-          <div className="min-w-0 flex-1">
-            <h1 className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-tight">
-              Settings
-            </h1>
-            {settings && (
-              <p className="text-xs text-gray-500 truncate">{settings.emailAddress}</p>
-            )}
-          </div>
-
-          <button
-            onClick={() => void signOut()}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-500 hover:text-red-600 hover:bg-muted shrink-0"
-            title="Sign out"
-          >
-            <LogOut size={18} />
-            <span className="hidden sm:inline">Sign out</span>
-          </button>
-        </div>
-      </header>
-
-      <div className="flex-1 flex overflow-hidden">
-        {/* Identical container to WebmailSidebar, so moving between mail and
-            settings does not shift the layout under the pointer. */}
-        <nav
-          aria-label="Settings sections"
-          className="hidden md:flex w-56 border-r border-border h-full overflow-y-auto bg-muted flex-col"
-        >
-          <div className="px-4 pt-4 pb-2 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-            Preferences
-          </div>
-
-          <div className="pr-2">
-            {SETTINGS_SECTIONS.map((section) => {
-              const Icon = section.icon;
-              const isActive = section.id === active.id;
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => goTo(section.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`flex items-center justify-between w-full px-3 py-2 text-sm rounded-r-full ${
-                    isActive
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-muted'
-                  }`}
-                >
-                  <span className="flex items-center gap-3 min-w-0">
-                    <Icon size={18} />
-                    <span className="truncate">{section.label}</span>
-                  </span>
-                  {dirty[section.id] && (
-                    <span
-                      className="h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0"
-                      title="Unsaved changes"
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          {/* Narrow screens get the sections as a strip, since a 224px column
-              would leave nothing for the form. */}
-          <nav
-            aria-label="Settings sections"
-            className="md:hidden flex gap-1 px-3 py-2 border-b border-border overflow-x-auto shrink-0"
-          >
-            {SETTINGS_SECTIONS.map((section) => (
-              <button
-                key={section.id}
-                onClick={() => goTo(section.id)}
-                aria-current={section.id === active.id ? 'page' : undefined}
-                className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${
-                  section.id === active.id
-                    ? 'bg-primary/10 text-primary font-medium'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
-              >
-                {section.label}
-                {dirty[section.id] && <span className="ml-1.5 text-amber-500">•</span>}
-              </button>
-            ))}
-          </nav>
-
-          <div className="flex-1 overflow-y-auto">
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-700/60">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {active.label}
-              </h2>
-              <p className="text-sm text-gray-500">{active.description}</p>
-            </div>
-
-            <div className="px-6 py-5">
-              {error && (
-                <p className="mb-4 text-sm text-red-600 dark:text-red-400" role="alert">
-                  {error}
-                </p>
-              )}
-
-              {settings ? (
-                <div className="max-w-3xl">
-                  <ActiveComponent
-                    key={active.id}
-                    settings={settings}
-                    onUnauthorized={handleUnauthorized}
-                    onSettingsChanged={() => void loadSettings()}
-                    onDirty={() => setDirty((prev) => ({ ...prev, [active.id]: true }))}
-                    onSaved={() => setDirty((prev) => ({ ...prev, [active.id]: false }))}
-                  />
-                </div>
-              ) : (
-                !error && <p className="text-sm text-gray-500">Loading settings…</p>
-              )}
-            </div>
+      <main className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-card px-4 py-3 sm:px-8">
+          <IconButton label="Menu" size="sm" onClick={() => setMenuOpen(true)} className="md:hidden">
+            <MenuIcon size={15} />
+          </IconButton>
+          <div className="min-w-0">
+            <h1 className="font-display text-[17px] font-bold tracking-tight">{active.label}</h1>
+            <p className="truncate text-[12.5px] text-muted-foreground">{active.description}</p>
           </div>
         </div>
-      </div>
+
+        <div className="px-4 py-6 sm:px-8">
+          {error && (
+            <p className="mb-4 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+
+          {settings ? (
+            <div className="max-w-3xl rounded-xl border border-border bg-card p-5 sm:p-6">
+              <ActiveComponent
+                key={active.id}
+                settings={settings}
+                onUnauthorized={handleUnauthorized}
+                onSettingsChanged={() => void loadSettings()}
+                onDirty={() => setDirty((prev) => ({ ...prev, [active.id]: true }))}
+                onSaved={() => setDirty((prev) => ({ ...prev, [active.id]: false }))}
+              />
+            </div>
+          ) : (
+            !error && <p className="text-sm text-muted-foreground">Loading settings…</p>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

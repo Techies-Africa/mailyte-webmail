@@ -8,86 +8,89 @@ import {
   AlertOctagon,
   Star,
   Search,
+  Paperclip,
+  MailOpen,
 } from 'lucide-react';
 
 type WebmailEmptyStateProps = {
-  /** The IMAP folder name, or the starred/search pseudo-views. */
+  /** The IMAP folder name, or the starred pseudo-view. */
   folder: string;
   role: string | null;
   searchQuery?: string;
+  filter?: 'all' | 'unread' | 'starred' | 'attachments';
 };
 
 // Per-folder wording rather than one generic "No emails found in this
 // folder". An empty Junk folder is good news and should read like it.
 const COPY: Record<string, { icon: React.ReactNode; title: string; body: string }> = {
   inbox: {
-    icon: <Inbox size={28} />,
-    title: 'Your inbox is empty',
-    body: 'Nothing new right now. New mail shows up here automatically.',
+    icon: <Inbox />,
+    title: "You're all caught up",
+    body: 'New messages will appear here.',
   },
-  sent: {
-    icon: <Send size={28} />,
-    title: 'Nothing sent yet',
-    body: 'Messages you send are filed here.',
-  },
+  sent: { icon: <Send />, title: 'Nothing sent yet', body: 'Messages you send are filed here.' },
   drafts: {
-    icon: <FileEdit size={28} />,
+    icon: <FileEdit />,
     title: 'No drafts',
     body: 'Half-written messages are saved here automatically.',
   },
   scheduled: {
-    icon: <CalendarClock size={28} />,
+    icon: <CalendarClock />,
     title: 'Nothing scheduled',
     body: 'Use the arrow beside Send to write a message now and send it later.',
   },
   trash: {
-    icon: <Trash2 size={28} />,
+    icon: <Trash2 />,
     title: 'Trash is empty',
-    body: 'Deleted messages stay here until you empty the trash.',
+    body: 'Deleted messages stay here until you delete them for good.',
   },
   archive: {
-    icon: <Archive size={28} />,
+    icon: <Archive />,
     title: 'Nothing archived',
     body: 'Archiving keeps a message without leaving it in the inbox.',
   },
   junk: {
-    icon: <AlertOctagon size={28} />,
+    icon: <AlertOctagon />,
     title: 'Junk is empty — good',
     body: 'Anything you report as spam is filed here.',
   },
 };
 
-export default function WebmailEmptyState({ folder, role, searchQuery }: WebmailEmptyStateProps) {
+const FILTER_COPY: Record<string, { icon: React.ReactNode; title: string; body: string }> = {
+  unread: { icon: <MailOpen />, title: 'Nothing unread', body: 'Every message here has been read.' },
+  starred: { icon: <Star />, title: 'Nothing starred', body: 'Star a message to keep it within easy reach.' },
+  attachments: {
+    icon: <Paperclip />,
+    title: 'No attachments on this page',
+    body: 'Try the next page, or search for a file name.',
+  },
+};
+
+export default function WebmailEmptyState({ folder, role, searchQuery, filter = 'all' }: WebmailEmptyStateProps) {
   let content = role ? COPY[role] : undefined;
 
   if (searchQuery) {
     content = {
-      icon: <Search size={28} />,
-      title: `No results for “${searchQuery}”`,
-      body: 'Try a different word, or search a sender’s address.',
+      icon: <Search />,
+      title: 'No results',
+      body: `Nothing matches “${searchQuery}”. Try a different word, or a sender's address.`,
     };
+  } else if (filter !== 'all') {
+    content = FILTER_COPY[filter];
   } else if (!content) {
     content =
       folder === '__starred__'
-        ? {
-            icon: <Star size={28} />,
-            title: 'Nothing starred',
-            body: 'Star a message to keep it within easy reach.',
-          }
-        : {
-            icon: <Inbox size={28} />,
-            title: `${folder} is empty`,
-            body: 'Nothing filed here yet.',
-          };
+        ? { icon: <Star />, title: 'Nothing starred', body: 'Star a message to keep it within easy reach.' }
+        : { icon: <Inbox />, title: 'Nothing here yet', body: 'Messages you move here will show up.' };
   }
 
   return (
-    <div className="flex flex-col items-center text-center">
-      <div className="w-14 h-14 rounded-full bg-muted text-gray-400 flex items-center justify-center mb-4">
+    <div className="flex h-80 flex-col items-center justify-center px-8 text-center">
+      <div className="mb-4 flex h-[72px] w-[72px] items-center justify-center rounded-[20px] bg-primary/10 text-primary [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:stroke-[1.6]">
         {content.icon}
       </div>
-      <h3 className="text-base font-medium text-gray-800 dark:text-gray-200">{content.title}</h3>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-sm">{content.body}</p>
+      <h3 className="font-display text-[14.5px] font-bold text-foreground">{content.title}</h3>
+      <p className="mt-1.5 max-w-[220px] text-[12.5px] leading-relaxed text-muted-foreground">{content.body}</p>
     </div>
   );
 }

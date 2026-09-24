@@ -1,0 +1,602 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, Minus, Paperclip, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
+import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
+import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
+import WebmailEditor from '../WebmailEditor';
+import WebmailRecipientInput from '../WebmailRecipientInput';
+import ScheduleSendMenu from '../ScheduleSendMenu';
+import AiWriterModal from '../modals/AiWriterModal';
+import ConfirmModal from '../modals/ConfirmModal';
+import Avatar from '@/components/ui/Avatar';
+import Button from '@/components/ui/Button';
+import IconButton from '@/components/ui/IconButton';
+import { formatTime } from '@/lib/webmail/dates';
+import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
+
+/** Matches SendMailboxMessageRequest's own limits. */
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENTS = 20;
+
+/** PRD F6: autosave every 30s + on close. */
+const AUTOSAVE_MS = 30_000;
+
+export const COMPOSE_WIDTH = 560;
+export const COMPOSE_GAP = 12;
+export const COMPOSE_RIGHT = 32;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const MODE_TITLE: Record<ComposeMode, string> = {
+  compose: 'New message',
+  reply: 'Reply',
+  replyAll: 'Reply all',
+  forward: 'Forward',
+};
+
+function initialDraft(
+  mode: ComposeMode,
+  replyTo: ComposeWindowModel['replyTo'],
+  selfAddress: string,
+  resumed: ComposeWindowModel['resumed'],
+): ComposeDraft {
+  const base: ComposeDraft = { to: '', cc: '', bcc: '', subject: '', body: '' };
+
+  if (replyTo && (mode === 'reply' || mode === 'replyAll')) {
+    base.subject = replySubject(replyTo.subject);
+    if (mode === 'replyAll') {
+      const { to, cc } = replyAllRecipients(replyTo, selfAddress);
+      base.to = to;
+      base.cc = cc;
+    } else {
+      base.to = replyRecipients(replyTo);
+    }
+  } else if (replyTo && mode === 'forward') {
+    base.subject = forwardSubject(replyTo.subject);
+  }
+
+  return { ...base, ...resumed };
+}
+
+type ComposeWindowProps = {
+  window: ComposeWindowModel;
+  /** Minimized windows are drawn by the dock, not here. */
+  layout: 'open' | 'fullscreen';
+  /** Position among the open windows, rightmost first. */
+  stackIndex: number;
+  isMobile: boolean;
+  selfAddress: string;
+  selfName: string | null;
+  /** Shared mailboxes this session may send as. Empty = no From picker. */
+  fromOptions: FromOption[];
+  contacts: WebmailContact[];
+  canSchedule: boolean;
+  onAiWrite?: (instruction: string, existingBody: string) => Promise<string>;
+  onClose: () => void;
+  onMinimize: () => void;
+  onFullscreen: () => void;
+  onRestore: () => void;
+  onLabelChange: (label: string) => void;
+  onDraftId: (draftId: string) => void;
+  onSend: (payload: ComposePayload) => Promise<SendResult>;
+  onSaveDraft: (payload: ComposePayload, replaceId?: string) => Promise<string | null>;
+  onDiscardDraft: (id: string) => Promise<void>;
+};
+
+/**
+ * One compose window, in the redesign's two shapes: a 560px sheet rising
+ * from the bottom edge with a dark title bar, or a full-screen page with a
+ * dark top bar and an 800px column. Both wrap the same form.
+ */
+export default function ComposeWindow({
+  window: model,
+  layout,
+  stackIndex,
+  isMobile,
+  selfAddress,
+  selfName,
+  fromOptions,
+  contacts,
+  canSchedule,
+  onAiWrite,
+  onClose,
+  onMinimize,
+  onFullscreen,
+  onRestore,
+  onLabelChange,
+  onDraftId,
+  onSend,
+  onSaveDraft,
+  onDiscardDraft,
+}: ComposeWindowProps) {
+  const { mode, replyTo, resumed, initialBody, draftId: existingDraftId } = model;
+  const fullscreen = layout === 'fullscreen' || isMobile;
+
+  const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, selfAddress, resumed));
+  const [showCc, setShowCc] = useState(!!resumed?.cc);
+  const [showBcc, setShowBcc] = useState(!!resumed?.bcc);
+  const [from, setFrom] = useState(selfAddress);
+  const [isSending, setIsSending] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [showAi, setShowAi] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [draftId, setDraftId] = useState<string | undefined>(existingDraftId);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  // Refs, not state: the autosave timer and the unload guard need the CURRENT
+  // draft without re-subscribing on every keystroke.
+  const draftRef = useRef<ComposeDraft>(draft);
+  const draftIdRef = useRef<string | undefined>(existingDraftId);
+  const dirtyRef = useRef(false);
+  const sentRef = useRef(false);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    draftIdRef.current = draftId;
+  }, [draftId]);
+
+  // The dock tab and the title bar follow the subject. The callback is read
+  // through a ref so the effect runs when the SUBJECT changes, not whenever
+  // the parent hands down a fresh arrow function.
+  const onLabelChangeRef = useRef(onLabelChange);
+  useEffect(() => {
+    onLabelChangeRef.current = onLabelChange;
+  }, [onLabelChange]);
+  useEffect(() => {
+    onLabelChangeRef.current(draft.subject.trim() || MODE_TITLE[mode]);
+  }, [draft.subject, mode]);
+
+  const quoted = useMemo(() => (replyTo ? quotedBody(mode, replyTo) : ''), [mode, replyTo]);
+
+  /**
+   * What the editor starts with: whatever was passed in followed by the
+   * quotation for a reply or forward. TipTap owns its document from here.
+   * `editorSeed` remounts it when the AI writer replaces the whole body.
+   */
+  const initialEditorHtml = useMemo(
+    () => (initialBody ?? '') + quoted,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const [editorSeed, setEditorSeed] = useState(0);
+  const [seededHtml, setSeededHtml] = useState<string | null>(null);
+
+  /**
+   * What the editor is handed as its starting HTML, fixed per mount.
+   *
+   * MUST be stable between renders: TipTap re-applies a changed `content`
+   * option, which fires onUpdate, which sets the draft, which changes the
+   * prop again -- "Maximum update depth exceeded" on the first keystroke.
+   * So it is recomputed only when the editor is deliberately remounted
+   * (editorSeed), and at that moment it takes the CURRENT body, so an AI
+   * replacement or a remount never loses what was typed.
+   */
+  const editorInitialHtml = useMemo(
+    () => seededHtml ?? (draftRef.current.body || initialEditorHtml),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editorSeed],
+  );
+
+  // Seed the draft body with the starting content, so a reply that is sent
+  // untouched still carries its quotation.
+  useEffect(() => {
+    if (initialEditorHtml) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft((prev) => ({ ...prev, body: initialEditorHtml }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Is there anything here worth saving? A reply opens pre-filled with a
+   * subject, recipients and a quotation, none of which the user typed --
+   * autosaving that immediately would litter Drafts.
+   */
+  const worthSaving = useCallback(() => {
+    if (!dirtyRef.current || sentRef.current) return false;
+    const current = draftRef.current;
+    const bodyText = current.body.replace(/<[^>]*>/g, '').trim();
+    return !!(current.to.trim() || current.subject.trim() || bodyText);
+  }, []);
+
+  const persistDraft = useCallback(async () => {
+    if (!worthSaving()) return;
+    setSavingDraft(true);
+    try {
+      const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
+      const saved = await onSaveDraft(
+        {
+          ...draftRef.current,
+          inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : undefined,
+          references: isReply ? (replyTo?.references ?? undefined) : undefined,
+        },
+        draftIdRef.current,
+      );
+      if (saved) {
+        setDraftId(saved);
+        draftIdRef.current = saved;
+        onDraftId(saved);
+        setDraftSavedAt(new Date());
+        dirtyRef.current = false;
+      }
+    } finally {
+      setSavingDraft(false);
+    }
+  }, [mode, replyTo, worthSaving, onSaveDraft, onDraftId]);
+
+  // Autosave on a fixed timer (F6), so a long uninterrupted paragraph is
+  // still saved.
+  useEffect(() => {
+    const interval = setInterval(() => void persistDraft(), AUTOSAVE_MS);
+    return () => clearInterval(interval);
+  }, [persistDraft]);
+
+  // The beforeunload guard (F6): closing the tab mid-message asks first.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current || sentRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  const closeWithSave = async () => {
+    await persistDraft();
+    onClose();
+  };
+
+  const touch = (patch: Partial<ComposeDraft>) => {
+    dirtyRef.current = true;
+    setDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const attachedBytes = attachments.reduce((sum, file) => sum + file.size, 0);
+
+  const addFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setSendError(null);
+    const incoming = Array.from(files);
+    const tooBig = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (tooBig) {
+      setSendError(`"${tooBig.name}" is ${formatBytes(tooBig.size)} — the limit is 25 MB per file.`);
+      return;
+    }
+    if (attachments.length + incoming.length > MAX_ATTACHMENTS) {
+      setSendError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+      return;
+    }
+    if (attachedBytes + incoming.reduce((s, f) => s + f.size, 0) > MAX_ATTACHMENT_BYTES) {
+      setSendError('Attachments total more than 25 MB.');
+      return;
+    }
+    setAttachments((prev) => [...prev, ...incoming]);
+  };
+
+  const sendDisabled = isSending || !draft.to.trim();
+
+  const handleSend = async (sendAt?: Date) => {
+    setSendError(null);
+    setScheduling(!!sendAt);
+    setIsSending(true);
+    try {
+      const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
+      const result = await onSend({
+        ...draft,
+        inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : undefined,
+        references: isReply ? (replyTo?.references ?? undefined) : undefined,
+        attachments,
+        sendAt: sendAt?.toISOString(),
+        from: from !== selfAddress ? from : undefined,
+      });
+      if (!result.success) {
+        setSendError(result.message ?? 'Could not send this message');
+        return;
+      }
+      // Sent: its draft is not a draft any more. Clear the dirty flag first
+      // so the unload guard does not fire on the close.
+      sentRef.current = true;
+      dirtyRef.current = false;
+      const saved = draftIdRef.current;
+      if (saved) void onDiscardDraft(saved);
+      onClose();
+    } finally {
+      setIsSending(false);
+      setScheduling(false);
+    }
+  };
+
+  const discard = () => {
+    // Discard means discard: an autosaved revision left in Drafts after
+    // "discard" is the message they just asked to be rid of.
+    dirtyRef.current = false;
+    sentRef.current = true;
+    const saved = draftIdRef.current;
+    if (saved) void onDiscardDraft(saved);
+    onClose();
+  };
+
+  const title = draft.subject.trim() || MODE_TITLE[mode];
+
+  const titleBar = (
+    <div
+      className={`flex shrink-0 items-center justify-between bg-sidebar text-white ${
+        fullscreen ? 'px-4 py-3 sm:px-6' : 'cursor-default rounded-t-2xl px-4 pb-2.5 pt-3'
+      }`}
+      onDoubleClick={fullscreen ? onRestore : onFullscreen}
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Avatar name={selfName ?? selfAddress} email={selfAddress} size={fullscreen ? 34 : 30} onDark className="!bg-primary !text-primary-foreground" />
+        <div className="min-w-0">
+          <div className="max-w-[280px] truncate text-[12.5px] font-semibold">{fullscreen ? from : title}</div>
+          <div className="truncate text-[10.5px] text-white/45">{fullscreen ? title : from}</div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {!isMobile && (
+          <IconButton label="Minimize" tone="onDark" size="sm" onClick={onMinimize}>
+            <Minus size={12} strokeWidth={2.4} />
+          </IconButton>
+        )}
+        {!isMobile &&
+          (fullscreen ? (
+            <IconButton label="Exit full screen" tone="onDark" size="sm" onClick={onRestore}>
+              <Square size={11} />
+            </IconButton>
+          ) : (
+            <IconButton label="Full screen" tone="onDark" size="sm" onClick={onFullscreen}>
+              <Maximize2 size={12} />
+            </IconButton>
+          ))}
+        <IconButton label="Close" tone="onDark" size="sm" onClick={() => void closeWithSave()}>
+          <X size={12} strokeWidth={2.6} />
+        </IconButton>
+      </div>
+    </div>
+  );
+
+  const ccBccToggles = (
+    <div className="flex gap-2.5 pr-1">
+      <button
+        type="button"
+        onClick={() => setShowCc((v) => !v)}
+        className={`text-[11px] font-bold ${showCc ? 'text-muted-foreground' : 'text-primary'}`}
+      >
+        Cc
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowBcc((v) => !v)}
+        className={`text-[11px] font-bold ${showBcc ? 'text-muted-foreground' : 'text-primary'}`}
+      >
+        Bcc
+      </button>
+    </div>
+  );
+
+  const form = (
+    <>
+      {sendError && (
+        <div className="shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-[12.5px] text-destructive">
+          {sendError}
+        </div>
+      )}
+
+      <div className="shrink-0">
+        {fromOptions.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
+            <span className="w-8 shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">From</span>
+            <select
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="Send as"
+              className="min-w-0 flex-1 bg-transparent py-1 text-[13px] text-foreground outline-none"
+            >
+              <option value={selfAddress}>
+                {selfName ? `${selfName} <${selfAddress}>` : selfAddress}
+              </option>
+              {fromOptions.map((option) => (
+                <option key={option.address} value={option.address}>
+                  {option.name ? `${option.name} <${option.address}>` : option.address}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <WebmailRecipientInput
+          label="To"
+          value={draft.to}
+          onChange={(value) => touch({ to: value })}
+          contacts={contacts}
+          autoFocus={mode === 'compose' && !resumed?.to}
+          placeholder="recipient@domain.com"
+          trailing={ccBccToggles}
+        />
+        {showCc && (
+          <WebmailRecipientInput label="Cc" value={draft.cc} onChange={(value) => touch({ cc: value })} contacts={contacts} placeholder="cc@domain.com" />
+        )}
+        {showBcc && (
+          <WebmailRecipientInput label="Bcc" value={draft.bcc} onChange={(value) => touch({ bcc: value })} contacts={contacts} placeholder="bcc@domain.com" />
+        )}
+        <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
+          <span className="w-8 shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Subj</span>
+          <input
+            type="text"
+            value={draft.subject}
+            onChange={(e) => touch({ subject: e.target.value })}
+            placeholder="Subject"
+            aria-label="Subject"
+            className="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground/60"
+          />
+        </div>
+      </div>
+
+      <WebmailEditor
+        key={editorSeed}
+        initialHtml={editorInitialHtml}
+        toolbarPosition="bottom"
+        autoFocus={mode !== 'compose' || !!resumed?.to}
+        minHeightClass={fullscreen ? 'min-h-[40vh]' : 'min-h-[180px]'}
+        onChange={(html) => touch({ body: html })}
+        toolbarExtra={
+          onAiWrite ? (
+            <Button variant="ghost" size="xs" icon={<Sparkles size={12} />} onClick={() => setShowAi(true)}>
+              Write with AI
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {attachments.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border bg-pane px-3 py-2">
+          {attachments.map((file, index) => (
+            <span
+              key={`${file.name}-${index}`}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted py-1 pl-2 pr-1 text-[12px] text-foreground"
+            >
+              <Paperclip size={12} className="shrink-0 text-muted-foreground" />
+              <span className="truncate">{file.name}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(file.size)}</span>
+              <button
+                type="button"
+                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
+                className="shrink-0 rounded p-0.5 hover:bg-foreground/10"
+                title={`Remove ${file.name}`}
+                aria-label={`Remove ${file.name}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          <span className="self-center text-[11px] text-muted-foreground">{formatBytes(attachedBytes)} of 25 MB</span>
+        </div>
+      )}
+
+      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-pane px-3 py-2.5">
+        {/* One surface, two halves: the colour and rounding live on the
+            wrapper so it reads as a single button with a divider. */}
+        <div
+          className={`flex items-stretch rounded-lg bg-primary text-primary-foreground shadow-compose ${
+            sendDisabled ? 'pointer-events-none opacity-50' : ''
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => void handleSend()}
+            disabled={sendDisabled}
+            className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-black/10 disabled:cursor-not-allowed ${
+              canSchedule ? 'rounded-l-lg' : 'rounded-lg'
+            }`}
+          >
+            {isSending ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Send size={13} strokeWidth={2.4} />
+            )}
+            {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : 'Send'}
+          </button>
+          {canSchedule && <ScheduleSendMenu disabled={sendDisabled} onSchedule={(at) => void handleSend(at)} />}
+        </div>
+
+        <IconButton label="Attach files" size="md" onClick={() => fileInputRef.current?.click()}>
+          <Paperclip size={14} />
+        </IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+          {savingDraft ? 'Saving…' : draftSavedAt ? `Draft saved ${formatTime(draftSavedAt)}` : ''}
+        </span>
+
+        <IconButton label="Discard" size="md" tone="danger" onClick={() => setConfirmDiscard(true)}>
+          <Trash2 size={13} />
+        </IconButton>
+      </div>
+    </>
+  );
+
+  const dialogs = (
+    <>
+      {onAiWrite && (
+        <AiWriterModal
+          isOpen={showAi}
+          onClose={() => setShowAi(false)}
+          onGenerate={(prompt) => onAiWrite(prompt, draft.body)}
+          onApply={(generated) => {
+            // Remount the editor around the generated body: the AI writer
+            // replaces the whole document, the one case where reaching past
+            // TipTap's own state is right.
+            dirtyRef.current = true;
+            setSeededHtml(generated + quoted);
+            setDraft((prev) => ({ ...prev, body: generated + quoted }));
+            setEditorSeed((n) => n + 1);
+          }}
+        />
+      )}
+      <ConfirmModal
+        isOpen={confirmDiscard}
+        onClose={() => setConfirmDiscard(false)}
+        onConfirm={discard}
+        icon={<Trash2 size={18} />}
+        tone="danger"
+        title="Discard this message"
+        body="What you have written here will be thrown away, along with any saved draft of it."
+        confirmLabel="Discard"
+      />
+    </>
+  );
+
+  // ONE tree for both shapes. The fullscreen and windowed containers differ
+  // only in classes and inline style, never in nesting: a different nesting
+  // would make React remount the form -- and the editor inside it -- on every
+  // switch between the two, throwing away whatever was being typed.
+  return (
+    <div
+      data-shortcuts="off"
+      role="dialog"
+      aria-label={title}
+      style={
+        fullscreen
+          ? undefined
+          : {
+              right: COMPOSE_RIGHT + stackIndex * (COMPOSE_WIDTH + COMPOSE_GAP),
+              width: `min(${COMPOSE_WIDTH}px, calc(100vw - 4rem))`,
+              zIndex: 150 - stackIndex,
+            }
+      }
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-[200] flex animate-fade-in flex-col bg-card'
+          : 'fixed bottom-0 flex max-h-[82vh] animate-rise flex-col overflow-hidden rounded-t-2xl bg-card shadow-window'
+      }
+    >
+      {titleBar}
+      <div className={`flex min-h-0 flex-1 flex-col ${fullscreen ? 'mx-auto w-full max-w-[860px] overflow-hidden sm:px-6' : ''}`}>
+        {form}
+      </div>
+      {dialogs}
+    </div>
+  );
+}

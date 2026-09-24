@@ -1,0 +1,135 @@
+'use client';
+
+import { useCallback, useState } from 'react';
+import type { ComposeMode, WebmailMessage } from '@/components/webmail/types';
+import type { ComposeLayout, ComposeWindow } from '@/components/webmail/compose/types';
+
+/** How many windows may be OPEN (not minimized) at once. Beyond this, the oldest is minimized. */
+const MAX_OPEN = 3;
+
+const MODE_LABEL: Record<ComposeMode, string> = {
+  compose: 'New message',
+  reply: 'Reply',
+  replyAll: 'Reply all',
+  forward: 'Forward',
+};
+
+let counter = 0;
+function nextId(): string {
+  counter += 1;
+  return `c${Date.now().toString(36)}${counter}`;
+}
+
+export interface OpenComposeOptions {
+  mode?: ComposeMode;
+  replyTo?: WebmailMessage;
+  initialBody?: string;
+  draftId?: string;
+  resumed?: { to: string; cc: string; bcc: string; subject: string };
+  layout?: ComposeLayout;
+}
+
+/**
+ * The stack of compose windows: open some, minimize, go fullscreen, close.
+ *
+ * Only one window can be fullscreen at a time (it covers everything), and at
+ * most MAX_OPEN can be windowed -- opening a fourth minimizes the oldest
+ * rather than stacking a fourth 560px window off the edge of the screen.
+ */
+export function useComposeWindows() {
+  const [windows, setWindows] = useState<ComposeWindow[]>([]);
+
+  const openCompose = useCallback((options: OpenComposeOptions = {}): string => {
+    const id = nextId();
+    const mode = options.mode ?? 'compose';
+    const layout = options.layout ?? 'open';
+    const label = options.resumed?.subject?.trim() || MODE_LABEL[mode];
+
+    setWindows((current) => {
+      // Resuming a draft that is already open just brings it forward.
+      if (options.draftId) {
+        const existing = current.find((w) => w.draftId === options.draftId);
+        if (existing) {
+          return current.map((w) => (w.id === existing.id ? { ...w, layout: 'open' } : w));
+        }
+      }
+
+      let next = current.map((w) =>
+        // A new fullscreen window demotes any other fullscreen one.
+        layout === 'fullscreen' && w.layout === 'fullscreen' ? { ...w, layout: 'open' as const } : w,
+      );
+
+      const open = next.filter((w) => w.layout === 'open');
+      if (layout === 'open' && open.length >= MAX_OPEN) {
+        const oldest = open[0];
+        next = next.map((w) => (w.id === oldest.id ? { ...w, layout: 'minimized' as const } : w));
+      }
+
+      return [
+        ...next,
+        {
+          id,
+          mode,
+          replyTo: options.replyTo,
+          initialBody: options.initialBody,
+          draftId: options.draftId,
+          resumed: options.resumed,
+          layout,
+          label,
+          seed: 0,
+        },
+      ];
+    });
+
+    return id;
+  }, []);
+
+  const closeCompose = useCallback((id: string) => {
+    setWindows((current) => current.filter((w) => w.id !== id));
+  }, []);
+
+  const setLayout = useCallback((id: string, layout: ComposeLayout) => {
+    setWindows((current) => {
+      let next = current.map((w) =>
+        layout === 'fullscreen' && w.id !== id && w.layout === 'fullscreen'
+          ? { ...w, layout: 'open' as const }
+          : w,
+      );
+      if (layout === 'open') {
+        const open = next.filter((w) => w.layout === 'open' && w.id !== id);
+        if (open.length >= MAX_OPEN) {
+          const oldest = open[0];
+          next = next.map((w) =>
+            w.id === oldest.id ? { ...w, layout: 'minimized' as const } : w,
+          );
+        }
+      }
+      return next.map((w) => (w.id === id ? { ...w, layout } : w));
+    });
+  }, []);
+
+  // Both return the SAME array when nothing changed. A fresh array from map()
+  // is a state change to React even when every element is identical, and the
+  // window's label effect fires after every render -- so "no change" has to
+  // be literally no change, or the two chase each other forever.
+  const setLabel = useCallback((id: string, label: string) => {
+    setWindows((current) => {
+      const target = current.find((w) => w.id === id);
+      if (!target || target.label === label) return current;
+      return current.map((w) => (w.id === id ? { ...w, label } : w));
+    });
+  }, []);
+
+  /** Note a draft id the window has been saved under, so closing keeps track. */
+  const setDraftId = useCallback((id: string, draftId: string) => {
+    setWindows((current) => {
+      const target = current.find((w) => w.id === id);
+      if (!target || target.draftId === draftId) return current;
+      return current.map((w) => (w.id === id ? { ...w, draftId } : w));
+    });
+  }, []);
+
+  return { windows, openCompose, closeCompose, setLayout, setLabel, setDraftId };
+}
+
+export type ComposeWindows = ReturnType<typeof useComposeWindows>;

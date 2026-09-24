@@ -7,11 +7,12 @@
  * lib/webmail/server.ts). Branding is a build-time choice: anyone rebranding
  * this is already building their own image.
  *
- * Deliberately text, not an image file. A logo would be one more asset to
- * ship, one more thing to replace, and one more 404 for anyone who forgot to.
+ * The mark itself is artwork in public/ (see components/brand/BrandMark). When
+ * the name is "Mailyte" the real lockup is drawn; any other name gets the
+ * mark beside that name as text, so a rebrand is one variable and two PNGs.
+ * NEXT_PUBLIC_BRAND_MARK is still accepted for older build scripts but no
+ * longer rendered.
  */
 export const brand = {
   name: process.env.NEXT_PUBLIC_BRAND_NAME || 'Webmail',
-  /** One or two characters for the square mark beside the name. */
-  mark: process.env.NEXT_PUBLIC_BRAND_MARK || '✉',
 } as const;

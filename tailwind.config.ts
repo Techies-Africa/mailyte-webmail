@@ -1,6 +1,6 @@
-// The colour tokens are HSL custom properties defined in app/globals.css, so
-// re-theming this webmail means editing those variables and nothing else --
-// no Tailwind config change, no rebuild of the class names.
+// Colour tokens are HSL custom properties in app/globals.css, so re-theming
+// this webmail is a stylesheet edit -- no Tailwind change, no rebuild of the
+// class names. Fonts are CSS variables set by next/font in app/layout.tsx.
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
@@ -11,116 +11,94 @@ const config: Config = {
     './lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    container: {
-      center: true,
-      padding: '2rem',
-      screens: {
-        '2xl': '1400px',
-      },
-    },
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: 'hsl(var(--border) / <alpha-value>)',
+        input: 'hsl(var(--input) / <alpha-value>)',
+        ring: 'hsl(var(--ring) / <alpha-value>)',
+        background: 'hsl(var(--background) / <alpha-value>)',
+        foreground: 'hsl(var(--foreground) / <alpha-value>)',
+        pane: 'hsl(var(--pane) / <alpha-value>)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'hsl(var(--primary) / <alpha-value>)',
+          foreground: 'hsl(var(--primary-foreground) / <alpha-value>)',
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: 'hsl(var(--secondary) / <alpha-value>)',
+          foreground: 'hsl(var(--secondary-foreground) / <alpha-value>)',
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
+          foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
         },
+        success: 'hsl(var(--success) / <alpha-value>)',
+        warning: 'hsl(var(--warning) / <alpha-value>)',
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: 'hsl(var(--muted) / <alpha-value>)',
+          foreground: 'hsl(var(--muted-foreground) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: 'hsl(var(--accent) / <alpha-value>)',
+          foreground: 'hsl(var(--accent-foreground) / <alpha-value>)',
         },
         popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
+          DEFAULT: 'hsl(var(--popover) / <alpha-value>)',
+          foreground: 'hsl(var(--popover-foreground) / <alpha-value>)',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'hsl(var(--card) / <alpha-value>)',
+          foreground: 'hsl(var(--card-foreground) / <alpha-value>)',
         },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar) / <alpha-value>)',
+          foreground: 'hsl(var(--sidebar-foreground) / <alpha-value>)',
+        },
+        selection: {
+          DEFAULT: 'hsl(var(--selection) / <alpha-value>)',
+          strong: 'hsl(var(--selection-strong) / <alpha-value>)',
+        },
+        toast: 'hsl(var(--toast) / <alpha-value>)',
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
-      // Additive only — does NOT override the default `sans` stack. These
-      // utilities resolve to a real font only where the CSS variables are in
-      // scope (the /preview layout). See components/marketing-v2/fonts.ts.
       fontFamily: {
-        display: ['var(--font-display)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        'mono-preview': ['var(--font-mono-preview)', 'ui-monospace', 'monospace'],
+        sans: ['var(--font-body)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'var(--font-body)', 'ui-sans-serif', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      boxShadow: {
+        compose: '0 4px 14px hsl(var(--primary) / 0.28)',
+        'compose-hover': '0 6px 18px hsl(var(--primary) / 0.4)',
+        panel: '0 12px 36px rgba(0, 0, 0, 0.14)',
+        window: '0 -2px 30px rgba(0, 0, 0, 0.12), 0 20px 60px rgba(0, 0, 0, 0.2)',
+        toast: '0 8px 22px rgba(0, 0, 0, 0.24)',
       },
       keyframes: {
-        'accordion-down': {
-          from: { height: '0' },
-          to: { height: 'var(--radix-accordion-content-height)' },
-        },
-        'accordion-up': {
-          from: { height: 'var(--radix-accordion-content-height)' },
-          to: { height: '0' },
-        },
         'fade-in': {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        'fade-up': {
-          '0%': { opacity: '0', transform: 'translateY(20px)' },
+          '0%': { opacity: '0', transform: 'translateY(-6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
-        'fade-down': {
-          '0%': { opacity: '0', transform: 'translateY(-20px)' },
+        'slide-right': {
+          '0%': { opacity: '0', transform: 'translateX(10px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        rise: {
+          '0%': { opacity: '0', transform: 'translateY(14px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
-        'bounce-slow': {
-          '0%, 100%': { transform: 'translateY(0)' },
-          '50%': { transform: 'translateY(-10px)' },
-        },
-        float: {
-          '0%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-10px)' },
-          '100%': { transform: 'translateY(0px)' },
-        },
-        marquee: {
-          '0%': { transform: 'translateX(0%)' },
-          '100%': { transform: 'translateX(-100%)' },
-        },
-        'pulse-glow': {
-          '0%, 100%': {
-            opacity: '1',
-            boxShadow: '0 0 20px rgba(255, 198, 25, 0.6), 0 0 30px rgba(255, 198, 25, 0.4)',
-          },
-          '50%': {
-            opacity: '0.7',
-            boxShadow: '0 0 40px rgba(255, 198, 25, 0.8), 0 0 50px rgba(255, 198, 25, 0.6)',
-          },
+        'toast-in': {
+          '0%': { opacity: '0', transform: 'translate(-50%, 10px)' },
+          '100%': { opacity: '1', transform: 'translate(-50%, 0)' },
         },
       },
       animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-        'fade-in': 'fade-in 0.5s ease-out',
-        'fade-up': 'fade-up 0.7s ease-out',
-        'fade-down': 'fade-down 0.7s ease-out',
-        'bounce-slow': 'bounce-slow 3s infinite ease-in-out',
-        float: 'float 6s infinite ease-in-out',
-        marquee: 'marquee 25s linear infinite',
-        'pulse-glow': 'pulse-glow 3s infinite ease-in-out',
+        'fade-in': 'fade-in 0.15s ease',
+        'slide-right': 'slide-right 0.18s ease',
+        rise: 'rise 0.18s ease',
+        'toast-in': 'toast-in 0.2s ease',
       },
     },
   },

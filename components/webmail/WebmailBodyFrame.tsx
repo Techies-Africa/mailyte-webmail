@@ -228,20 +228,16 @@ export function BlockedImagesBar({
   if (count === 0) return null;
 
   return (
-    <div className="mb-3 px-3 py-2 rounded-md bg-muted border border-gray-200 dark:border-gray-600 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      <ImageOff size={15} className="text-gray-500 flex-shrink-0" />
-      <span className="text-gray-700 dark:text-gray-300">
-        {count} remote image{count === 1 ? '' : 's'} blocked to keep this message from reporting
-        that you opened it.
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-muted px-3 py-2 text-[12.5px]">
+      <ImageOff size={14} className="flex-shrink-0 text-muted-foreground" />
+      <span className="text-foreground">
+        {count} remote image{count === 1 ? '' : 's'} blocked to keep this message from reporting that you opened it.
       </span>
-      <button onClick={onShowOnce} className="text-primary hover:underline underline-offset-2">
+      <button type="button" onClick={onShowOnce} className="font-semibold text-primary hover:underline">
         Show images
       </button>
       {senderEmail && (
-        <button
-          onClick={onAlwaysAllow}
-          className="text-primary hover:underline underline-offset-2"
-        >
+        <button type="button" onClick={onAlwaysAllow} className="font-semibold text-primary hover:underline">
           Always show from {senderEmail}
         </button>
       )}

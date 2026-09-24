@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, ChevronUp } from 'lucide-react';
 import {
@@ -9,6 +11,8 @@ import {
   schedulePresets,
   toDateTimeLocalValue,
 } from '@/lib/webmail/scheduleTimes';
+import Button from '@/components/ui/Button';
+import { Input } from '@/components/ui/Field';
 
 type ScheduleSendMenuProps = {
   /** Called with the chosen instant. The caller sends it as an ISO string. */
@@ -17,15 +21,10 @@ type ScheduleSendMenuProps = {
 };
 
 /**
- * The caret beside Send.
- *
- * Opens UPWARD: the Send button sits on the bottom edge of the compose
- * window, and a menu dropping down would open off the bottom of a maximised
- * compose or a phone screen.
- *
- * The presets are recomputed when the menu opens, not when the component
- * mounts -- a compose window left open overnight would otherwise still be
- * offering yesterday's "tomorrow".
+ * The caret beside Send. Opens UPWARD: the Send button sits on the bottom
+ * edge of the compose window. Presets are recomputed when the menu opens,
+ * not on mount, so a window left open overnight does not offer yesterday's
+ * "tomorrow".
  */
 export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendMenuProps) {
   const [open, setOpen] = useState(false);
@@ -33,9 +32,6 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
   const [presets, setPresets] = useState(() => schedulePresets());
   const [custom, setCustom] = useState('');
   const [error, setError] = useState<string | null>(null);
-  // Read when the menu opens, not during render: this component only ever
-  // mounts behind a click, but reading the browser's clock during a render
-  // Next may also run on the server is how a hydration mismatch starts.
   const [zone, setZone] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -91,70 +87,63 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
   };
 
   return (
-    // `flex items-stretch` so the caret half is exactly as tall as Send; the
-    // wrapper carries no colour of its own because the split button's single
-    // surface is painted by its parent (see WebmailCompose).
     <div className="relative flex items-stretch" ref={containerRef}>
-      {/* Inset by my-2 so it reads as a divider WITHIN one control. A
-          full-height rule runs into the rounded corners and makes the caret
-          look like a second button stuck on the side. */}
+      {/* Inset so it reads as a divider WITHIN one control. */}
       <span aria-hidden className="my-2 w-px bg-primary-foreground/30" />
       <button
         type="button"
         onClick={openMenu}
         disabled={disabled}
-        className="px-2.5 flex items-center justify-center rounded-r-md transition-colors hover:bg-black/10 disabled:cursor-not-allowed"
+        className="flex items-center justify-center rounded-r-lg px-2 transition-colors hover:bg-black/10 disabled:cursor-not-allowed"
         title="Schedule send"
         aria-label="Schedule send"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <ChevronUp size={16} />
+        <ChevronUp size={15} />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 mb-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-xl z-20 overflow-hidden"
+          // Anchored to the caret's LEFT edge: the Send button sits at the
+          // left of the footer, and a menu growing leftwards from it is
+          // clipped by the window's own overflow.
+          className="absolute bottom-full left-0 z-30 mb-2 w-80 max-w-[calc(100vw-2rem)] animate-fade-in overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel"
         >
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-            <CalendarClock size={16} className="text-gray-400" />
-            <span className="text-sm font-medium">Schedule send</span>
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+            <CalendarClock size={15} className="text-muted-foreground" />
+            <span className="text-[13px] font-semibold">Schedule send</span>
           </div>
 
           {!picking && (
-            <>
+            <div className="p-1">
               {presets.map((preset) => (
                 <button
                   key={preset.key}
                   role="menuitem"
                   type="button"
                   onClick={() => choose(preset.at)}
-                  className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted"
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-[13px] hover:bg-muted"
                 >
-                  {/* Neither side wraps: a label folding onto a second line
-                      leaves one row taller than the others and the menu
-                      reads as broken rather than as a list. */}
                   <span className="whitespace-nowrap">{preset.label}</span>
-                  <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
-                    {preset.when}
-                  </span>
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{preset.when}</span>
                 </button>
               ))}
               <button
                 role="menuitem"
                 type="button"
                 onClick={() => setPicking(true)}
-                className="w-full px-4 py-2.5 text-left text-sm border-t border-border hover:bg-muted"
+                className="mt-1 w-full rounded-lg border-t border-border px-3 py-2 text-left text-[13px] hover:bg-muted"
               >
                 Pick date &amp; time
               </button>
-            </>
+            </div>
           )}
 
           {picking && (
-            <div className="p-4 space-y-3">
-              <input
+            <div className="space-y-3 p-4">
+              <Input
                 type="datetime-local"
                 value={custom}
                 min={earliestPickable()}
@@ -162,34 +151,17 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
                   setCustom(e.target.value);
                   setError(null);
                 }}
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20"
               />
-              {/* Said out loud because a scheduling control gives nobody a
-                  reason to assume it. The first question anyone asks of one
-                  is "whose clock is that?" -- and the answer being "yours"
-                  is only obvious once it is written down. */}
               {error ? (
                 <p className="text-xs text-destructive">{error}</p>
               ) : (
-                <p className="text-xs text-gray-400">
-                  Your local time{zone ? ` (${zone})` : ''}.
-                </p>
+                <p className="text-xs text-muted-foreground">Your local time{zone ? ` (${zone})` : ''}.</p>
               )}
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPicking(false)}
-                  className="px-3 py-1.5 text-sm rounded-md border border-border hover:bg-muted"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCustom}
-                  className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-                >
+                <Button onClick={() => setPicking(false)}>Back</Button>
+                <Button variant="primary" onClick={confirmCustom}>
                   Schedule
-                </button>
+                </Button>
               </div>
             </div>
           )}

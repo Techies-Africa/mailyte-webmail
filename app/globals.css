@@ -4,179 +4,153 @@
 
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+ * Design tokens — the Mailyte brand guide (v1.0, September 2026), as HSL
+ * triplets so Tailwind's `hsl(var(--x) / <alpha>)` works everywhere.
+ *
+ * Light: white ground, zinc neutrals (#18181B ink, #71717A muted, #E4E4E7
+ * border, #F4F4F5 muted surface, #FAFAFA off-white pane), indigo primary.
+ * Dark: #0C0C0F ground, #18181B card, #27272A muted, #26262A border.
+ *
+ * The sidebar has its own tokens because it is dark in BOTH themes — the
+ * redesign draws it that way, and a dark rail against a light page is what
+ * gives the app its silhouette.
+ * ------------------------------------------------------------------------- */
+
 :root {
-  /* --background was never declared here, only in .dark, so light mode
-     resolved `bg-background` to an invalid hsl() and fell through to the
-     browser's white — which looked right, so nobody noticed. Declared now,
-     set to the white it was already showing. --foreground was also declared
-     twice, the first line dead; removed. */
   --background: 0 0% 100%;
-  --foreground: 20 14.3% 4.1%;
-  --muted: 60 4.8% 95.9%;
-  --muted-foreground: 25 5.3% 44.7%;
+  --foreground: 240 5.9% 10%;
+  --pane: 0 0% 98%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
   --popover: 0 0% 100%;
-  --popover-foreground: 20 14.3% 4.1%;
+  --popover-foreground: 240 5.9% 10%;
   --card: 0 0% 100%;
-  --card-foreground: 20 14.3% 4.1%;
-  --border: 20 5.9% 90%;
-  --input: 20 5.9% 90%;
-  --primary: 244 54.5% 41.4%; /* Deep indigo #3730A3 — white label at 9.93:1 */
+  --card-foreground: 240 5.9% 10%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --primary: 244 54.5% 41.4%; /* #3730A3 — white on it 9.93:1 */
   --primary-foreground: 0 0% 100%;
-  --secondary: 230 100% 55%; /* Secondary blue */
+  --secondary: 218 100% 64.9%; /* #4C8DFF — charts and data only, never text */
   --secondary-foreground: 0 0% 100%;
-  --accent: 0 92% 67%; /* Accent red */
+  --accent: 309 63.9% 45.5%; /* #BE2AAC magenta — gradient stop, highlights */
   --accent-foreground: 0 0% 100%;
-  --destructive: 0 84.2% 60.2%;
+  --destructive: 0 71.6% 44.1%; /* #C12020 — 5.78:1 on white */
   --destructive-foreground: 0 0% 100%;
+  --success: 142 71.8% 29.2%; /* #15803D — 4.83:1 */
+  --warning: 35.5 100% 30.2%; /* #9A5B00 — 5.22:1 */
   --ring: 244 54.5% 41.4%;
   --radius: 0.5rem;
 
+  /* The rail. Ink in both themes. */
+  --sidebar: 240 5.9% 10%; /* #18181B */
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-border: 0 0% 100%;
+
+  /* Selection tints for list rows and pills. */
+  --selection: 244 54.5% 96%;
+  --selection-strong: 244 54.5% 88%;
+
+  /* The dark pill toasts and the undo-send bar sit on. */
+  --toast: 240 6% 13%; /* #1F1F23 */
 }
 
 .dark {
-  --background: 240 10% 4%; /* 121212 - Dark mode background */
+  --background: 240 11.1% 5.3%; /* #0C0C0F */
   --foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  /* Cards were 3.9% against a 4% page — a tenth of a percent DARKER than the
-     ground they sit on, so a panel existed only by its border. Same elevation
-     ramp as mailyte-web and mailyte-console. */
-  --popover: 240 10% 6%;
+  --pane: 240 11.1% 5.3%;
+  --muted: 240 3.7% 15.9%; /* #27272A */
+  --muted-foreground: 240 5% 64.9%; /* #A1A1AA */
+  --popover: 240 5.9% 10%;
   --popover-foreground: 0 0% 98%;
-  --card: 240 8% 7%;
+  --card: 240 5.9% 10%; /* #18181B */
   --card-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --primary: 243 61.3% 58.4%; /* Lifted for dark: #5B54D6. #3730A3 scores 1.89:1 on this ground. */
+  --border: 240 5% 15.7%; /* #26262A */
+  --input: 240 5% 15.7%;
+  /* Lifted for dark, the same value mailyte-web and mailyte-console ship:
+     #3730A3 scores 1.89:1 on this ground. The guide's magenta stays available
+     as an accent choice in Appearance. */
+  --primary: 243 61.3% 58.4%; /* #5B54D6 */
   --primary-foreground: 0 0% 100%;
-  --secondary: 230 100% 55%;
+  --secondary: 218 100% 64.9%;
   --secondary-foreground: 0 0% 100%;
-  --accent: 0 92% 67%;
+  --accent: 315 60% 48%;
   --accent-foreground: 0 0% 100%;
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 0 72% 60%;
   --destructive-foreground: 0 0% 98%;
+  --success: 142 60% 50%;
+  --warning: 38 85% 55%;
   --ring: 243 61.3% 58.4%;
 
-  /* --email-dim lived here and is gone. It dimmed an email body's whole
-     frame with filter: brightness() in dark mode, which took the sender's
-     brand colours and photographs down with the white background and made
-     designed templates look broken rather than dark. HTML mail now renders
-     untouched on white in both themes, and only plain text -- which we
-     author ourselves -- follows the theme. See WebmailBodyFrame. */
+  --sidebar: 240 5.9% 10%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-border: 0 0% 100%;
+
+  --selection: 243 40% 16%;
+  --selection-strong: 243 45% 26%;
 }
 
 /* ---------------------------------------------------------------------------
- * The brand mark.
- *
- * The Mailyte plane-and-wing, split in two so the colour follows the accent
- * without a file per theme:
- *
- *   the wing   an alpha mask painted with hsl(var(--primary)). One file serves
- *              every accent and both light and dark, and it matches the token
- *              exactly rather than approximating it.
- *   the plane  its original pixels. Its folds are shading, not flat colour, so
- *              masking it would flatten the origami into a blob.
- *
- * To rebrand: replace public/logo-wing-mask.png (an alpha silhouette) and
- * BOTH plane drawings — public/logo-plane.png for the dark ground and
- * public/logo-plane-on-light.png for the light one. The wing takes the accent;
- * the planes are used as-is, which is why there has to be one of each.
- * ------------------------------------------------------------------------- */
-
-.brand-mark {
-  position: relative;
-  display: inline-block;
-  aspect-ratio: 642 / 468;
-  flex: none;
-}
-
-.brand-mark::before,
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-}
-
-.brand-mark::before {
-  background-color: hsl(var(--primary));
-  -webkit-mask: url('/logo-wing-mask.png') center / contain no-repeat;
-  mask: url('/logo-wing-mask.png') center / contain no-repeat;
-  background-image: none;
-}
-
-/* Plane — one artwork per ground, because it is line art, not a flat shape.
- *
- * The shipped plane is a white body with thin dark fold lines, which is right
- * on the dark ground and invisible on a white page (79% of its opaque pixels
- * are above luminance 225 — only a faint wireframe survived).
- *
- * It cannot be themed the way the wing is: the wing is a silhouette, so a mask
- * plus a flat fill loses nothing, but the plane's folds ARE the lines and a
- * mask would fill body and lines alike and leave a blob. So there are two
- * drawings — the second is the first tone-inverted into a dark range, same
- * geometry.
- */
-.brand-mark::after {
-  background-image: url('/logo-plane-on-light.png');
-}
-
-.dark .brand-mark::after {
-  background-image: url('/logo-plane.png');
-}
-
-/* ---------------------------------------------------------------------------
- * Accent themes — the only place accent values exist.
- *
- * The shipped accent is indigo and lives in :root / .dark above, carrying NO
- * attribute, so nothing has to be undone to return to it. Each alternate needs
- * BOTH blocks: a value chosen to carry a white label on white is invisible on
- * a dark ground.
- *
- * Identical to mailyte-web and mailyte-console. Someone moving between the
- * dashboard and their inbox should not see the brand change.
+ * Accent themes (Settings → Appearance). Identity only lives in
+ * lib/webmail/accent.ts; every value lives here. Each alternate needs BOTH
+ * blocks: a colour chosen to carry a white label on white is invisible on a
+ * dark ground. Same ids and values as mailyte-web and mailyte-console.
  * ------------------------------------------------------------------------- */
 
 :root[data-theme='magenta'] {
   --primary: 309 70.6% 38.6%;
   --primary-foreground: 0 0% 100%;
   --ring: 309 70.6% 38.6%;
+  --selection: 309 60% 96%;
+  --selection-strong: 309 60% 88%;
 }
 :root[data-theme='magenta'].dark {
   --primary: 315 60% 48%;
   --ring: 315 60% 48%;
+  --selection: 315 40% 16%;
+  --selection-strong: 315 45% 26%;
 }
 
 :root[data-theme='teal'] {
   --primary: 193 83.4% 30.8%;
   --primary-foreground: 0 0% 100%;
   --ring: 193 83.4% 30.8%;
+  --selection: 193 60% 95%;
+  --selection-strong: 193 60% 86%;
 }
 :root[data-theme='teal'].dark {
   --primary: 193 83.4% 30.8%;
   --ring: 193 83.4% 30.8%;
+  --selection: 193 40% 14%;
+  --selection-strong: 193 45% 24%;
 }
 
 :root[data-theme='azure'] {
   --primary: 224 76.3% 48%;
   --primary-foreground: 0 0% 100%;
   --ring: 224 76.3% 48%;
+  --selection: 224 70% 96%;
+  --selection-strong: 224 70% 88%;
 }
 :root[data-theme='azure'].dark {
   --primary: 224 74.9% 54.7%;
   --ring: 224 74.9% 54.7%;
+  --selection: 224 40% 16%;
+  --selection-strong: 224 45% 26%;
 }
 
 :root[data-theme='violet'] {
   --primary: 262 83.3% 57.8%;
   --primary-foreground: 0 0% 100%;
   --ring: 262 83.3% 57.8%;
+  --selection: 262 70% 96%;
+  --selection-strong: 262 70% 88%;
 }
 :root[data-theme='violet'].dark {
   --primary: 262 83.3% 57.8%;
   --ring: 262 83.3% 57.8%;
+  --selection: 262 40% 16%;
+  --selection-strong: 262 45% 26%;
 }
 
 /* Gold is the only accent whose label is ink: white on it is 2.24:1. */
@@ -184,11 +158,15 @@
   --primary: 45 100% 42.9%;
   --primary-foreground: 0 0% 10%;
   --ring: 45 100% 42.9%;
+  --selection: 45 90% 94%;
+  --selection-strong: 45 90% 84%;
 }
 :root[data-theme='gold'].dark {
   --primary: 45 100% 42.9%;
   --primary-foreground: 0 0% 10%;
   --ring: 45 100% 42.9%;
+  --selection: 45 40% 14%;
+  --selection-strong: 45 45% 24%;
 }
 
 @layer base {
@@ -196,27 +174,18 @@
     @apply border-border;
   }
 
+  html,
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    height: 100%;
   }
 
-  /* Text selection.
-   *
-   * There was no ::selection rule at all, so selecting text used the browser
-   * default -- which replaces the *background* and leaves the text its
-   * original colour. On muted copy (`text-gray-500`, `text-muted-foreground`)
-   * that lands grey-on-blue at roughly 1.5:1, so highlighting a sentence to
-   * copy it made it harder to read, not easier. Worse on the helper text under
-   * form fields, which is exactly the text people select to copy.
-   *
-   * Setting BOTH properties is the fix: colour must be declared alongside
-   * background or the original text colour survives and the contrast is
-   * whatever it happens to be.
-   *
-   * Primary is the same yellow in light and dark, and primary-foreground is
-   * near-black in both, so one pairing covers both themes at ~9:1 -- well past
-   * WCAG AA. It also reads as deliberate rather than as the browser's default
-   * blue sitting oddly against a yellow-accented UI. */
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* Both properties, or muted copy stays grey on the highlight and gets
+     harder to read when selected. */
   ::selection {
     background-color: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
@@ -227,13 +196,15 @@
     color: hsl(var(--primary-foreground));
   }
 
+  /* Visible focus, never removed: 2px ring, 2px offset, per the guide. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
   /* Pictures in the compose and signature editors (TipTap's .ProseMirror).
-   *
-   * The reading pane already clamps images to the frame width; the editor
-   * had no rule at all, so a pasted screenshot rendered at its natural
-   * width and pushed the 700px compose window into a horizontal scroll.
-   * A selected picture gets the same outline the rest of the UI uses for
-   * focus, so it is clear what Delete will remove. */
+     The reading pane clamps images to the frame; the editor needs the same or
+     a pasted screenshot forces the compose window into a horizontal scroll. */
   .ProseMirror img {
     max-width: 100%;
     height: auto;
@@ -242,5 +213,110 @@
   .ProseMirror img.ProseMirror-selectednode {
     outline: 2px solid hsl(var(--primary));
     outline-offset: 2px;
+  }
+
+  .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: hsl(var(--muted-foreground) / 0.7);
+  }
+}
+
+@layer components {
+  /* The thin scrollbar the redesign draws on every scrolling column. */
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
+  }
+  .thin-scroll::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .thin-scroll::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.16);
+    border-radius: 10px;
+  }
+  .thin-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  }
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+  }
+
+  /* The deepened text gradient from the guide (WCAG AA at every stop). */
+  .text-brand-gradient {
+    background: linear-gradient(90deg, #c42bb4 0%, #3730a3 55%, #2f6fe0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* The bright brand gradient: hero panels and accents, never a button. */
+  .bg-brand-gradient {
+    background: linear-gradient(90deg, #e94fd8 0%, #8b5cf6 55%, #4c8dff 100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

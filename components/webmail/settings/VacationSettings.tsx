@@ -1,25 +1,25 @@
-import { useEffect, useState } from "react";
-import { getVacation, updateVacation } from "@/lib/webmail/client";
-import type { SettingsSectionProps } from "./types";
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
+import { getVacation, updateVacation } from '@/lib/webmail/client';
+import Button from '@/components/ui/Button';
+import { Hint, Input, Label, Switch, Textarea } from '@/components/ui/Field';
+import type { SettingsSectionProps } from './types';
 
 /**
  * The vacation auto-responder (Sieve `vacation`).
  *
  * Only the fields the mail server actually honours are here. It sends at
  * most one reply per sender per day, which is stated rather than made
- * configurable: the interval exists to stop a reply loop with another
- * autoresponder, and it is not a preference worth the extra control.
+ * configurable: the interval exists to stop a loop with another responder.
  */
-export default function VacationSettings({
-  onUnauthorized,
-  onDirty,
-  onSaved,
-}: SettingsSectionProps) {
+export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: SettingsSectionProps) {
   const [enabled, setEnabled] = useState(false);
-  const [subject, setSubject] = useState("Out of Office");
-  const [message, setMessage] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [subject, setSubject] = useState('Out of Office');
+  const [message, setMessage] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -27,27 +27,16 @@ export default function VacationSettings({
 
   useEffect(() => {
     void getVacation(onUnauthorized).then((result) => {
-      // Restore ALL of it, not just the checkbox.
-      //
-      // This read `result.data.enabled` alone, so a saved responder came back
-      // with its switch on and every other field redrawn from the defaults
-      // above -- the subject reverted to "Out of Office", the reply body and
-      // both dates came back empty, and it read as though the save had been
-      // thrown away. It had not: the mail server stores these on the Sieve
-      // script and returns them from parse_vacation. They were simply never
-      // asked for.
-      //
-      // `?.` on data for the same reason as elsewhere: a success envelope does
-      // not guarantee a payload.
+      // Restore ALL of it: the mail server stores every field on the Sieve
+      // script and returns them from parse_vacation.
       if (result.success && result.data) {
         setEnabled(result.data.enabled);
-        // Null means "never set", which is the default rather than an empty
-        // subject line -- an auto-reply with no subject is worse than one
-        // with a dull subject.
-        setSubject(result.data.subject || "Out of Office");
-        setMessage(result.data.message ?? "");
-        setStartDate(result.data.start_date ?? "");
-        setEndDate(result.data.end_date ?? "");
+        setSubject(result.data.subject || 'Out of Office');
+        setMessage(result.data.message ?? '');
+        setStartDate(result.data.start_date ?? '');
+        setEndDate(result.data.end_date ?? '');
+      } else if (!result.success) {
+        setError(result.message);
       }
       setLoading(false);
     });
@@ -60,22 +49,19 @@ export default function VacationSettings({
 
   const save = async () => {
     setError(null);
-    if (enabled && message.trim() === "") {
-      setError(
-        "Write the reply people will receive, or turn the responder off.",
-      );
+    if (enabled && message.trim() === '') {
+      setError('Write the reply people will receive, or turn the responder off.');
       return;
     }
     if (startDate && endDate && endDate < startDate) {
-      setError("The end date is before the start date.");
+      setError('The end date is before the start date.');
       return;
     }
-
     setSaving(true);
     const result = await updateVacation(
       {
         enabled,
-        subject: subject.trim() || "Out of Office",
+        subject: subject.trim() || 'Out of Office',
         message,
         start_date: startDate || null,
         end_date: endDate || null,
@@ -83,7 +69,6 @@ export default function VacationSettings({
       onUnauthorized,
     );
     setSaving(false);
-
     if (!result.success) {
       setError(result.message);
       return;
@@ -93,55 +78,35 @@ export default function VacationSettings({
     setTimeout(() => setSaved(false), 2500);
   };
 
-  if (loading)
-    return <p className="text-sm text-gray-500">Loading vacation settings…</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading vacation settings…</p>;
 
   return (
-    <div className="space-y-4" data-shortcuts="off">
-      <label className="flex items-center gap-2.5 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => {
-            setEnabled(e.target.checked);
-            touch();
-          }}
-          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary"
-        />
-        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-          Send an automatic reply
-        </span>
-      </label>
+    <div className="space-y-6" data-shortcuts="off">
+      <Switch
+        checked={enabled}
+        onChange={(next) => {
+          setEnabled(next);
+          touch();
+        }}
+        label="Send an automatic reply"
+      />
 
-      <div
-        className={`space-y-3 ${enabled ? "" : "opacity-50 pointer-events-none"}`}
-      >
+      <div className={`max-w-lg space-y-4 ${enabled ? '' : 'pointer-events-none opacity-50'}`}>
         <div>
-          <label
-            className="block text-xs text-gray-500 mb-1"
-            htmlFor="vac-subject"
-          >
-            Subject
-          </label>
-          <input
+          <Label htmlFor="vac-subject">Subject</Label>
+          <Input
             id="vac-subject"
             value={subject}
             onChange={(e) => {
               setSubject(e.target.value);
               touch();
             }}
-            className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
           />
         </div>
 
         <div>
-          <label
-            className="block text-xs text-gray-500 mb-1"
-            htmlFor="vac-message"
-          >
-            Reply
-          </label>
-          <textarea
+          <Label htmlFor="vac-message">Reply</Label>
+          <Textarea
             id="vac-message"
             value={message}
             onChange={(e) => {
@@ -150,19 +115,13 @@ export default function VacationSettings({
             }}
             rows={5}
             placeholder="I'm away until the 30th and will reply when I'm back."
-            className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
           />
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label
-              className="block text-xs text-gray-500 mb-1"
-              htmlFor="vac-start"
-            >
-              Start (optional)
-            </label>
-            <input
+            <Label htmlFor="vac-start">Start (optional)</Label>
+            <Input
               id="vac-start"
               type="date"
               value={startDate}
@@ -170,17 +129,11 @@ export default function VacationSettings({
                 setStartDate(e.target.value);
                 touch();
               }}
-              className="text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
             />
           </div>
           <div>
-            <label
-              className="block text-xs text-gray-500 mb-1"
-              htmlFor="vac-end"
-            >
-              End (optional)
-            </label>
-            <input
+            <Label htmlFor="vac-end">End (optional)</Label>
+            <Input
               id="vac-end"
               type="date"
               value={endDate}
@@ -188,32 +141,28 @@ export default function VacationSettings({
                 setEndDate(e.target.value);
                 touch();
               }}
-              className="text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
             />
           </div>
         </div>
 
-        <p className="text-xs text-gray-500">
-          Each sender receives at most one reply per day, so a conversation with
-          another autoresponder cannot loop.
-        </p>
+        <Hint>Each sender receives at most one reply per day, so a conversation with another autoresponder cannot loop.</Hint>
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
+      <div className="flex items-center gap-3 border-t border-border pt-5">
+        <Button variant="primary" size="md" busy={saving} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </Button>
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-success">
+            <Check size={14} /> Saved
+          </span>
+        )}
       </div>
     </div>
   );

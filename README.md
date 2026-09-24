@@ -12,15 +12,23 @@ server that implements the same mailbox API.
 
 ## What it does
 
-- Read, search, and organise mail. Search runs **on the server**, over message
-  bodies, so a word buried deep in an email is findable.
-- Compose with a rich-text editor, inline pictures (inserted, pasted or
-  dropped), attachments, and drafts stored as real messages in your Drafts
-  folder — every other client on the account can see and continue them.
-- Folders, flags, threading, and move/trash.
-- Filter rules, mail forwarding, and a vacation responder, compiled to Sieve.
-- Signature (rich text, with pictures), display density, and an optional
-  undo-send window.
+- Read, search, and organise mail in a three-pane layout. Search runs **on the
+  server**, over message bodies, in one folder or across all of them; unread
+  and starred filters are server-side too.
+- Compose in several windows at once — windowed, full screen or minimized to a
+  tab — with a rich-text editor, inline pictures (inserted, pasted or dropped),
+  emoji, attachments, and drafts stored as real messages in your Drafts folder.
+  Reply inline under a message, or open the full editor.
+- Send as a shared mailbox you have permission on; schedule a send; undo a
+  send within a window you choose.
+- Folders (create, rename, delete), flags, threading, move/trash, mark all
+  read, block a sender, download the original `.eml`.
+- Calendar (CalDAV) and address book (CardDAV) screens, plus a mini calendar
+  and a contacts panel inside the mailbox, when the server runs them.
+- Filter rules, mail forwarding, blocked senders and a vacation responder,
+  compiled to Sieve.
+- Signature (rich text, with pictures), display density, light and dark
+  themes, and accent colours.
 - Optional two-factor authentication on webmail sign-in.
 - Optional AI compose and thread summary, against any OpenAI-compatible
   endpoint you point it at.
@@ -49,8 +57,7 @@ docker run -p 3000:3000 -e MAILBOX_API_BASE_URL="https://mail.example.com/api/v1
 | Variable | Required | What it does |
 |---|---|---|
 | `MAILBOX_API_BASE_URL` | yes | Your mail server's API base, e.g. `https://mail.example.com/api/v1` |
-| `NEXT_PUBLIC_BRAND_NAME` | no | Name shown on the sign-in screen. Default `Webmail` |
-| `NEXT_PUBLIC_BRAND_MARK` | no | One or two characters for the mark beside it. Default `✉` |
+| `NEXT_PUBLIC_BRAND_NAME` | no | What the app calls itself. Default `Webmail`. When it is `Mailyte` the real lockup artwork is drawn; any other name is set beside the mark as text. Replace `public/mailyte-mark-*.png` to change the mark |
 
 `MAILBOX_API_BASE_URL` is read **at request time, on the server**, so one
 image works for every deployment — change it and restart, no rebuild. The
@@ -71,10 +78,13 @@ browser calling the mail server directly.
 
 | Path | What lives there |
 |---|---|
-| `app/webmail/` | The pages: mailbox, login, settings |
+| `app/` | The pages: mailbox (`/`), login, settings, calendar, address book |
 | `app/api/webmail/` | The server-side proxy to your mail server |
-| `lib/webmail/` | API client, sanitising, keyboard shortcuts |
-| `components/webmail/` | The interface |
+| `lib/webmail/` | API client, the mailbox state (`useMailbox`), sanitising, keyboard shortcuts |
+| `components/webmail/shell/` | The three panes: rail, message list, reading pane, and the floating panels |
+| `components/webmail/compose/` | The compose windows (several at once; windowed, full screen, minimized) |
+| `components/ui/` | Buttons, fields, dialogs, toasts — the brand guide as components |
+| `app/globals.css` | Every colour token, light and dark; the only file a re-theme touches |
 
 ## Security
 

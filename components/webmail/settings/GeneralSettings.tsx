@@ -1,7 +1,11 @@
+'use client';
+
 import { useEffect, useState } from 'react';
-import { HardDrive, PenLine, Check, AtSign } from 'lucide-react';
+import { HardDrive, PenLine, Check, AtSign, Rows3 } from 'lucide-react';
 import WebmailEditor from '../WebmailEditor';
 import { updateSettings } from '@/lib/webmail/client';
+import Button from '@/components/ui/Button';
+import { Hint, Input, Label, Switch } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
 
 function formatMb(mb: number): string {
@@ -9,20 +13,22 @@ function formatMb(mb: number): string {
   return `${(mb / 1024).toFixed(1)} GB`;
 }
 
+function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <h3 className="mb-2 flex items-center gap-2 font-display text-[14px] font-semibold">
+      <span className="text-muted-foreground">{icon}</span>
+      {children}
+    </h3>
+  );
+}
+
 /**
- * Signature, list density and storage.
+ * Display name, signature, list density and storage.
  *
- * The signature is sanitised server-side on save (SignatureSanitizer), so
- * this re-reads after saving rather than trusting the local copy -- what was
- * sent is not necessarily what was stored.
+ * The signature is sanitised server-side on save, so this re-reads after
+ * saving rather than trusting the local copy.
  */
-export default function GeneralSettings({
-  settings,
-  onUnauthorized,
-  onDirty,
-  onSaved,
-  onSettingsChanged,
-}: SettingsSectionProps) {
+export default function GeneralSettings({ settings, onUnauthorized, onDirty, onSaved, onSettingsChanged }: SettingsSectionProps) {
   const [name, setName] = useState(settings.name ?? '');
   const [signature, setSignature] = useState(settings.signatureHtml);
   const [onReply, setOnReply] = useState(settings.signatureOnReply);
@@ -32,6 +38,8 @@ export default function GeneralSettings({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Re-seed from the server copy after a save re-reads it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
     setOnReply(settings.signatureOnReply);
@@ -39,24 +47,17 @@ export default function GeneralSettings({
   }, [settings]);
 
   const save = async () => {
-    // Refused here as well as on the server, so the person is told before the
-    // round trip rather than after it. The server rejects a blank name because
-    // an empty display name is not a setting -- it is the absence of one, and
-    // it would strip the name off every message they send.
+    // Refused here as well as on the server: a blank display name is not a
+    // setting, it is the absence of one, and would strip the name off every
+    // message they send.
     if (name.trim() === '') {
       setError('Enter the name recipients should see, or leave your current one in place.');
       return;
     }
-
     setSaving(true);
     setError(null);
     const result = await updateSettings(
-      {
-        name: name.trim(),
-        signature_html: signature,
-        signature_on_reply: onReply,
-        display_density: density,
-      },
+      { name: name.trim(), signature_html: signature, signature_on_reply: onReply, display_density: density },
       onUnauthorized,
     );
     setSaving(false);
@@ -73,30 +74,12 @@ export default function GeneralSettings({
   const { usedMb, quotaMb, percentage } = settings.storage;
 
   return (
-    <div className="space-y-6" data-shortcuts="off">
-      {/*
-        The From line, which was both invisible and unreachable.
-
-        The display name reached this payload as null for every mailbox -- the
-        mail server's session query never selected it -- so mail went out as a
-        bare address and nobody could see why.
-
-        Editable by the holder, not just by an admin. It is their name on their
-        mail; an address book entry that can only be corrected by filing a
-        ticket is one that stays wrong. The admin path still exists and still
-        wins at provisioning time, and ReconcileMailboxesJob pulls a change
-        made here back into Laravel so the two copies cannot drift apart.
-      */}
+    <div className="space-y-8" data-shortcuts="off">
       <section>
-        <label
-          htmlFor="display-name"
-          className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-        >
-          <AtSign size={15} /> Display name
-        </label>
-        <input
+        <SectionTitle icon={<AtSign size={15} />}>Display name</SectionTitle>
+        <Label htmlFor="display-name">Recipients see this beside your address</Label>
+        <Input
           id="display-name"
-          type="text"
           value={name}
           maxLength={255}
           onChange={(e) => {
@@ -104,115 +87,99 @@ export default function GeneralSettings({
             onDirty?.();
           }}
           placeholder="Your name"
-          className="w-full max-w-sm text-sm px-2.5 py-1.5 rounded border border-border bg-transparent"
+          className="max-w-sm"
         />
-        <p className="mt-1.5 text-xs text-gray-500 break-all">
-          Recipients see{' '}
-          <span className="font-mono">
+        <Hint>
+          Mail goes out as{' '}
+          <span className="font-mono text-foreground">
             {name.trim() ? `${name.trim()} <${settings.emailAddress}>` : settings.emailAddress}
           </span>
           . Takes effect on your next message.
-        </p>
+        </Hint>
       </section>
 
       <section>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          <PenLine size={15} /> Signature
-        </h3>
-        <div className="border border-border rounded-md overflow-hidden">
+        <SectionTitle icon={<PenLine size={15} />}>Signature</SectionTitle>
+        <div className="overflow-hidden rounded-lg border border-border">
           <WebmailEditor
             initialHtml={settings.signatureHtml}
             placeholder="Your name, role, a link…"
+            autoFocus={false}
+            minHeightClass="min-h-[8rem]"
             onChange={(html) => {
               setSignature(html);
               onDirty?.();
             }}
           />
         </div>
-        <label className="flex items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-400">
-          <input
-            type="checkbox"
+        <div className="mt-3">
+          <Switch
             checked={onReply}
-            onChange={(e) => {
-              setOnReply(e.target.checked);
+            onChange={(next) => {
+              setOnReply(next);
               onDirty?.();
             }}
-            className="rounded border-gray-300 dark:border-gray-600"
+            label="Include the signature on replies"
           />
-          Include the signature on replies
-        </label>
+        </div>
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Message list density
-        </h3>
-        <div className="flex gap-2">
+        <SectionTitle icon={<Rows3 size={15} />}>Message list</SectionTitle>
+        <div className="inline-flex rounded-lg border border-border p-0.5">
           {(['comfortable', 'compact'] as const).map((option) => (
             <button
               key={option}
+              type="button"
+              aria-pressed={density === option}
               onClick={() => {
                 setDensity(option);
                 onDirty?.();
               }}
-              className={`px-3 py-1.5 text-sm rounded-md border capitalize ${
-                density === option
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+              className={`rounded-md px-3 py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
+                density === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {option}
             </button>
           ))}
         </div>
+        <Hint>Compact hides the preview line and tightens each row.</Hint>
       </section>
 
       <section>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          <HardDrive size={15} /> Storage
-        </h3>
+        <SectionTitle icon={<HardDrive size={15} />}>Storage</SectionTitle>
         {quotaMb > 0 ? (
           <>
-            <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div className="h-2 max-w-md overflow-hidden rounded-full bg-muted">
               <div
                 className={`h-full rounded-full ${
-                  (percentage ?? 0) >= 90
-                    ? 'bg-red-500'
-                    : (percentage ?? 0) >= 75
-                      ? 'bg-amber-500'
-                      : 'bg-primary'
+                  (percentage ?? 0) >= 90 ? 'bg-destructive' : (percentage ?? 0) >= 75 ? 'bg-warning' : 'bg-primary'
                 }`}
                 style={{ width: `${Math.min(100, percentage ?? 0)}%` }}
               />
             </div>
-            <p className="mt-1.5 text-sm text-gray-500">
-              {formatMb(usedMb)} of {formatMb(quotaMb)} used
-              {percentage !== null && ` (${percentage}%)`}
-            </p>
+            <Hint>
+              {formatMb(usedMb)} of {formatMb(quotaMb)} used{percentage !== null && ` (${percentage}%)`}
+            </Hint>
           </>
         ) : (
-          <p className="text-sm text-gray-500">
-            {formatMb(usedMb)} used — this mailbox has no quota set.
-          </p>
+          <Hint>{formatMb(usedMb)} used — this mailbox has no quota set.</Hint>
         )}
       </section>
 
       {error && (
-        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          className="px-4 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+      <div className="flex items-center gap-3 border-t border-border pt-5">
+        <Button variant="primary" size="md" busy={saving} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </Button>
         {saved && (
-          <span className="flex items-center gap-1 text-sm text-green-600">
+          <span className="flex items-center gap-1 text-sm text-success">
             <Check size={14} /> Saved
           </span>
         )}

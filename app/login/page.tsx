@@ -2,24 +2,21 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Inbox, Send, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import AuthLayout from '@/components/auth/AuthLayout';
-import WebmailInboxPreview from '@/components/auth/WebmailInboxPreview';
-
-// Plain language on purpose -- most people logging in here are checking
-// their own email, not managing email infrastructure, and won't know (or
-// need to know) what IMAP/SMTP mean.
-const webmailTrustCues = [
-  { icon: Inbox, label: 'See your real email' },
-  { icon: Send, label: 'Send messages that really go out' },
-  { icon: Sparkles, label: 'Help writing replies' },
-];
+import Button from '@/components/ui/Button';
+import { Input, Label } from '@/components/ui/Field';
 
 export default function WebmailLoginPage() {
   const router = useRouter();
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Set once the server has accepted the password and asked for a code. The
+  // BFF forwards `two_factor_code`; without this step a mailbox with 2FA on
+  // could never get past the prompt.
+  const [twoFactor, setTwoFactor] = useState(false);
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,30 +29,34 @@ export default function WebmailLoginPage() {
       const res = await fetch('/api/webmail-auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email_address: emailAddress, password }),
+        body: JSON.stringify({
+          email_address: emailAddress,
+          password,
+          two_factor_code: twoFactor ? code.trim() : undefined,
+        }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
         setError(data.message || 'Invalid email address or password');
         return;
       }
 
-      // Non-sensitive display info only -- the session token itself lives
-      // in an HttpOnly cookie the login route just set, never here.
+      // The password was right; the mailbox wants a second factor. No
+      // session yet -- the next submit carries the code.
+      if (data.two_factor_required) {
+        setTwoFactor(true);
+        setCode('');
+        return;
+      }
+
+      // Non-sensitive display info only -- the session token itself lives in
+      // an HttpOnly cookie the login route just set, never here.
       sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify(data.email_account));
 
       // A temporary or admin-reset password buys a session that can do
-      // exactly two things: set a real password, and sign out. Sending them
-      // to the inbox would show an empty shell -- every folder and message
-      // call answers 403 until the change is made.
+      // exactly two things: set a real password, and sign out.
       if (data.must_change_password) {
-        // The change screen asks for the current password again rather than
-        // it being carried over. Handing it along would mean putting a
-        // plaintext password in sessionStorage -- reachable by any script on
-        // this origin, and squarely against the rule the line above states:
-        // the session token itself is kept out of JS for exactly this reason,
-        // so the password it was exchanged for does not belong there either.
         const reason = data.password_change_reason
           ? `?reason=${encodeURIComponent(data.password_change_reason)}`
           : '';
@@ -73,76 +74,101 @@ export default function WebmailLoginPage() {
 
   return (
     <AuthLayout
-      title="Check your mail"
-      description="Log in with your mailbox address to read and send real mail from any browser."
-      panelHeadline={
-        <>
-          Your inbox,
-          <br />
-          <span className="bg-gradient-to-r from-primary to-[#FF9900] bg-clip-text text-transparent">
-            anywhere.
-          </span>
-        </>
+      title={twoFactor ? 'Enter your code' : 'Sign in to your mail'}
+      description={
+        twoFactor
+          ? `Open your authenticator app and enter the code for ${emailAddress}.`
+          : 'Use your mailbox address and password. The same ones your mail apps use.'
       }
-      panelDescription="Check and send real email from any web browser — nothing to install, nothing to set up."
-      panelVisual={<WebmailInboxPreview />}
-      trustCues={webmailTrustCues}
     >
       <div className="space-y-6">
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-1.5">
-            <label htmlFor="email_address" className="block text-sm font-medium text-foreground">
-              Email address
-            </label>
-            <input
-              id="email_address"
-              type="email"
-              required
-              value={emailAddress}
-              onChange={(e) => setEmailAddress(e.target.value)}
-              placeholder="you@yourdomain.com"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-ring/30"
-            />
-          </div>
+          {!twoFactor ? (
+            <>
+              <div>
+                <Label htmlFor="email_address">Email address</Label>
+                <Input
+                  id="email_address"
+                  type="email"
+                  required
+                  autoComplete="username"
+                  value={emailAddress}
+                  onChange={(e) => setEmailAddress(e.target.value)}
+                  placeholder="you@yourdomain.com"
+                  className="font-mono text-[13.5px]"
+                />
+              </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="block text-sm font-medium text-foreground">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 pr-10 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-ring/30"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
-              >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>
+              <Label htmlFor="two_factor_code">Authentication code</Label>
+              <div className="relative">
+                <KeyRound size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="two_factor_code"
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123 456"
+                  className="pl-9 font-mono text-[15px] tracking-[0.2em]"
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Lost your phone? A recovery code works here too.
+              </p>
             </div>
-          </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? 'Logging in…' : 'Log in'}
-          </button>
+          <Button type="submit" variant="primary" size="md" busy={loading} className="w-full">
+            {loading ? 'Signing in…' : twoFactor ? 'Continue' : 'Sign in'}
+          </Button>
+
+          {twoFactor && (
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFactor(false);
+                setCode('');
+                setError(null);
+              }}
+              className="block w-full text-center text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              Use a different account
+            </button>
+          )}
         </form>
       </div>
     </AuthLayout>

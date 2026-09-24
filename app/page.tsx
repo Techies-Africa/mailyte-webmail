@@ -1,1371 +1,358 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { listAllContacts, displayName as contactName } from '@/lib/webmail/contacts';
-import { Trash2, Check } from 'lucide-react';
-import WebmailSidebar, { STARRED_VIEW } from '@/components/webmail/WebmailSidebar';
-import WebmailHeader from '@/components/webmail/WebmailHeader';
+import { Trash2 } from 'lucide-react';
+import Sidebar from '@/components/webmail/shell/Sidebar';
+import FolderNav from '@/components/webmail/shell/FolderNav';
+import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
+import MessageListPane from '@/components/webmail/shell/MessageListPane';
+import ReadingPane, { type QuickReplyMode } from '@/components/webmail/shell/ReadingPane';
+import CalendarPanel from '@/components/webmail/shell/CalendarPanel';
+import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
+import ComposeDock from '@/components/webmail/compose/ComposeDock';
 import WebmailSkeleton from '@/components/webmail/WebmailSkeleton';
-import WebmailList from '@/components/webmail/WebmailList';
-import WebmailToolbar from '@/components/webmail/WebmailToolbar';
-import WebmailMessageView from '@/components/webmail/WebmailMessageView';
-import WebmailCompose, { type ComposePayload } from '@/components/webmail/WebmailCompose';
-import WebmailEmptyState from '@/components/webmail/WebmailEmptyState';
-import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
-import WebmailUndoToast from '@/components/webmail/WebmailUndoToast';
 import WebmailShortcutHelp from '@/components/webmail/WebmailShortcutHelp';
-import {
-  useKeyboardShortcuts,
-  useUnreadTitle,
-} from '@/lib/webmail/useKeyboardShortcuts';
+import WebmailUndoToast from '@/components/webmail/WebmailUndoToast';
+import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import MoveEmailModal from '@/components/webmail/modals/MoveEmailModal';
-import type {
-  ComposeMode,
-  WebmailContact,
-  WebmailFolder,
-  WebmailSettings,
-  WebmailListItem,
-  WebmailMessage,
-} from '@/components/webmail/types';
-import {
-  listMessages,
-  listFolders,
-  getMessage,
-  getThread,
-  trashMessage as apiTrash,
-  deleteForever as apiDeleteForever,
-  star as apiStar,
-  unstar as apiUnstar,
-  moveMessage as apiMove,
-  markRead as apiMarkRead,
-  markUnread as apiMarkUnread,
-  sendMessage as apiSend,
-  aiCompose as apiAiCompose,
-  aiSummarize as apiAiSummarize,
-  attachmentUrl,
-  saveDraft as apiSaveDraft,
-  discardDraft as apiDiscardDraft,
-  listContacts,
-  getSettings,
-  getCapabilities,
-  listScheduled,
-  cancelScheduled as apiCancelScheduled,
-  createFolder as apiCreateFolder,
-  logout as apiLogout,
-} from '@/lib/webmail/client';
-import type { ApiCapabilities, ScheduledMessage } from '@/lib/webmail/client';
-import { formatSendAt } from '@/lib/webmail/scheduleTimes';
-import {
-  FALLBACK_FOLDERS,
-  foldersFingerprint,
-  toContact,
-  toFolder,
-  toSettings,
-  toListItem,
-  toMessage,
-} from '@/lib/webmail/adapters';
+import type { ComposeMode, WebmailListItem } from '@/components/webmail/types';
+import type { ComposePayload } from '@/components/webmail/compose/types';
+import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
+import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
+import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 
 /**
- * Delta poll interval (PRD P4, phase-04's realtime rules). This was 10s and
- * each tick refetched three folders IN FULL -- roughly 1,500 whole messages
- * a minute per open tab. A tick is now a single folders call that transfers
- * no message content at all, and only when a folder's uid_next has actually
- * moved does anything reload.
+ * The mailbox screen: the rail, the message list, the reading pane, and the
+ * compose dock over the top. State lives in useMailbox and useComposeWindows;
+ * this file is the wiring between them and the panes.
  */
-const POLL_MS = 45_000;
-
-/** One page. The old list had no page size because it had no paging. */
-const PAGE_SIZE = 50;
-
-/**
- * Fallback window when the preference has not loaded yet. The PRD's SS12
- * answer fixed undo-send at always-on/10s; the owner changed it to
- * off-by-default/5s, configurable per mailbox (settings > Composing).
- */
-const DEFAULT_UNDO_SECONDS = 5;
-
-function formatRelativeSync(date: Date): string {
-  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
-  if (seconds < 45) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
-  const hours = Math.round(minutes / 60);
-  return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-}
-
-function splitAddresses(value: string): string[] {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/**
- * What the URL is currently describing, read once per navigation.
- *
- * The mailbox kept folder and open message in React state only, so the
- * address bar stayed on /webmail no matter what you were reading: no
- * shareable link to a message, no Back out of one, and a refresh dropped you
- * in the inbox having lost your place.
- */
-function readUrlState(): { folder: string | null; id: string | null } {
-  if (typeof window === 'undefined') return { folder: null, id: null };
-  const params = new URLSearchParams(window.location.search);
-  return { folder: params.get('folder'), id: params.get('id') };
-}
-
-/**
- * Native history rather than router.push().
- *
- * This page holds the whole mailbox -- folders, list, open message, compose
- * draft -- in component state. Going through the Next router for what is
- * really an in-page selection re-runs the route and throws that away, so a
- * click would flicker and refetch. pushState changes the address bar and
- * feeds the Back button without disturbing the tree; the popstate listener
- * below puts the state back when the reader navigates.
- */
-function pushUrlState(folder: string, id: string | null, replace = false) {
-  if (typeof window === 'undefined') return;
-  const params = new URLSearchParams();
-  if (folder && folder !== 'INBOX') params.set('folder', folder);
-  if (id) params.set('id', id);
-  const query = params.toString();
-  const url = `${window.location.pathname}${query ? `?${query}` : ''}`;
-  if (url === `${window.location.pathname}${window.location.search}`) return;
-  window.history[replace ? 'replaceState' : 'pushState']({ folder, id }, '', url);
-}
-
 export default function WebmailInboxPage() {
   const router = useRouter();
-  const [displayEmail, setDisplayEmail] = useState('');
-  const [folders, setFolders] = useState<WebmailFolder[]>(FALLBACK_FOLDERS);
-  // Seeded from the URL so a refresh or a shared link opens where it says.
-  const [activeFolder, setActiveFolder] = useState(() => readUrlState().folder ?? 'INBOX');
-  const [messages, setMessages] = useState<WebmailListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [openMessage, setOpenMessage] = useState<WebmailMessage | null>(null);
-  const [thread, setThread] = useState<WebmailListItem[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  // Until the first authenticated request comes back, we do not know whether
-  // there is a session at all. Rendering the mailbox before then meant a
-  // signed-out visitor saw the full interface, then "not logged in", then a
-  // redirect -- looking briefly as though someone else's mail had loaded.
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [loadingList, setLoadingList] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /**
-   * The banner under the toolbar.
-   *
-   * `tone` exists because this had one appearance -- amber, with a Dismiss
-   * button -- which is right for "something needs your attention" and wrong
-   * for "your message was sent". A confirmation styled as a warning reads as
-   * a problem, and one that waits to be dismissed turns every send into a
-   * small chore.
-   */
-  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'warning' } | null>(
-    null,
-  );
-  // `search` is what's typed; `activeSearch` is what the server was asked
-  // for. Keeping them apart is what makes search a submit rather than a
-  // keystroke-per-request against IMAP.
-  const [search, setSearch] = useState('');
-  const [activeSearch, setActiveSearch] = useState('');
-  const [isMobileView, setIsMobileView] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
-  const [pendingDeleteForever, setPendingDeleteForever] = useState<WebmailListItem | null>(null);
+  const mailbox = useMailbox();
+  const compose = useComposeWindows();
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed();
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [panel, setPanel] = useState<'calendar' | 'contacts' | null>(null);
+  const [quickReply, setQuickReply] = useState<QuickReplyMode>(null);
   const [showBulkMove, setShowBulkMove] = useState(false);
-  const [pendingSend, setPendingSend] = useState<{
-    subject: string;
-    until: number;
-    /** Kept so Undo can put the message back exactly as it was. */
-    payload: ComposePayload;
-    /** The compose context the message came from, so Undo restores it exactly. */
-    context: { mode: ComposeMode; replyTo?: WebmailMessage; draftId?: string };
-  } | null>(null);
-  const [contacts, setContacts] = useState<WebmailContact[]>([]);
-  const [settings, setSettings] = useState<WebmailSettings | null>(null);
+  const [pendingDeleteForever, setPendingDeleteForever] = useState<{ ids: string[]; label: string } | null>(null);
 
-  /**
-   * Optional features this server has, from GET /mailbox/capabilities.
-   *
-   * `null` until the answer arrives, and every optional control treats null
-   * as "not available". That ordering matters: defaulting to available would
-   * flash a button on load and remove it a moment later, which is worse than
-   * it appearing once the server has spoken.
-   */
-  const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
-  const aiAvailable = capabilities?.ai === true;
-  const scheduleAvailable = capabilities?.scheduled_send === true;
+  const {
+    sessionChecked,
+    displayEmail,
+    settings,
+    folders,
+    activeFolder,
+    openMessage,
+    messages,
+    selectedIds,
+    unreadCount,
+    inTrash,
+    signatureSeed,
+    sharedMailboxes,
+  } = mailbox;
 
-  /** Everything waiting in the Scheduled folder, with its send time. */
-  const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
-  // phase-09. Undefined rather than false when absent: the header prop is
-  // optional, and an undefined href renders no control at all.
-  const calendarHref = capabilities?.calendar === true ? '/calendar' : undefined;
-  const contactsHref = capabilities?.contacts === true ? '/address-book' : undefined;
-  // The last folder fingerprint the list was built from. The poll compares
-  // against this and reloads only on a real change.
-  const syncTokenRef = useRef<string>('');
-  const [compose, setCompose] = useState<{
-    open: boolean;
-    mode: ComposeMode;
-    replyTo?: WebmailMessage;
-    initialBody?: string;
-    /** Set when resuming an existing draft, so saving supersedes it. */
-    draftId?: string;
-    /** The draft's own header fields, restored into the compose window. */
-    resumed?: { to: string; cc: string; bcc: string; subject: string };
-  }>({ open: false, mode: 'compose' });
-
-  // Mirrors `compose` for the send closure, which needs the mode/replyTo the
-  // message was written in without re-creating itself on every keystroke.
-  const composeRef = useRef(compose);
   useEffect(() => {
-    composeRef.current = compose;
-  }, [compose]);
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
-  const activeFolderMeta = folders.find((f) => f.name === activeFolder) ?? null;
-  const inTrash = activeFolderMeta?.role === 'trash';
+  // A different message means a fresh reply box.
+  useEffect(() => {
+    setQuickReply(null);
+  }, [openMessage?.id]);
 
-  const handleUnauthorized = useCallback(() => {
-    // Deliberately does NOT set sessionChecked: the gate stays closed so the
-    // mailbox never paints on the way out to the login page.
-    router.push('/login');
-  }, [router]);
+  // --- Compose entry points ------------------------------------------------------
 
-  const loadMessages = useCallback(
-    async (folder: string, options: { silent?: boolean; offset?: number; search?: string } = {}) => {
-      const { silent = false, offset: pageOffset = 0, search: query = '' } = options;
-      if (!silent) setLoadingList(true);
-      setError(null);
-
-      // Starred is a keyword view, not a folder. IMAP can answer it directly
-      // (SEARCH FLAGGED) but the API's filter vocabulary is folder+search, so
-      // it stays an account-wide fetch filtered here -- honest about being
-      // the one view whose count is page-local.
-      const isStarredView = folder === STARRED_VIEW;
-
-      const result = await listMessages(
-        {
-          folder: isStarredView ? null : folder,
-          search: query || undefined,
-          offset: pageOffset,
-          limit: PAGE_SIZE,
-        },
-        handleUnauthorized,
-      );
-
-      if (!result.success) {
-        if (!silent) setError(result.message);
-        setLoadingList(false);
-        return;
-      }
-
-      const items = result.data.messages
-        .map(toListItem)
-        .filter((m) => (isStarredView ? m.isStarred : true));
-
-      // The request was accepted, so a valid session exists -- only now is
-      // it safe to paint the mailbox.
-      setSessionChecked(true);
-      setMessages(items);
-      setTotal(isStarredView ? items.length : result.data.total);
-      setOffset(pageOffset);
-      setLastSyncAt(new Date());
-      if (!silent) setLoadingList(false);
+  const openNewMessage = useCallback(
+    (to?: string, body?: string) => {
+      compose.openCompose({
+        mode: 'compose',
+        initialBody: (body ?? '') + signatureSeed('compose'),
+        resumed: to ? { to, cc: '', bcc: '', subject: '' } : undefined,
+      });
     },
-    [handleUnauthorized],
+    [compose, signatureSeed],
   );
 
   /**
-   * Fetch the folder list, and report whether anything in the mailbox moved
-   * since the last time. This one call is both the sidebar's data and the
-   * change signal the poll runs on (P2 + P4).
+   * `/?compose=<address>` opens a new message to that person (the address
+   * book's write button); `/?compose=new` opens an empty one (the Compose
+   * button on the settings and calendar screens).
    */
-  const loadFolders = useCallback(async (): Promise<{ changed: boolean }> => {
-    const result = await listFolders(handleUnauthorized);
-    if (!result.success) return { changed: false };
-
-    const next = result.data.map(toFolder);
-    setFolders(next);
-
-    const fingerprint = foldersFingerprint(next);
-    const changed = syncTokenRef.current !== '' && syncTokenRef.current !== fingerprint;
-    syncTokenRef.current = fingerprint;
-
-    return { changed };
-  }, [handleUnauthorized]);
-
-  /**
-   * When each message in the Scheduled folder is due.
-   *
-   * A separate call from the folder listing on purpose: the send time lives
-   * on the mail server's own index, not in the message, and joining the two
-   * client-side keeps the message listing one shape for every folder.
-   */
-  const loadScheduled = useCallback(async () => {
-    const result = await listScheduled(handleUnauthorized);
-    setScheduled(result.success ? result.data.messages : []);
-  }, [handleUnauthorized]);
-
-  useEffect(() => {
-    void loadMessages(activeFolder, { search: activeSearch });
-    void loadFolders();
-    void loadScheduled();
-    // A PLACEHOLDER only, so the header is not blank on first paint. It is
-    // written at login and can outlive the session it describes -- signing in
-    // as somebody else without passing through the login page leaves the
-    // previous person's address on screen while their mail is correctly
-    // nobody's but your own. The authoritative address arrives from
-    // /capabilities below and overwrites this.
-    const raw = sessionStorage.getItem('mailyte_mailbox_display');
-    if (raw) {
-      try {
-        setDisplayEmail(JSON.parse(raw).email_address ?? '');
-      } catch {
-        // display-only, safe to ignore
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFolder, activeSearch]);
-
-  // `/?compose=<address>` opens a new message to that person. The address
-  // book's write button is the only thing that uses it today, and without it
-  // that button would land on the inbox and look broken.
-  //
-  // Read off window.location rather than useSearchParams: this needs to run
-  // once on mount, and useSearchParams would drag a Suspense boundary in for
-  // a value that never changes. The parameter is stripped afterwards so a
-  // refresh does not reopen the window.
   useEffect(() => {
     const to = new URLSearchParams(window.location.search).get('compose');
     if (!to) return;
-    setCompose({
-      open: true,
-      mode: 'compose',
-      resumed: { to, cc: '', bcc: '', subject: '' },
-    });
+    openNewMessage(to === 'new' ? undefined : to);
     window.history.replaceState({}, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Autocomplete suggestions (C2). Loaded once -- they are a convenience,
-  // and re-harvesting them on every folder change would cost two folder
-  // reads for no benefit.
-  useEffect(() => {
-    void listContacts(handleUnauthorized).then((result) => {
-      if (result.success) setContacts(result.data.map(toContact));
-    });
-    // Three sources, merged in this order and de-duplicated by address:
-    //
-    //   saved      cards the holder deliberately kept
-    //   directory  colleagues, generated from the mailbox list
-    //   harvested  everyone written to or heard from, by frequency
-    //
-    // All three are kept. A curated record should win over a generated one,
-    // and a generated one over an address that merely appeared in a header --
-    // but the harvested list is the only one that knows who you ACTUALLY
-    // write to, so it is never dropped, only outranked.
-    //
-    // The directory is why this reads every book rather than just the
-    // personal one: a colleague nobody has emailed yet exists in no other
-    // list, and before this they did not complete at all.
-    //
-    // Failure is silent by design -- the address book is an addition to
-    // autocomplete, not a prerequisite for it.
-    void listAllContacts(handleUnauthorized).then((books) => {
-      const flatten = (entries: typeof books, wanted: 'saved' | 'directory') =>
-        entries
-          .filter((entry) => (entry.book.read_only ? 'directory' : 'saved') === wanted)
-          .flatMap((entry) =>
-            entry.contacts.flatMap((contact) =>
-              contact.emails.map((email) => ({
-                name: contactName(contact),
-                email: email.address,
-                source: wanted,
-              })),
-            ),
-          )
-          .filter((entry) => entry.email);
-
-      // read_only is the server's own answer about the collection, not a
-      // guess from its name -- the same signal the address book screen uses
-      // to decide whether to offer editing controls.
-      const ranked = [...flatten(books, 'saved'), ...flatten(books, 'directory')];
-      if (ranked.length === 0) return;
-
-      setContacts((current) => {
-        const seen = new Set<string>();
-        const merged: WebmailContact[] = [];
-        for (const entry of [...ranked, ...current]) {
-          const key = entry.email.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          merged.push(entry);
-        }
-        return merged;
-      });
-    });
-    void getSettings(handleUnauthorized).then((result) => {
-      if (result.success) setSettings(toSettings(result.data));
-    });
-    // What this server can actually do. Optional features are hidden until it
-    // says otherwise -- see the aiAvailable note where the state is declared.
-    void getCapabilities(handleUnauthorized).then((result) => {
-      if (result.success) setCapabilities(result.data.capabilities);
-      // The signed-in address according to the SERVER, which is the only
-      // thing that knows whose session this actually is. Showing one person's
-      // address above another person's mail reads as a data leak even when
-      // nothing has leaked, so the cached value never gets the last word.
-      if (result.success && result.data.email_address) {
-        setDisplayEmail(result.data.email_address);
-        try {
-          sessionStorage.setItem(
-            'mailyte_mailbox_display',
-            JSON.stringify({ email_address: result.data.email_address }),
-          );
-        } catch {
-          // Storage unavailable (private mode); the state above is what renders.
-        }
-      }
-    });
-  }, [handleUnauthorized]);
-
-  useEffect(() => {
-    const checkMobileView = () => {
-      setIsMobileView(window.innerWidth < 768);
-      setShowSidebar(window.innerWidth >= 768);
-    };
-    checkMobileView();
-    window.addEventListener('resize', checkMobileView);
-    return () => window.removeEventListener('resize', checkMobileView);
-  }, []);
-
-  /**
-   * Delta sync (P4). Each tick asks only for folder status; the message list
-   * is refetched only when that status says something actually changed.
-   * Paused while the tab is hidden, and run once on becoming visible again
-   * so returning to the tab is immediately up to date.
-   */
-  useEffect(() => {
-    const tick = async () => {
-      if (document.visibilityState !== 'visible') return;
-      const { changed } = await loadFolders();
-      if (changed) {
-        void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
-        // A message leaving Scheduled is exactly the kind of change that
-        // moves a folder's tokens, and its send time has to go with it --
-        // otherwise the row keeps its old time beside a message that has
-        // already gone out.
-        void loadScheduled();
-      } else {
-        setLastSyncAt(new Date());
-      }
-    };
-
-    const interval = setInterval(() => void tick(), POLL_MS);
-    const onVisible = () => void tick();
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [activeFolder, activeSearch, offset, loadFolders, loadMessages, loadScheduled]);
-
-  const refreshAll = useCallback(() => {
-    void loadMessages(activeFolder, { offset, search: activeSearch });
-    void loadFolders();
-  }, [activeFolder, activeSearch, offset, loadMessages, loadFolders]);
-
-  const handleFolderChange = (folder: string) => {
-    setActiveFolder(folder);
-    setSelectedIds([]);
-    setOpenMessage(null);
-    setSearch('');
-    setActiveSearch('');
-    setOffset(0);
-    pushUrlState(folder, null);
-    if (isMobileView) setShowSidebar(false);
-  };
-
-  /** Search runs on the server, across every folder (P5). */
-  const runSearch = useCallback((query: string) => {
-    setActiveSearch(query.trim());
-    setOffset(0);
-    setSelectedIds([]);
-    setOpenMessage(null);
-  }, []);
-
-  const goToPage = useCallback(
-    (nextOffset: number) => {
-      setSelectedIds([]);
-      setOpenMessage(null);
-      void loadMessages(activeFolder, { offset: nextOffset, search: activeSearch });
-    },
-    [activeFolder, activeSearch, loadMessages],
-  );
 
   const handleOpen = useCallback(
     async (item: WebmailListItem) => {
-      setOpenMessage(null);
-      setThread([]);
-      setLoadingMessage(true);
-      setCompose({ open: false, mode: 'compose' });
-      try {
-        const result = await getMessage(item.id, handleUnauthorized);
-        if (!result.success) {
-          setError(result.message);
-          return;
-        }
-
-        // Opening a draft resumes writing it. Rendering an unsent message in
-        // a read-only reading pane is the behaviour every mail client
-        // deliberately does not have -- there is nothing to read, and no way
-        // to finish it (F6).
-        if (item.isDraft || item.folder === 'Drafts') {
-          const message = toMessage(result.data);
-          setCompose({
-            open: true,
-            mode: 'compose',
-            initialBody: message.body,
-            draftId: item.id,
-            resumed: {
-              to: message.to.map((p) => p.email).join(', '),
-              cc: message.cc.map((p) => p.email).join(', '),
-              bcc: message.bcc.map((p) => p.email).join(', '),
-              subject: message.subject === '(no subject)' ? '' : message.subject,
-            },
-          });
-          return;
-        }
-
-        setOpenMessage(toMessage(result.data));
-        pushUrlState(item.folder || activeFolder, item.id);
-        if (!result.data.is_read) {
-          void apiMarkRead(item.id, handleUnauthorized);
-          setMessages((prev) => prev.map((m) => (m.id === item.id ? { ...m, isRead: true } : m)));
-        }
-
-        // The conversation, if there is one. Fetched after the message so
-        // the body paints immediately -- a thread that turns out to be a
-        // single message costs the reader nothing (F1).
-        const threadResult = await getThread(item.id, handleUnauthorized);
-        if (threadResult.success) {
-          setThread(threadResult.data.map(toListItem));
-        }
-      } finally {
-        setLoadingMessage(false);
-      }
-    },
-    // activeFolder is read when writing the URL above, so it belongs here --
-    // without it the callback keeps the folder from first render and a
-    // message opened from Sent would be linked as if it were in the inbox.
-    [handleUnauthorized, activeFolder],
-  );
-
-  // A confirmation is worth seeing once, not worth clearing by hand. The
-  // warning tone is left alone: it says the Sent copy may be missing, which
-  // the reader should acknowledge rather than have vanish while they look away.
-  useEffect(() => {
-    if (notice?.tone !== 'success') return;
-    const timer = setTimeout(() => setNotice(null), 4000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
-  // --- Back / Forward -------------------------------------------------------
-  // pushUrlState changes the address bar without telling React, so the reader
-  // navigating through history has to be applied to state here.
-  useEffect(() => {
-    const onPopState = () => {
-      const { folder, id } = readUrlState();
-      const nextFolder = folder ?? 'INBOX';
-      setActiveFolder((prev) => (prev === nextFolder ? prev : nextFolder));
-      if (!id) {
-        setOpenMessage(null);
-        return;
-      }
-      setOpenMessage((prev) => (prev && prev.id === id ? prev : null));
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  // --- Deep link ------------------------------------------------------------
-  // A URL carrying ?id= should open that message once the list it lives in has
-  // loaded. Runs at most once: `restoredDeepLink` latches so that closing the
-  // message does not immediately reopen it.
-  const restoredDeepLink = useRef(false);
-  useEffect(() => {
-    if (restoredDeepLink.current || openMessage) return;
-    const { id } = readUrlState();
-    if (!id) {
-      restoredDeepLink.current = true;
-      return;
-    }
-    const item = messages.find((m) => m.id === id);
-    if (!item) return; // not on this page yet; leave the latch open
-    restoredDeepLink.current = true;
-    void handleOpen(item);
-  }, [messages, openMessage, handleOpen]);
-
-  const removeFromList = useCallback(
-    (ids: string[]) => {
-      const set = new Set(ids);
-      setMessages((prev) => prev.filter((m) => !set.has(m.id)));
-      setSelectedIds((prev) => prev.filter((id) => !set.has(id)));
-      setOpenMessage((prev) => (prev && set.has(prev.id) ? null : prev));
-    },
-    [],
-  );
-
-  const toggleStar = useCallback(
-    async (id: string) => {
-      const target = messages.find((m) => m.id === id);
-      const currentlyStarred = target ? target.isStarred : (openMessage?.isStarred ?? false);
-      const result = await (currentlyStarred ? apiUnstar : apiStar)(id, handleUnauthorized);
-      if (!result.success) {
-        setError(result.message);
-        return;
-      }
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, isStarred: !currentlyStarred } : m)),
-      );
-      setOpenMessage((prev) =>
-        prev && prev.id === id ? { ...prev, isStarred: !currentlyStarred } : prev,
-      );
-    },
-    [messages, openMessage, handleUnauthorized],
-  );
-
-  const runOnIds = useCallback(
-    async (
-      ids: string[],
-      action: (id: string) => Promise<{ success: boolean; message?: string }>,
-      onDone: (ids: string[]) => void,
-    ) => {
-      const results = await Promise.all(ids.map(action));
-      const failed = results.find((r) => !r.success);
-      if (failed) setError(failed.message ?? 'Some messages could not be updated');
-      const succeeded = ids.filter((_, i) => results[i].success);
-      onDone(succeeded);
-    },
-    [],
-  );
-
-  const archive = useCallback(
-    (ids: string[]) =>
-      runOnIds(ids, (id) => apiMove(id, 'Archive', handleUnauthorized), removeFromList),
-    [runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  const trash = useCallback(
-    (ids: string[]) => runOnIds(ids, (id) => apiTrash(id, handleUnauthorized), removeFromList),
-    [runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  const deleteForever = useCallback(
-    (ids: string[]) =>
-      runOnIds(ids, (id) => apiDeleteForever(id, handleUnauthorized), removeFromList),
-    [runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  const move = useCallback(
-    (ids: string[], folder: string) =>
-      runOnIds(ids, (id) => apiMove(id, folder, handleUnauthorized), removeFromList),
-    [runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  /**
-   * Mark as spam = file into Junk (PRD SS12 answer 2: per-mailbox filing in
-   * v1, no org-wide suppression). The folder is guaranteed to exist -- it is
-   * one of the six Dovecot provisions -- and move() would create it anyway.
-   */
-  const markSpam = useCallback(
-    (ids: string[]) => runOnIds(ids, (id) => apiMove(id, 'Junk', handleUnauthorized), removeFromList),
-    [runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  /**
-   * Not spam = back to the Inbox. The other half of markSpam, and the half
-   * that was missing: mail could be filed into Junk from anywhere, and once
-   * there the only way out was the generic Move dialog -- so a false positive
-   * cost the reader a folder picker, and most readers never found it.
-   *
-   * The destination is resolved from the folder ROLE rather than the literal
-   * "INBOX". Dovecot provisions it under that name here, but the role is what
-   * actually identifies it, and a mailbox migrated from another server can
-   * arrive with its inbox named something else.
-   *
-   * This files the message; it does not train a filter. Rspamd's bayes is not
-   * wired to this action, so the honest promise is "move it back", which is
-   * what the label says.
-   */
-  const markNotSpam = useCallback(
-    (ids: string[]) => {
-      const inbox = folders.find((f) => f.role === 'inbox')?.name ?? 'INBOX';
-      return runOnIds(ids, (id) => apiMove(id, inbox, handleUnauthorized), removeFromList);
-    },
-    [folders, runOnIds, handleUnauthorized, removeFromList],
-  );
-
-  const saveDraft = useCallback(
-    async (payload: ComposePayload, replaceId?: string) => {
-      const result = await apiSaveDraft(
-        {
-          to: splitAddresses(payload.to),
-          cc: payload.cc ? splitAddresses(payload.cc) : undefined,
-          bcc: payload.bcc ? splitAddresses(payload.bcc) : undefined,
-          subject: payload.subject,
-          body_html: payload.body,
-          in_reply_to: payload.inReplyTo,
-          references: payload.references,
-          replace_id: replaceId,
-        },
-        handleUnauthorized,
-      );
-
-      if (!result.success) {
-        // Autosave failing is worth saying, but not worth an error banner
-        // that interrupts typing -- the compose window shows the state.
-        return null;
-      }
-
-      // A new draft changes the Drafts count in the sidebar.
-      void loadFolders();
-      return result.data.id;
-    },
-    [handleUnauthorized, loadFolders],
-  );
-
-  const discardDraft = useCallback(
-    async (id: string) => {
-      await apiDiscardDraft(id, handleUnauthorized);
-      void loadFolders();
-      if (activeFolder === 'Drafts') {
-        void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
-      }
-    },
-    [handleUnauthorized, loadFolders, loadMessages, activeFolder, offset, activeSearch],
-  );
-
-  const setRead = useCallback(
-    async (ids: string[], read: boolean) => {
-      const action = read ? apiMarkRead : apiMarkUnread;
-      await runOnIds(ids, (id) => action(id, handleUnauthorized), (done) => {
-        const set = new Set(done);
-        setMessages((prev) => prev.map((m) => (set.has(m.id) ? { ...m, isRead: read } : m)));
-        setSelectedIds([]);
-      });
-    },
-    [runOnIds, handleUnauthorized],
-  );
-
-  /**
-   * Undo send (PRD C4, and SS12's answer: fixed at 10 seconds).
-   *
-   * A client-side hold, not a server-side recall: the message has simply not
-   * been handed to Postfix yet. Honest and simple -- once the window closes
-   * the message is genuinely gone, and nothing on screen offers an Undo that
-   * would no longer work. True queue-based recall is out of scope.
-   *
-   * The compose window closes immediately and the toast owns the message
-   * from there, which is what every client that has this feature does:
-   * keeping compose open for ten seconds to "confirm" would make the delay
-   * feel like latency instead of a safety net.
-   */
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const deliver = useCallback(
-    async (payload: ComposePayload) => {
-      const result = await apiSend(
-        {
-          to: splitAddresses(payload.to),
-          cc: payload.cc ? splitAddresses(payload.cc) : undefined,
-          bcc: payload.bcc ? splitAddresses(payload.bcc) : undefined,
-          subject: payload.subject,
-          body_html: payload.body,
-          in_reply_to: payload.inReplyTo,
-          references: payload.references,
-          send_at: payload.sendAt,
-        },
-        payload.attachments ?? [],
-        handleUnauthorized,
-      );
-
-      if (!result.success) {
-        // The message never left. Say so where the user is now -- the
-        // compose window is long closed.
-        const verb = payload.sendAt ? 'was not scheduled' : 'was not sent';
-        setError(`"${payload.subject || '(no subject)'}" ${verb}: ${result.message}`);
-        return;
-      }
-
-      // Scheduled, not sent. Nothing is in Sent and nothing will be for
-      // hours, so the "Message sent to…" wording below would be a lie; the
-      // confirmation names the time instead, which is the one fact the
-      // person needs to check they got it right.
-      if (payload.sendAt) {
-        setNotice({
-          text: `Scheduled to send ${formatSendAt(new Date(payload.sendAt))}`,
-          tone: 'success',
-        });
-        void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
-        void loadFolders();
-        void loadScheduled();
-        return;
-      }
-
-      // The message is away either way. When the Sent copy has not landed
-      // yet the API has queued a retry, and saying so beats a bare "Sent"
-      // over an empty Sent folder (F4).
-      //
-      // The success branch is NOT optional. Confirmation used to appear only
-      // in the degraded case, so an ordinary send -- the overwhelmingly
-      // common one -- produced no feedback at all: the window closed and
-      // nothing said the message had gone. The undo toast covers this only
-      // when undo-send is on, and it is off by default, so most sends were
-      // silent. Turning off *undo* is not a request to turn off *telling me
-      // it worked*.
-      if (result.data && result.data.filed_to_sent === false) {
-        setNotice({
-          text: 'Sent — filing to your Sent folder is still in progress.',
-          tone: 'warning',
-        });
-      } else {
-        const recipients = splitAddresses(payload.to);
-        const who =
-          recipients.length === 1
-            ? recipients[0]
-            : `${recipients[0]} and ${recipients.length - 1} other${
-                recipients.length === 2 ? '' : 's'
-              }`;
-        setNotice({ text: `Message sent to ${who}`, tone: 'success' });
-      }
-      void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
-      void loadFolders();
-    },
-    [
-      activeFolder,
-      activeSearch,
-      offset,
-      handleUnauthorized,
-      loadMessages,
-      loadFolders,
-      loadScheduled,
-    ],
-  );
-
-  const cancelUndo = useCallback(() => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    undoTimerRef.current = null;
-
-    setPendingSend((current) => {
-      // Put the message back in front of the user, exactly as it was.
-      if (current) {
-        setCompose({
-          open: true,
-          mode: current.context.mode,
-          replyTo: current.context.replyTo,
-          initialBody: current.payload.body,
-          draftId: current.context.draftId,
+      const result = await mailbox.open(item);
+      if (result.kind === 'draft') {
+        // Opening a draft resumes writing it: there is nothing to read (F6).
+        const message = result.message;
+        compose.openCompose({
+          mode: 'compose',
+          initialBody: message.body,
+          draftId: item.id,
           resumed: {
-            to: current.payload.to,
-            cc: current.payload.cc,
-            bcc: current.payload.bcc,
-            subject: current.payload.subject,
+            to: message.to.map((p) => p.email).join(', '),
+            cc: message.cc.map((p) => p.email).join(', '),
+            bcc: message.bcc.map((p) => p.email).join(', '),
+            subject: message.subject === '(no subject)' ? '' : message.subject,
           },
         });
       }
-      return null;
-    });
-  }, []);
+      if (isMobile) setMenuOpen(false);
+    },
+    [mailbox, compose, isMobile],
+  );
+
+  const openReplyInComposer = useCallback(
+    (mode: ComposeMode, body?: string) => {
+      if (!openMessage) return;
+      compose.openCompose({
+        mode,
+        replyTo: openMessage,
+        initialBody: body ?? signatureSeed(mode) ?? undefined,
+      });
+      setQuickReply(null);
+    },
+    [openMessage, compose, signatureSeed],
+  );
 
   const send = useCallback(
-    async (payload: ComposePayload) => {
-      // A scheduled message skips the undo hold entirely. Holding it for ten
-      // seconds protects nothing -- it is not going out for hours, and it
-      // can be called back from the Scheduled folder for the whole of that
-      // time. Running it through the toast would only delay the
-      // confirmation that says WHEN it will go.
-      if (payload.sendAt) {
-        void deliver(payload);
-        return { success: true as const };
-      }
-
-      // Undo-send is opt-in (settings > Composing). With it off there is no
-      // hold and no toast -- Send means sent, which is what someone who
-      // turned it off is asking for.
-      if (!settings?.undoSendEnabled) {
-        void deliver(payload);
-        return { success: true as const };
-      }
-
-      const windowMs = (settings.undoSendSeconds || DEFAULT_UNDO_SECONDS) * 1000;
-
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-
-      undoTimerRef.current = setTimeout(() => {
-        undoTimerRef.current = null;
-        setPendingSend(null);
-        void deliver(payload);
-      }, windowMs);
-
-      setPendingSend({
-        subject: payload.subject || '(no subject)',
-        until: Date.now() + windowMs,
-        payload,
-        context: {
-          mode: composeRef.current.mode,
-          replyTo: composeRef.current.replyTo,
-          draftId: composeRef.current.draftId,
-        },
-      });
-
-      // Resolves immediately so compose closes; the toast holds the message.
-      return { success: true as const };
-    },
-    [deliver, settings],
+    (payload: ComposePayload, context: SendContext) => mailbox.send(payload, context),
+    [mailbox],
   );
 
-  /**
-   * Send times keyed by message id, for the list to render.
-   *
-   * Built from the whole list rather than filtered to the open folder: a
-   * scheduled message can only be in Scheduled, so there is nothing to
-   * filter, and keying by id means the list never has to know which folder
-   * it is showing.
-   */
-  const sendTimes = useMemo(() => {
-    const map: Record<string, { label: string; failed: boolean; error: string | null }> = {};
-    for (const row of scheduled) {
-      map[row.id] = {
-        label: row.send_at ? formatSendAt(new Date(row.send_at)) : 'Scheduled',
-        failed: row.status === 'failed',
-        error: row.error,
-      };
-    }
-    return map;
-  }, [scheduled]);
+  /** Undo puts the message back in front of the person, exactly as it was. */
+  const undoSend = useCallback(() => {
+    const held = mailbox.cancelUndo();
+    if (!held) return;
+    compose.openCompose({
+      mode: held.context.mode,
+      replyTo: held.context.replyTo,
+      initialBody: held.payload.body,
+      draftId: held.context.draftId,
+      resumed: {
+        to: held.payload.to,
+        cc: held.payload.cc,
+        bcc: held.payload.bcc,
+        subject: held.payload.subject,
+      },
+    });
+  }, [mailbox, compose]);
 
-  const cancelScheduledSend = useCallback(
-    async (id: string) => {
-      const result = await apiCancelScheduled(id, handleUnauthorized);
-      if (!result.success) {
-        setError(`Could not cancel that scheduled message: ${result.message}`);
+  const fromOptions = useMemo(
+    () =>
+      sharedMailboxes
+        .filter((m) => m.can_send)
+        .map((m) => ({ address: m.address, name: m.name || null })),
+    [sharedMailboxes],
+  );
+
+  // --- Trash rules -----------------------------------------------------------------
+
+  const trashRow = useCallback(
+    (item: WebmailListItem) => {
+      if (!inTrash) {
+        void mailbox.trash([item.id]);
         return;
       }
-      setNotice({ text: 'Send cancelled. The message is in your drafts.', tone: 'success' });
-      void loadScheduled();
-      void loadFolders();
-      void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
+      setPendingDeleteForever({ ids: [item.id], label: item.subject });
     },
-    [
-      handleUnauthorized,
-      loadScheduled,
-      loadFolders,
-      loadMessages,
-      activeFolder,
-      offset,
-      activeSearch,
-    ],
+    [inTrash, mailbox],
   );
 
-  const aiWrite = useCallback(
-    async (instruction: string, existingBody: string) => {
-      const result = await apiAiCompose(instruction, existingBody, handleUnauthorized);
-      if (!result.success) throw new Error(result.message);
-      return result.data.draft;
-    },
-    [handleUnauthorized],
-  );
+  // --- Keyboard ------------------------------------------------------------------------
 
-  const summarize = useCallback(async () => {
-    if (!openMessage) throw new Error('No message selected');
-    const result = await apiAiSummarize(openMessage.id, handleUnauthorized);
-    if (!result.success) throw new Error(result.message);
-    return result.data.summary;
-  }, [openMessage, handleUnauthorized]);
-
-  const logout = async () => {
-    await apiLogout();
-    sessionStorage.removeItem('mailyte_mailbox_display');
-    router.push('/login');
-  };
-
-  // No client-side filtering any more: `messages` IS the server's answer,
-  // whether that's a folder page or a search across every folder (P5).
-  const visibleMessages = messages;
-
-  /**
-   * Unread across the whole mailbox, from the folder counts -- not a count
-   * of unread rows on the current page, which is what it used to be and
-   * which quietly under-reported the moment paging existed.
-   */
-  const unreadCount = useMemo(
-    () => folders.reduce((sum, f) => sum + (f.role === 'trash' ? 0 : f.unreadEmails), 0),
-    [folders],
-  );
-
-  const allSelected = visibleMessages.length > 0 && selectedIds.length === visibleMessages.length;
-  const rangeStart = messages.length === 0 ? 0 : offset + 1;
-  const rangeEnd = offset + messages.length;
-  const hasPrev = offset > 0;
-  const hasNext = rangeEnd < total;
-
-  /**
-   * Create a real IMAP folder (S5). A "label" in this product IS a folder --
-   * the demo's four hardcoded labels and its create-folder modal that
-   * created nothing are what this replaces.
-   */
-  const createFolder = useCallback(
-    async (name: string) => {
-      const result = await apiCreateFolder(name, handleUnauthorized);
-      if (!result.success) return result.message;
-      await loadFolders();
-      return null;
-    },
-    [handleUnauthorized, loadFolders],
-  );
-
-  // S6: unread in the document title, from the mailbox's real unread total.
   useUnreadTitle(unreadCount);
 
-  // S4. Handlers are only passed for actions that make sense right now --
-  // no reply key when nothing is open, no archive key inside Trash -- so a
-  // key that does nothing is never bound rather than silently ignored.
-  const selectedIndex = openMessage
-    ? visibleMessages.findIndex((m) => m.id === openMessage.id)
-    : -1;
-
+  const selectedIndex = openMessage ? messages.findIndex((m) => m.id === openMessage.id) : -1;
   const step = useCallback(
     (delta: number) => {
-      if (visibleMessages.length === 0) return;
+      if (messages.length === 0) return;
       const next = selectedIndex === -1 ? 0 : selectedIndex + delta;
-      const target = visibleMessages[Math.max(0, Math.min(visibleMessages.length - 1, next))];
+      const target = messages[Math.max(0, Math.min(messages.length - 1, next))];
       if (target) void handleOpen(target);
     },
-    [visibleMessages, selectedIndex, handleOpen],
+    [messages, selectedIndex, handleOpen],
   );
+
+  const [searchSignal, setSearchSignal] = useState(0);
+  const anyComposeOpen = compose.windows.some((w) => w.layout !== 'minimized');
 
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts(
     {
-      compose: () => setCompose({ open: true, mode: 'compose' }),
-      reply: openMessage ? () => openCompose('reply') : undefined,
-      replyAll: openMessage ? () => openCompose('replyAll') : undefined,
-      forward: openMessage ? () => openCompose('forward') : undefined,
+      compose: () => openNewMessage(),
+      reply: openMessage ? () => setQuickReply('reply') : undefined,
+      replyAll: openMessage ? () => setQuickReply('replyAll') : undefined,
+      forward: openMessage ? () => openReplyInComposer('forward') : undefined,
       next: () => step(1),
       previous: () => step(-1),
-      open: visibleMessages.length > 0 && !openMessage ? () => step(0) : undefined,
-      archive: openMessage && !inTrash ? () => void archive([openMessage.id]) : undefined,
-      trash: openMessage && !inTrash ? () => void trash([openMessage.id]) : undefined,
-      toggleStar: openMessage ? () => void toggleStar(openMessage.id) : undefined,
-      markUnread: openMessage ? () => void setRead([openMessage.id], false) : undefined,
-      refresh: refreshAll,
-      search: () => {
-        const box = document.querySelector<HTMLInputElement>('input[type="search"]');
-        box?.focus();
-      },
+      open: messages.length > 0 && !openMessage ? () => step(0) : undefined,
+      archive: openMessage && !inTrash ? () => void mailbox.archive([openMessage.id]) : undefined,
+      trash: openMessage && !inTrash ? () => void mailbox.trash([openMessage.id]) : undefined,
+      toggleStar: openMessage ? () => void mailbox.toggleStar(openMessage.id) : undefined,
+      markUnread: openMessage
+        ? () => {
+            void mailbox.setRead([openMessage.id], false);
+            mailbox.close();
+          }
+        : undefined,
+      refresh: mailbox.refreshAll,
+      search: () => setSearchSignal((n) => n + 1),
       close: () => {
-        if (compose.open) return;
-        if (openMessage) setOpenMessage(null);
+        if (panel) {
+          setPanel(null);
+          return;
+        }
+        if (quickReply) {
+          setQuickReply(null);
+          return;
+        }
+        if (openMessage) mailbox.close();
       },
     },
-    // Off while compose owns the keyboard. Settings is its own route,
-    // so it cannot be over this view any more.
-    !compose.open,
+    !anyComposeOpen,
   );
 
-  /**
-   * The signature a new message starts with (PRD C3).
-   *
-   * The Laravel API appended the signature server-side at send time. The
-   * standalone mail server never did, and nothing here did either, so a
-   * saved signature went nowhere: the setting stored fine and no message
-   * ever carried it. Seeding the editor is also the better behaviour -- the
-   * signature is visible and editable in the window, as in every other
-   * client, instead of appearing for the first time in Sent.
-   *
-   * Two empty paragraphs above it leave room to write (the editor focuses
-   * at the start). In a reply the block sits ABOVE the quotation, with the
-   * reply text, rather than under it where nobody reads. Resumed drafts and
-   * an undone send restore their own body and are deliberately not seeded
-   * again -- the signature is already in there.
-   */
-  const signatureSeed = useCallback(
-    (mode: ComposeMode): string => {
-      const html = settings?.signatureHtml.trim() ?? '';
-      if (!html) return '';
-      if ((mode === 'reply' || mode === 'replyAll') && !settings?.signatureOnReply) return '';
-      return `<p></p><p></p>${html}`;
-    },
-    [settings],
-  );
-
-  const openCompose = (mode: ComposeMode) => {
-    if (!openMessage && mode !== 'compose') return;
-    setCompose({
-      open: true,
-      mode,
-      replyTo: openMessage ?? undefined,
-      initialBody: signatureSeed(mode) || undefined,
-    });
-  };
-
-  // Nothing of the mailbox renders until the session is confirmed. Painting it
-  // first meant a signed-out visitor saw the whole interface, then "not logged
-  // in", then a redirect -- which reads as though someone else's mail had
-  // loaded and then been snatched away.
   if (!sessionChecked) {
     return <WebmailSkeleton />;
   }
 
-  return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Full width, above the sidebar rather than beside it, so the product
-          identity and the search box stay put no matter which folder or
-          message is open -- the thing that makes Gmail always read as Gmail.
-          It used to live inside the message column, which left the top-left
-          corner of the app unbranded. */}
-      <WebmailHeader
-        email={displayEmail || 'Webmail'}
-        unreadCount={unreadCount}
-        onToggleSidebar={() => setShowSidebar((prev) => !prev)}
-        search={search}
-        onSearchChange={setSearch}
-        onSearchSubmit={runSearch}
-        searchPlaceholder="Search all mail…"
-        onRefresh={refreshAll}
-        refreshing={loadingList}
-        onLogout={logout}
-        onOpenSettings={() => router.push('/settings')}
-        calendarHref={calendarHref}
-        contactsHref={contactsHref}
-      />
+  const showList = !isMobile || !openMessage;
 
-      <div className="flex-1 flex overflow-hidden">
-        {showSidebar && (
-          <div className={isMobileView ? 'absolute z-20 h-full bg-card shadow-lg' : ''}>
-            <WebmailSidebar
-              folders={folders}
-              activeFolder={activeFolder}
-              onFolderChange={handleFolderChange}
-              onCompose={() => setCompose({ open: true, mode: 'compose' })}
-              onCreateFolder={createFolder}
-            />
-          </div>
+  return (
+    <div className="relative flex h-screen overflow-hidden bg-pane">
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        onCompose={() => {
+          openNewMessage();
+          setMenuOpen(false);
+        }}
+        email={displayEmail}
+        name={settings?.name ?? null}
+        unreadCount={unreadCount}
+        onOpenSettings={() => router.push('/settings')}
+        onOpenSecurity={() => router.push('/settings/security')}
+        onShowShortcuts={() => setHelpOpen(true)}
+        onLogout={() => void mailbox.logout()}
+        mobileOpen={menuOpen}
+        onCloseMobile={() => setMenuOpen(false)}
+      >
+        <FolderNav
+          folders={folders}
+          activeFolder={activeFolder}
+          collapsed={collapsed && !menuOpen}
+          onFolderChange={(folder) => {
+            mailbox.setFolder(folder);
+            setMenuOpen(false);
+          }}
+          onCreateFolder={mailbox.createFolder}
+          onRenameFolder={mailbox.renameFolder}
+          onDeleteFolder={mailbox.deleteFolder}
+          calendar={
+            mailbox.calendarAvailable
+              ? { active: panel === 'calendar', onToggle: () => setPanel((p) => (p === 'calendar' ? null : 'calendar')) }
+              : undefined
+          }
+          contacts={
+            mailbox.contactsAvailable
+              ? { active: panel === 'contacts', onToggle: () => setPanel((p) => (p === 'contacts' ? null : 'contacts')) }
+              : undefined
+          }
+        />
+      </Sidebar>
+
+      <div className="relative flex min-w-0 flex-1">
+        {showList && (
+          <MessageListPane
+            mailbox={mailbox}
+            fullWidth={isMobile}
+            onOpen={(item) => void handleOpen(item)}
+            onTrashRow={trashRow}
+            onBulkMove={() => setShowBulkMove(true)}
+            onBulkDeleteForever={() =>
+              setPendingDeleteForever({
+                ids: selectedIds,
+                label: `${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`,
+              })
+            }
+            onOpenMenu={() => setMenuOpen(true)}
+            searchSignal={searchSignal}
+          />
         )}
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {error && (
-            <div className="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 flex items-center justify-between gap-3">
-              <span>{error}</span>
-              <button onClick={refreshAll} className="underline underline-offset-2 flex-shrink-0">
-                Try again
-              </button>
-            </div>
-          )}
-
-          {notice && (
-            <div
-              role="status"
-              aria-live="polite"
-              className={`px-4 py-2 text-sm flex items-center justify-between gap-3 ${
-                notice.tone === 'success'
-                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                  : 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300'
-              }`}
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                {notice.tone === 'success' && <Check size={15} className="shrink-0" />}
-                <span className="truncate">{notice.text}</span>
-              </span>
-              {/* Only the warning needs dismissing; the success clears itself. */}
-              {notice.tone === 'warning' && (
-                <button
-                  onClick={() => setNotice(null)}
-                  className="underline underline-offset-2 flex-shrink-0"
-                >
-                  Dismiss
-                </button>
-              )}
-            </div>
-          )}
-
-          {activeSearch && (
-            <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 flex items-center justify-between gap-3">
-              <span>
-                {total} result{total === 1 ? '' : 's'} for &ldquo;{activeSearch}&rdquo; across all
-                folders
-              </span>
-              <button
-                onClick={() => {
-                  setSearch('');
-                  runSearch('');
-                }}
-                className="underline underline-offset-2 flex-shrink-0"
-              >
-                Clear search
-              </button>
-            </div>
-          )}
-
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {!openMessage && !loadingMessage && (
-              <>
-                <WebmailToolbar
-                  selectedCount={selectedIds.length}
-                  allSelected={allSelected}
-                  onSelectAll={(selected) =>
-                    setSelectedIds(selected ? visibleMessages.map((m) => m.id) : [])
-                  }
-                  onRefresh={refreshAll}
-                  refreshing={loadingList}
-                  rangeLabel={
-                    total === 0 ? 'No messages' : `${rangeStart}–${rangeEnd} of ${total}`
-                  }
-                  syncedLabel={lastSyncAt ? `Synced ${formatRelativeSync(lastSyncAt)}` : undefined}
-                  onPrevPage={hasPrev ? () => goToPage(Math.max(0, offset - PAGE_SIZE)) : undefined}
-                  onNextPage={hasNext ? () => goToPage(offset + PAGE_SIZE) : undefined}
-                  onArchiveSelected={inTrash ? undefined : () => void archive(selectedIds)}
-                  onTrashSelected={inTrash ? undefined : () => void trash(selectedIds)}
-                  onDeleteForeverSelected={
-                    inTrash ? () => void deleteForever(selectedIds) : undefined
-                  }
-                  onMarkReadSelected={() => void setRead(selectedIds, true)}
-                  onMarkUnreadSelected={() => void setRead(selectedIds, false)}
-                  onMoveSelected={() => setShowBulkMove(true)}
-                  onSpamSelected={
-                    activeFolderMeta?.role === 'junk' ? undefined : () => void markSpam(selectedIds)
-                  }
-                  onNotSpamSelected={
-                    activeFolderMeta?.role === 'junk'
-                      ? () => void markNotSpam(selectedIds)
-                      : undefined
-                  }
-                />
-
-                <div className="flex-1 overflow-y-auto">
-                  <WebmailList
-                    density={settings?.displayDensity ?? 'comfortable'}
-                    emails={visibleMessages}
-                    selectedIds={selectedIds}
-                    onSelectEmail={(id, selected) =>
-                      setSelectedIds((prev) =>
-                        selected ? [...prev, id] : prev.filter((sid) => sid !== id),
-                      )
-                    }
-                    onEmailClick={handleOpen}
-                    loading={loadingList}
-                    sendTimes={sendTimes}
-                    onCancelScheduled={(id) => void cancelScheduledSend(id)}
-                    onStarEmail={(id) => void toggleStar(id)}
-                    onArchiveEmail={(id) => void archive([id])}
-                    onTrashEmail={(id) => {
-                      if (!inTrash) {
-                        void trash([id]);
-                        return;
-                      }
-                      setPendingDeleteForever(messages.find((m) => m.id === id) ?? null);
-                    }}
-                    emptyState={
-                      <WebmailEmptyState
-                        folder={activeFolder}
-                        role={activeFolderMeta?.role ?? null}
-                        searchQuery={search.trim() || undefined}
-                      />
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            {loadingMessage && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary" />
-              </div>
-            )}
-
-            {openMessage && !loadingMessage && (
-              <WebmailMessageView
-                // Keyed on the message so opening a different one REMOUNTS
-                // the reader. Its state -- expanded thread rows and their
-                // fetched bodies, blocked-image counts, open modals -- all
-                // describes the message being read, so a fresh component is
-                // the reset, with no effect to clear it and no frame showing
-                // the previous conversation's rows.
-                key={openMessage.id}
-                message={openMessage}
-                thread={thread}
-                folders={folders}
-                attachmentHref={attachmentUrl}
-                onOpenMessage={(item) => void handleOpen(item)}
-                onClose={() => {
-                  setOpenMessage(null);
-                  pushUrlState(activeFolder, null);
-                }}
-                onArchive={() => void archive([openMessage.id])}
-                onTrash={() => void trash([openMessage.id])}
-                onDeleteForever={
-                  inTrash ? () => void deleteForever([openMessage.id]) : undefined
-                }
-                onStar={() => void toggleStar(openMessage.id)}
-                onMove={(folder) => void move([openMessage.id], folder)}
-                onNotSpam={
-                  activeFolderMeta?.role === 'junk'
-                    ? () => void markNotSpam([openMessage.id])
-                    : undefined
-                }
-                onLoadThreadMessage={async (id) => {
-                  const result = await getMessage(id, handleUnauthorized);
-                  return result.success && result.data ? toMessage(result.data) : null;
-                }}
-                scheduled={sendTimes[openMessage.id]}
-                onCancelScheduled={
-                  sendTimes[openMessage.id]
-                    ? () => {
-                        // Close the reading pane first: the message is about
-                        // to move to Drafts, so the id being read here stops
-                        // resolving the moment the cancel lands.
-                        setOpenMessage(null);
-                        pushUrlState(activeFolder, null);
-                        void cancelScheduledSend(openMessage.id);
-                      }
-                    : undefined
-                }
-                onReply={() => openCompose('reply')}
-                onReplyAll={() => openCompose('replyAll')}
-                onForward={() => openCompose('forward')}
-                onComposeWithBody={(body) =>
-                  setCompose({
-                    open: true,
-                    mode: 'compose',
-                    initialBody: body + signatureSeed('compose'),
-                  })
-                }
-                onAiWrite={aiAvailable ? aiWrite : undefined}
-                onSummarize={aiAvailable ? summarize : undefined}
-              />
-            )}
-          </div>
-        </div>
+        <ReadingPane
+          mailbox={mailbox}
+          isMobile={isMobile}
+          quickReply={quickReply}
+          onQuickReplyChange={setQuickReply}
+          onForward={() => openReplyInComposer('forward')}
+          onOpenInComposer={(mode, body) => openReplyInComposer(mode, body)}
+          onQuickReplySend={(payload, mode) =>
+            send(payload, { mode, replyTo: openMessage ?? undefined })
+          }
+          onComposeWithBody={(body) => openNewMessage(undefined, body)}
+          onDeleteForever={() => {
+            if (openMessage) setPendingDeleteForever({ ids: [openMessage.id], label: openMessage.subject });
+          }}
+        />
       </div>
+
+      {mailbox.calendarAvailable && (
+        <CalendarPanel open={panel === 'calendar'} onClose={() => setPanel(null)} onUnauthorized={mailbox.handleUnauthorized} />
+      )}
+      {mailbox.contactsAvailable && (
+        <ContactsPanel
+          open={panel === 'contacts'}
+          onClose={() => setPanel(null)}
+          contacts={mailbox.contacts}
+          onWriteTo={(email, name) => {
+            setPanel(null);
+            openNewMessage(name ? `${name} <${email}>` : email);
+          }}
+        />
+      )}
+
+      <ComposeDock
+        compose={compose}
+        isMobile={isMobile}
+        selfAddress={displayEmail}
+        selfName={settings?.name ?? null}
+        fromOptions={fromOptions}
+        contacts={mailbox.contacts}
+        canSchedule={mailbox.scheduleAvailable}
+        onAiWrite={mailbox.aiAvailable ? mailbox.aiWrite : undefined}
+        onSend={send}
+        onSaveDraft={mailbox.saveDraft}
+        onDiscardDraft={mailbox.discardDraft}
+      />
 
       <ConfirmModal
         isOpen={!!pendingDeleteForever}
         onClose={() => setPendingDeleteForever(null)}
         onConfirm={() => {
-          if (pendingDeleteForever) void deleteForever([pendingDeleteForever.id]);
+          if (pendingDeleteForever) void mailbox.deleteForever(pendingDeleteForever.ids);
         }}
-        icon={<Trash2 size={20} />}
+        icon={<Trash2 size={18} />}
         tone="danger"
         title="Delete forever"
         body={
           <>
-            <span className="font-medium">&ldquo;{pendingDeleteForever?.subject}&rdquo;</span> will
-            be erased from the mail server. This cannot be undone.
+            <span className="font-semibold text-foreground">&ldquo;{pendingDeleteForever?.label}&rdquo;</span> will be
+            erased from the mail server. This cannot be undone.
           </>
         }
         confirmLabel="Delete forever"
@@ -1375,7 +362,7 @@ export default function WebmailInboxPage() {
       <MoveEmailModal
         isOpen={showBulkMove}
         onClose={() => setShowBulkMove(false)}
-        onMove={(folder) => void move(selectedIds, folder)}
+        onMove={(folder) => void mailbox.move(selectedIds, folder)}
         label={`${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`}
         currentFolder={activeFolder}
         folders={folders}
@@ -1383,39 +370,8 @@ export default function WebmailInboxPage() {
 
       {helpOpen && <WebmailShortcutHelp onClose={() => setHelpOpen(false)} />}
 
-      {pendingSend && (
-        <WebmailUndoToast
-          subject={pendingSend.subject}
-          until={pendingSend.until}
-          onUndo={cancelUndo}
-        />
-      )}
-
-      {compose.open && (
-        <WebmailCompose
-          mode={compose.mode}
-          replyTo={compose.replyTo}
-          selfAddress={displayEmail}
-          initialValues={
-            compose.resumed
-              ? { ...compose.resumed, body: compose.initialBody ?? '' }
-              : compose.initialBody
-                ? { body: compose.initialBody }
-                : undefined
-          }
-          onClose={() => setCompose({ open: false, mode: 'compose' })}
-          onSent={() => {
-            setCompose({ open: false, mode: 'compose' });
-            void loadMessages(activeFolder, { silent: true, offset, search: activeSearch });
-          }}
-          onSend={send}
-          onAiWrite={aiAvailable ? aiWrite : undefined}
-          onSaveDraft={saveDraft}
-          onDiscardDraft={discardDraft}
-          existingDraftId={compose.draftId}
-          contacts={contacts}
-          canSchedule={scheduleAvailable}
-        />
+      {mailbox.pendingSend && (
+        <WebmailUndoToast subject={mailbox.pendingSend.subject} until={mailbox.pendingSend.until} onUndo={undoSend} />
       )}
     </div>
   );

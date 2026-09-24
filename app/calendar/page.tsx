@@ -4,27 +4,22 @@
  * The calendar screen.
  *
  * Gated on the server's `calendar` capability, like every other optional
- * feature here: a deployment without the DAV service renders no calendar at
- * all rather than a screen whose every action fails. That is this app's
- * stated rule -- optional features are absent, not disabled.
+ * feature: a deployment without the DAV service renders no calendar at all
+ * rather than a screen whose every action fails.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  addDays,
-  addMonths,
-  endOfMonth,
-  endOfWeek,
-  format,
-  startOfMonth,
-  startOfWeek,
-  subMonths,
-} from 'date-fns';
-import { CalendarDays, ChevronLeft, ChevronRight, Link2, Mail, Plus } from 'lucide-react';
+import { addDays, addMonths, endOfMonth, endOfWeek, format, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
+import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
 import InvitationsPanel from '@/components/calendar/InvitationsPanel';
+import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import Button from '@/components/ui/Button';
+import IconButton from '@/components/ui/IconButton';
+import { FilterPill } from '@/components/ui/Pill';
+import { Select } from '@/components/ui/Field';
 import {
   createEvent,
   deleteEvent,
@@ -42,15 +37,33 @@ import {
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
+/** `/calendar?date=2026-09-24` opens on that day (the inbox's mini calendar links here). */
+function initialAnchor(): Date {
+  if (typeof window === 'undefined') return new Date();
+  const raw = new URLSearchParams(window.location.search).get('date');
+  if (!raw) return new Date();
+  const parsed = parseISO(raw);
+  return isValid(parsed) ? parsed : new Date();
+}
+
 export default function CalendarPage() {
+  const [supported, setSupported] = useState<boolean | null>(null);
+  return (
+    <PageShell current="calendar" onCapabilities={(caps) => setSupported(caps.calendar)}>
+      <CalendarScreen supported={supported} />
+    </PageShell>
+  );
+}
+
+function CalendarScreen({ supported }: { supported: boolean | null }) {
   const router = useRouter();
+  const openMenu = useOpenPageMenu();
   const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
 
-  const [supported, setSupported] = useState<boolean | null>(null);
   const [calendars, setCalendars] = useState<CalendarSummary[]>([]);
   const [active, setActive] = useState('default');
   const [view, setView] = useState<ViewMode>('month');
-  const [anchor, setAnchor] = useState(() => new Date());
+  const [anchor, setAnchor] = useState(initialAnchor);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
@@ -65,9 +78,8 @@ export default function CalendarPage() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  // The range currently on screen. Month view shows leading and trailing days
-  // from the neighbouring months, so the query has to cover the whole grid or
-  // those cells render empty and look like missing events.
+  // The range on screen. Month view shows leading and trailing days from the
+  // neighbouring months, so the query covers the whole grid.
   const range = useMemo(() => {
     if (view === 'week') {
       const start = startOfWeek(anchor, WEEK_OPTS);
@@ -83,49 +95,27 @@ export default function CalendarPage() {
   }, [anchor, view]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetch('/api/webmail/capabilities', { cache: 'no-store' });
-      if (res.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as {
-        data?: { capabilities?: Record<string, boolean> };
-      };
-      if (!cancelled) setSupported(Boolean(body.data?.capabilities?.calendar));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [onUnauthorized]);
-
-  useEffect(() => {
     if (supported !== true) return;
     let cancelled = false;
     (async () => {
       const res = await listCalendars(onUnauthorized);
       if (cancelled) return;
-      if (res.success) {
+      if (res.success && Array.isArray(res.data)) {
         setCalendars(res.data);
         if (!res.data.some((c) => c.uri === active)) {
           setActive(res.data[0]?.uri ?? 'default');
         }
-      } else {
+      } else if (!res.success) {
         setBanner(res.message);
       }
     })();
     return () => {
       cancelled = true;
     };
-    // `active` deliberately omitted: this reconciles the selection, and
-    // depending on it would re-run every time it reconciled.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supported, onUnauthorized]);
 
-  // A request in flight when the range changes must not overwrite a newer
-  // one's results. Without this, paging quickly through months lands on
-  // whichever response happens to arrive last.
+  // A request in flight when the range changes must not overwrite a newer one.
   const requestRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -134,12 +124,12 @@ export default function CalendarPage() {
     setLoading(true);
     const res = await listEvents(active, range.start, range.end, onUnauthorized);
     if (ticket !== requestRef.current) return;
-    if (res.success) {
+    if (res.success && Array.isArray(res.data)) {
       setEvents(res.data);
       setBanner(null);
     } else {
       setEvents([]);
-      setBanner(res.message);
+      if (!res.success) setBanner(res.message);
     }
     setLoading(false);
   }, [active, range.start, range.end, supported, onUnauthorized]);
@@ -151,10 +141,7 @@ export default function CalendarPage() {
   const loadInvitations = useCallback(async () => {
     if (supported !== true) return;
     const res = await listInvitations(onUnauthorized);
-    // A failure here is deliberately quiet. The scheduling inbox is a bonus
-    // on this screen; the calendar itself still works, and an error banner
-    // for something the user did not ask for is noise.
-    if (res.success) setInvitations(res.data);
+    if (res.success && Array.isArray(res.data)) setInvitations(res.data);
   }, [supported, onUnauthorized]);
 
   useEffect(() => {
@@ -169,14 +156,10 @@ export default function CalendarPage() {
       setBanner(res.message);
       return;
     }
-    // Both: the invitation leaves the inbox and the event joins the calendar.
     await Promise.all([loadInvitations(), load()]);
   }
 
-  const readOnly = useMemo(
-    () => calendars.find((c) => c.uri === active)?.read_only ?? false,
-    [calendars, active],
-  );
+  const readOnly = useMemo(() => calendars.find((c) => c.uri === active)?.read_only ?? false, [calendars, active]);
 
   function openNew(start: Date, allDay: boolean) {
     if (readOnly) return;
@@ -223,151 +206,98 @@ export default function CalendarPage() {
 
   function step(direction: -1 | 1) {
     setAnchor((current) =>
-      view === 'week'
-        ? addDays(current, 7 * direction)
-        : direction === 1
-          ? addMonths(current, 1)
-          : subMonths(current, 1),
+      view === 'week' ? addDays(current, 7 * direction) : direction === 1 ? addMonths(current, 1) : subMonths(current, 1),
     );
   }
 
   if (supported === null) {
-    return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   }
 
   if (supported === false) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-8 text-center">
-        <CalendarDays size={28} className="text-neutral-400" />
-        <h1 className="text-base font-medium">No calendar on this server</h1>
-        <p className="max-w-sm text-sm text-neutral-500 dark:text-neutral-400">
-          This mail server does not run a calendar service, so there is nothing
-          to show here. Mail is unaffected.
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <CalendarDays size={28} className="text-muted-foreground" />
+        <h1 className="font-display text-base font-semibold">No calendar on this server</h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          This mail server does not run a calendar service, so there is nothing to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm text-primary underline">
+        <a href="/" className="text-sm font-semibold text-primary underline">
           Back to mail
         </a>
       </div>
     );
   }
 
+  const title =
+    view === 'week'
+      ? `${format(startOfWeek(anchor, WEEK_OPTS), 'd MMM')} – ${format(addDays(startOfWeek(anchor, WEEK_OPTS), 6), 'd MMM yyyy')}`
+      : format(anchor, 'MMMM yyyy');
+
   return (
-    <div className="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <header className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-        <a
-          href="/"
-          className="flex items-center gap-1.5 rounded px-2 py-1 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-        >
-          <Mail size={16} /> Mail
-        </a>
-
-        <div className="mx-1 h-5 w-px bg-neutral-200 dark:bg-neutral-800" />
-
-        <button
-          type="button"
-          onClick={() => setAnchor(new Date())}
-          className="rounded border border-neutral-200 px-2.5 py-1 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-        >
+    <div className="flex min-w-0 flex-1 flex-col bg-card">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-5">
+        <IconButton label="Menu" size="sm" onClick={openMenu} className="md:hidden">
+          <MenuIcon size={15} />
+        </IconButton>
+        <Button size="xs" onClick={() => setAnchor(new Date())}>
           Today
-        </button>
-        <button type="button" onClick={() => step(-1)} aria-label="Previous" className="rounded p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <ChevronLeft size={16} />
-        </button>
-        <button type="button" onClick={() => step(1)} aria-label="Next" className="rounded p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <ChevronRight size={16} />
-        </button>
-
-        <h1 className="min-w-0 truncate px-1 text-sm font-semibold">
-          {view === 'week'
-            ? `${format(startOfWeek(anchor, WEEK_OPTS), 'd MMM')} – ${format(addDays(startOfWeek(anchor, WEEK_OPTS), 6), 'd MMM yyyy')}`
-            : format(anchor, 'MMMM yyyy')}
-        </h1>
+        </Button>
+        <IconButton label="Previous" size="sm" onClick={() => step(-1)}>
+          <ChevronLeft size={15} />
+        </IconButton>
+        <IconButton label="Next" size="sm" onClick={() => step(1)}>
+          <ChevronRight size={15} />
+        </IconButton>
+        <h1 className="min-w-0 truncate px-1 font-display text-[15px] font-bold tracking-tight">{title}</h1>
 
         <div className="ml-auto flex items-center gap-2">
           {calendars.length > 1 && (
-            <select
-              id="calendar-picker"
-              value={active}
-              onChange={(e) => setActive(e.target.value)}
-              className="rounded border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-            >
+            <Select id="calendar-picker" value={active} onChange={(e) => setActive(e.target.value)} className="h-8 !w-auto py-0 text-[12.5px]">
               {calendars.map((calendar) => (
                 <option key={calendar.uri} value={calendar.uri}>
                   {calendar.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
 
-          <div className="flex overflow-hidden rounded border border-neutral-200 dark:border-neutral-700">
+          <div className="flex items-center gap-0.5 rounded-full border border-border p-0.5">
             {(['month', 'week', 'agenda'] as ViewMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setView(mode)}
-                className={[
-                  'px-2.5 py-1 text-sm capitalize',
-                  view === mode
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-neutral-100 dark:hover:bg-neutral-800',
-                ].join(' ')}
-              >
+              <FilterPill key={mode} active={view === mode} onClick={() => setView(mode)} className="capitalize">
                 {mode}
-              </button>
+              </FilterPill>
             ))}
           </div>
 
-          <a
-            href="/settings/calendar"
-            className="rounded p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            aria-label="Calendar settings and subscription links"
-            title="Subscription links"
-          >
-            <Link2 size={16} />
-          </a>
+          <IconButton label="Subscription links" size="sm" onClick={() => router.push('/settings/calendar')}>
+            <Link2 size={14} />
+          </IconButton>
 
           {!readOnly && (
-            <button
-              type="button"
-              onClick={() => openNew(new Date(), false)}
-              className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus size={15} /> New
-            </button>
+            <Button variant="primary" size="sm" icon={<Plus size={13} />} onClick={() => openNew(new Date(), false)}>
+              New
+            </Button>
           )}
         </div>
       </header>
 
       {!invitationsHidden && (
-        <InvitationsPanel
-          invitations={invitations}
-          busy={answering}
-          onRespond={respond}
-          onDismiss={() => setInvitationsHidden(true)}
-        />
+        <InvitationsPanel invitations={invitations} busy={answering} onRespond={respond} onDismiss={() => setInvitationsHidden(true)} />
       )}
 
-      {banner && (
-        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-          {banner}
-        </p>
-      )}
+      {banner && <p className="border-b border-border bg-warning/[0.12] px-4 py-2 text-sm text-warning">{banner}</p>}
       {readOnly && (
-        <p className="border-b border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+        <p className="border-b border-border bg-muted px-4 py-1.5 text-xs text-muted-foreground">
           This calendar is shared with you as read-only.
         </p>
       )}
 
       <main className="flex min-h-0 flex-1 flex-col">
-        {/* The grid stays rendered while a range loads. Replacing it with a
-            spinner makes every month change flash the whole screen. */}
+        {/* The grid stays rendered while a range loads: a spinner would flash the whole screen. */}
         <div className={loading ? 'flex min-h-0 flex-1 flex-col opacity-60' : 'flex min-h-0 flex-1 flex-col'}>
-          {view === 'month' && (
-            <MonthView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />
-          )}
-          {view === 'week' && (
-            <WeekView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />
-          )}
+          {view === 'month' && <MonthView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />}
+          {view === 'week' && <WeekView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />}
           {view === 'agenda' && <AgendaView events={events} onSelect={openExisting} />}
         </div>
       </main>

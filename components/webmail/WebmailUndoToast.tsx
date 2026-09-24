@@ -4,10 +4,10 @@ import { Undo2, Send } from 'lucide-react';
 /**
  * The undo-send toast (PRD C4).
  *
- * Counts down the real remaining time rather than showing a spinner, so
- * "how long have I got" is answerable at a glance. When it reaches zero the
- * toast disappears because the message has actually gone -- there is no
- * lingering "sent!" state offering an Undo that would no longer work.
+ * Counts down the real remaining time, so "how long have I got" is
+ * answerable at a glance. When it reaches zero the toast disappears because
+ * the message has actually gone -- there is no lingering "sent!" state
+ * offering an Undo that would no longer work.
  */
 export default function WebmailUndoToast({
   subject,
@@ -20,8 +20,6 @@ export default function WebmailUndoToast({
   onUndo: () => void;
 }) {
   const [remaining, setRemaining] = useState(() => Math.max(0, until - Date.now()));
-  // The full window, captured once, so the bar measures against a fixed
-  // denominator instead of against itself.
   const [total] = useState(() => Math.max(1, until - Date.now()));
 
   useEffect(() => {
@@ -37,25 +35,26 @@ export default function WebmailUndoToast({
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[min(28rem,calc(100vw-2rem))] rounded-lg bg-gray-900 text-white shadow-xl overflow-hidden"
+      className="fixed bottom-6 left-1/2 z-[210] w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 animate-toast-in overflow-hidden rounded-2xl bg-toast text-white shadow-toast"
     >
       <div className="flex items-center gap-3 px-4 py-3">
-        <Send size={16} className="flex-shrink-0 text-gray-300" />
-        <span className="flex-1 min-w-0 text-sm">
-          <span className="text-gray-300">Sending </span>
-          <span className="font-medium truncate">{subject}</span>
-          <span className="text-gray-400"> — {seconds}s</span>
+        <Send size={15} className="shrink-0 text-white/60" />
+        <span className="min-w-0 flex-1 truncate text-[12.5px]">
+          <span className="text-white/60">Sending </span>
+          <span className="font-semibold">{subject}</span>
+          <span className="text-white/50"> · {seconds}s</span>
         </span>
         <button
+          type="button"
           onClick={onUndo}
-          className="flex items-center gap-1.5 px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-sm font-medium flex-shrink-0"
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20"
         >
-          <Undo2 size={14} />
+          <Undo2 size={13} />
           Undo
         </button>
       </div>
       <div
-        className="h-1 bg-primary transition-[width] duration-200 ease-linear"
+        className="h-[3px] bg-primary transition-[width] duration-200 ease-linear"
         style={{ width: `${(remaining / total) * 100}%` }}
       />
     </div>

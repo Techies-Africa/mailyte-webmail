@@ -100,6 +100,9 @@ export interface ListOptions {
   search?: string;
   offset?: number;
   limit?: number;
+  /** Server-side filters: IMAP SEARCH UNSEEN / FLAGGED. */
+  unread?: boolean;
+  starred?: boolean;
 }
 
 /**
@@ -116,6 +119,8 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.search) qs.set("search", options.search);
   if (options.offset) qs.set("offset", String(options.offset));
   if (options.limit) qs.set("limit", String(options.limit));
+  if (options.unread) qs.set("unread", "true");
+  if (options.starred) qs.set("starred", "true");
 
   const query = qs.toString();
   return call<MessagePage>(
@@ -168,6 +173,19 @@ export interface ApiCapabilities {
      */
     scheduled_send?: boolean;
   };
+  /**
+   * Shared mailboxes this person is a member of, with what they may do there.
+   * `can_send` is true for full_access, send_as and send_on_behalf -- the
+   * three permissions POST /messages/send accepts a `from` for.
+   */
+  shared_mailboxes?: SharedMailbox[];
+}
+
+export interface SharedMailbox {
+  address: string;
+  name: string;
+  permission: string;
+  can_send: boolean;
 }
 
 export function getCapabilities(onUnauthorized: () => void) {
@@ -193,6 +211,72 @@ export function createFolder(name: string, onUnauthorized: () => void) {
     },
     onUnauthorized,
   );
+}
+
+/**
+ * Rename a folder. `id` is the folder's id from GET /folders and `name` the
+ * new LAST path segment; IMAP RENAME carries subfolders along. The server
+ * refuses INBOX and the special-use folders with 409.
+ */
+export function renameFolder(id: string, name: string, onUnauthorized: () => void) {
+  return call<{ id: string; name: string; folders: ApiFolder[] }>(
+    `/api/webmail/folders/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    onUnauthorized,
+  );
+}
+
+/** Delete an EMPTY folder. The server refuses one that still holds mail. */
+export function deleteFolder(id: string, onUnauthorized: () => void) {
+  return call<null>(
+    `/api/webmail/folders/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    onUnauthorized,
+  );
+}
+
+// --- Blocked senders ------------------------------------------------------
+
+export interface ApiBlockedSenders {
+  addresses: string[];
+  /** False when a blocked-senders script exists that this UI did not write. */
+  managed: boolean;
+  /** Where blocked mail goes. Always Junk; reported so the UI never guesses. */
+  folder: string;
+  limit: number;
+}
+
+export function getBlockedSenders(onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>("/api/webmail/blocked-senders", undefined, onUnauthorized);
+}
+
+export function blockSender(address: string, onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>(
+    "/api/webmail/blocked-senders",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    },
+    onUnauthorized,
+  );
+}
+
+export function unblockSender(address: string, onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>(
+    `/api/webmail/blocked-senders/${encodeURIComponent(address)}`,
+    { method: "DELETE" },
+    onUnauthorized,
+  );
+}
+
+/** The original message as stored (.eml), same-origin through the BFF. */
+export function rawMessageUrl(messageId: string): string {
+  return `/api/webmail/messages/${encodeURIComponent(messageId)}/raw`;
 }
 
 /** The rest of a message's conversation, oldest first; empty if it stands alone. */
@@ -288,6 +372,12 @@ export interface SendPayload {
    * is set to.
    */
   send_at?: string;
+  /**
+   * Send as a shared mailbox. Only honoured when the session holds a sending
+   * permission on that address (see SharedMailbox.can_send); the server
+   * refuses otherwise, so the client only offers addresses it was told about.
+   */
+  from?: string;
 }
 
 export interface SendResult {
@@ -334,6 +424,7 @@ export function sendMessage(
   if (payload.in_reply_to) form.append("in_reply_to", payload.in_reply_to);
   if (payload.references) form.append("references", payload.references);
   if (payload.send_at) form.append("send_at", payload.send_at);
+  if (payload.from) form.append("from", payload.from);
   for (const file of attachments) form.append("attachments[]", file, file.name);
 
   return call<SendResult>(
