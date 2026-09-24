@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { applyRailCollapsed, readRailCollapsed, storeRailCollapsed } from '@/lib/webmail/paneLayout';
+import { PANE_RESIZE_END_EVENT, applyRailCollapsed, readRailCollapsed, storeRailCollapsed } from '@/lib/webmail/paneLayout';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 
 // One value for every screen, read from storage once. Mail, Calendar,
@@ -49,6 +49,9 @@ export function useSidebarCollapsed(): [boolean, () => void] {
     storeRailCollapsed(next);
     applyRailCollapsed(next);
     listeners.forEach((listener) => listener());
+    // The rail's width changed as much as a drag would change it: the compose
+    // dock re-fits its row beside it.
+    window.dispatchEvent(new Event(PANE_RESIZE_END_EVENT));
   }, []);
 
   return [collapsed && !isMobile, toggle];

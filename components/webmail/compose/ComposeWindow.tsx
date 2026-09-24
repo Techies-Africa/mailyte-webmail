@@ -15,6 +15,7 @@ import IconButton from '@/components/ui/IconButton';
 import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
+import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
 
 /** Matches SendMailboxMessageRequest's own limits. */
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -149,6 +150,10 @@ export default function ComposeWindow({
   const restoredFrom =
     model.from && fromOptions.some((option) => option.address === model.from) ? model.from : selfAddress;
   const fullscreen = layout === 'fullscreen' || isMobile;
+  // On a phone, the part of the screen the keyboard leaves (iOS lays it over
+  // the page): the window is sized to it so Send stays above the keyboard.
+  // Only for the window in front -- a hidden one has nothing to keep visible.
+  const visible = useVisualViewport(fullscreen && isMobile && !hidden);
 
   const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, selfAddress, resumed));
   const [showCc, setShowCc] = useState(!!resumed?.cc);
@@ -690,7 +695,14 @@ export default function ComposeWindow({
       aria-label={title}
       onFocusCapture={onActivate}
       onPointerDownCapture={onActivate}
-      style={fullscreen ? undefined : { right, width, zIndex }}
+      style={
+        fullscreen
+          ? visible
+            ? // Longhands beat inset-0's top and bottom.
+              { top: visible.top, height: visible.height, bottom: 'auto' }
+            : undefined
+          : { right, width, zIndex }
+      }
       className={
         hidden
           ? 'hidden'

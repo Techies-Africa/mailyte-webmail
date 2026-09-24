@@ -45,6 +45,7 @@ import {
 } from '@/lib/webmail/query/calendarQueries';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 import { CALENDAR_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
+import { useIsMobile } from '@/lib/webmail/useIsMobile';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -113,7 +114,11 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
   const [remembered, remember] = useRememberedChoice(CALENDAR_CHOICE_KEY, email);
   const active = remembered === undefined ? null : pickDefaultCalendar(calendarsResult.data, remembered);
 
-  const [view, setView] = useState<ViewMode>('month');
+  // A view picked by hand is kept; until then a phone opens on the agenda,
+  // where a month's seven columns are 50px each and a week's are 43px.
+  const isMobile = useIsMobile();
+  const [pickedView, setView] = useState<ViewMode | null>(null);
+  const view: ViewMode = pickedView ?? (isMobile ? 'agenda' : 'month');
   // The day comes from the address. Read through the router, not
   // window.location: a client-side arrival renders before the address bar
   // changes. A link to the calendar while it is already open -- a day in the
@@ -278,6 +283,11 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
     view === 'week'
       ? `${format(startOfWeek(anchor, WEEK_OPTS), 'd MMM')} – ${format(addDays(startOfWeek(anchor, WEEK_OPTS), 6), 'd MMM yyyy')}`
       : format(anchor, 'MMMM yyyy');
+  // The same, short enough to share a phone's first header row.
+  const shortTitle =
+    view === 'week'
+      ? `${format(startOfWeek(anchor, WEEK_OPTS), 'd MMM')} – ${format(addDays(startOfWeek(anchor, WEEK_OPTS), 6), 'd MMM')}`
+      : format(anchor, 'MMM yyyy');
 
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-card">
@@ -294,9 +304,13 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
         <IconButton label="Next" size="sm" onClick={() => step(1)}>
           <ChevronRight size={15} />
         </IconButton>
-        <h1 className="min-w-0 truncate px-1 font-display text-[15px] font-bold tracking-tight">{title}</h1>
+        <h1 className="min-w-0 truncate px-1 font-display text-[15px] font-bold tracking-tight">
+          <span className="sm:hidden">{shortTitle}</span>
+          <span className="hidden sm:inline">{title}</span>
+        </h1>
 
-        <div className="ml-auto flex items-center gap-2">
+        {/* Wraps onto a second row on a phone rather than running off it. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {calendars.length > 1 && active && (
             <SelectMenu label="Calendar" heading="Calendars" options={calendarOptions} value={active} onChange={remember} compact />
           )}
@@ -309,12 +323,18 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
             ))}
           </div>
 
-          <IconButton label="Subscription links" size="sm" onClick={() => router.push('/settings/calendar')}>
+          {/* Not on a phone, where it crowded the header; Settings has it. */}
+          <IconButton
+            label="Subscription links"
+            size="sm"
+            onClick={() => router.push('/settings/calendar')}
+            className="hidden sm:inline-flex"
+          >
             <Link2 size={14} />
           </IconButton>
 
           {!readOnly && (
-            <Button variant="primary" size="sm" icon={<Plus size={13} />} onClick={() => openNew(new Date(), false)}>
+            <Button variant="primary" size="sm" icon={<Plus size={13} />} collapseLabel onClick={() => openNew(new Date(), false)}>
               New
             </Button>
           )}

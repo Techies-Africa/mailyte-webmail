@@ -248,31 +248,36 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
           <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
-            <Search size={12} strokeWidth={2.2} className="text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search contacts"
-              aria-label="Search contacts"
-              className="w-36 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/70 sm:w-48"
-            />
-          </div>
-          {!readOnly && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus size={13} />}
-              onClick={() => {
-                setEditing(null);
-                setDraft({ ...EMPTY_DRAFT });
-              }}
-            >
-              Add contact
-            </Button>
-          )}
+        {/* On a phone the search takes a row of its own, full width, and
+            Add shrinks to its icon: side by side they squeezed the search box
+            to a few letters and wrapped awkwardly. */}
+        <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 max-sm:order-last max-sm:w-full sm:ml-auto">
+          <Search size={12} strokeWidth={2.2} className="shrink-0 text-muted-foreground" />
+          <input
+            type="search"
+            enterKeyHint="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search contacts"
+            aria-label="Search contacts"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/70 sm:w-48 sm:flex-none [&::-webkit-search-cancel-button]:hidden"
+          />
         </div>
+        {!readOnly && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus size={13} />}
+            collapseLabel
+            onClick={() => {
+              setEditing(null);
+              setDraft({ ...EMPTY_DRAFT });
+            }}
+            className="max-sm:ml-auto"
+          >
+            Add contact
+          </Button>
+        )}
       </header>
 
       {banner && <p className="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{banner}</p>}
@@ -332,6 +337,7 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
                     <Link
                       href={`/?compose=${encodeURIComponent(primaryEmail(contact) as string)}`}
                       title={`Write to ${displayName(contact)}`}
+                      aria-label={`Write to ${displayName(contact)}`}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground"
                     >
                       <Mail size={14} />

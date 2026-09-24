@@ -248,7 +248,7 @@ export default function EventModal({
       aria-label={event ? 'Edit event' : 'New event'}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl dark:bg-neutral-900">
+      <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:rounded-2xl dark:bg-neutral-900">
         <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <h2 className="text-sm font-semibold">{event ? 'Event' : 'New event'}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">
