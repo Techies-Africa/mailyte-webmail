@@ -511,7 +511,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
               value={draft.match}
               onChange={(e) => setDraft((d) => ({ ...d, match: e.target.value as 'all' | 'any' }))}
               aria-label="How many conditions must be true"
-              className="w-auto py-1"
+              size="sm"
             >
               <option value="all">all</option>
               <option value="any">any</option>
@@ -525,7 +525,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                   value={condition.field}
                   onChange={(e) => setCondition(index, { field: e.target.value as Field })}
                   aria-label={`Condition ${index + 1}: which part of the message`}
-                  className="sm:w-40"
+                  className="w-full sm:w-40"
                 >
                   {FIELDS.map((f) => (
                     <option key={f.value} value={f.value}>
@@ -537,7 +537,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                   value={condition.operator}
                   onChange={(e) => setCondition(index, { operator: e.target.value as Operator })}
                   aria-label={`Condition ${index + 1}: how to compare`}
-                  className="sm:w-44"
+                  className="w-full sm:w-44"
                 >
                   {OPERATORS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -597,7 +597,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                     value={action.type}
                     onChange={(e) => setAction(index, { type: e.target.value as ActionType, value: '' })}
                     aria-label={`Action ${index + 1}`}
-                    className="sm:w-52"
+                    className="w-full sm:w-52"
                   >
                     {ACTIONS.map((a) => (
                       <option key={a.value} value={a.value}>

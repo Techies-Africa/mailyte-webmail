@@ -15,6 +15,7 @@ import {
   type Room,
 } from '@/lib/webmail/calendar';
 import { useRooms } from '@/lib/webmail/query/calendarQueries';
+import { Input, Select, Textarea } from '@/components/ui/Field';
 
 const NO_ROOMS: Room[] = [];
 
@@ -282,24 +283,29 @@ export default function EventModal({
             All day
           </label>
 
+          {/* Icons beside a stack sit at (38 - 16) / 2 = 11px: centred on the first 38px field. */}
           <div className="flex items-start gap-2">
-            <Clock size={16} className="mt-2 shrink-0 text-neutral-400" />
-            <div className="grid flex-1 gap-2 sm:grid-cols-2">
-              <input
+            <Clock size={16} className="mt-[11px] shrink-0 text-muted-foreground" />
+            <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+              {/* Pinned to 38px: Chrome draws a date field 2px taller than
+                  text (its picker button), a step against the selects below. */}
+              <Input
                 id="event-start"
+                aria-label="Starts"
                 type={allDay ? 'date' : 'datetime-local'}
                 value={allDay ? toDateInput(start) : toLocalInput(start)}
                 disabled={readOnly}
                 onChange={(e) => e.target.value && setStart(new Date(e.target.value))}
-                className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                className="h-[38px]"
               />
-              <input
+              <Input
                 id="event-end"
+                aria-label="Ends"
                 type={allDay ? 'date' : 'datetime-local'}
                 value={allDay ? toDateInput(end) : toLocalInput(end)}
                 disabled={readOnly}
                 onChange={(e) => e.target.value && setEnd(new Date(e.target.value))}
-                className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                className="h-[38px]"
               />
             </div>
           </div>
@@ -311,47 +317,48 @@ export default function EventModal({
           )}
 
           <div className="flex items-center gap-2">
-            <Repeat size={16} className="shrink-0 text-neutral-400" />
-            <select
+            <Repeat size={16} className="shrink-0 text-muted-foreground" />
+            <Select
               id="event-repeat"
+              aria-label="Repeat"
               value={rrule ?? ''}
               disabled={readOnly}
               onChange={(e) => setRrule(e.target.value || null)}
-              className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+              className="min-w-0 flex-1"
             >
               {repeatOptions.map((option) => (
                 <option key={option.label} value={option.value ?? ''}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           {/* One row per reminder. A calendar people already use lets them
               set "a day before" AND "ten minutes before"; a single select
               could only ever hold the last one they picked. */}
           <div className="flex gap-2">
-            <Check size={16} className="mt-2 shrink-0 text-neutral-400" />
-            <div className="flex flex-1 flex-col gap-2">
+            <Check size={16} className="mt-[11px] shrink-0 text-muted-foreground" />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
               {reminders.length === 0 && (
-                <select
+                <Select
                   id="event-reminder"
+                  aria-label="Reminder"
                   value=""
                   disabled={readOnly}
                   onChange={(e) => e.target.value && setReminders([Number(e.target.value)])}
-                  className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
                 >
                   {REMINDERS.map((option) => (
                     <option key={option.label} value={option.value ?? ''}>
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               )}
 
               {reminders.map((minutes, index) => (
                 <div key={`${minutes}-${index}`} className="flex items-center gap-2">
-                  <select
+                  <Select
                     id={index === 0 ? 'event-reminder' : undefined}
                     value={minutes}
                     disabled={readOnly}
@@ -362,20 +369,20 @@ export default function EventModal({
                       else next[index] = Number(e.target.value);
                       setReminders(next);
                     }}
-                    className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                    className="min-w-0 flex-1"
                   >
                     {REMINDERS.map((option) => (
                       <option key={option.label} value={option.value ?? ''}>
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   {!readOnly && (
                     <button
                       type="button"
                       onClick={() => setReminders(reminders.filter((_, i) => i !== index))}
                       aria-label={`Remove reminder ${index + 1}`}
-                      className="shrink-0 rounded p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
                     >
                       <X size={14} />
                     </button>
@@ -407,25 +414,26 @@ export default function EventModal({
           </div>
 
           <div className="flex items-center gap-2">
-            <MapPin size={16} className="shrink-0 text-neutral-400" />
-            <input
+            <MapPin size={16} className="shrink-0 text-muted-foreground" />
+            <Input
               id="event-location"
+              aria-label="Location"
               value={location}
               disabled={readOnly}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Add a location"
-              className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+              className="min-w-0 flex-1"
             />
           </div>
 
-          <textarea
+          <Textarea
             id="event-description"
+            aria-label="Description"
             value={description}
             disabled={readOnly}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Add a description"
             rows={3}
-            className="w-full rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
           />
 
           {/* Guests. Editable now that invitations actually leave the
@@ -448,7 +456,7 @@ export default function EventModal({
                 <label htmlFor="event-room" className="sr-only">
                   Add a room
                 </label>
-                <select
+                <Select
                   id="event-room"
                   value=""
                   onChange={(e) => {
@@ -457,7 +465,6 @@ export default function EventModal({
                       setGuests((current) => [...current, email]);
                     }
                   }}
-                  className="w-full rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
                 >
                   <option value="">Add a room or equipment&hellip;</option>
                   {availableRooms.map((room) => (
@@ -467,14 +474,15 @@ export default function EventModal({
                       {room.location ? ` — ${room.location}` : ''}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
             {!readOnly && (
               <div className="mb-2 flex gap-2">
-                <input
+                <Input
                   id="event-guest"
+                  aria-label="Add a guest by email"
                   value={guestInput}
                   onChange={(e) => setGuestInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -488,7 +496,7 @@ export default function EventModal({
                   }}
                   onBlur={addGuest}
                   placeholder="Add a guest by email"
-                  className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
+                  className="min-w-0 flex-1"
                 />
               </div>
             )}
@@ -506,7 +514,7 @@ export default function EventModal({
                   return (
                     <li key={email} className="flex items-center justify-between gap-2 text-sm">
                       <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
-                        {room && <DoorOpen size={13} className="shrink-0 text-neutral-400" />}
+                        {room && <DoorOpen size={13} className="shrink-0 text-muted-foreground" />}
                         {room?.name ?? existing?.name ?? email}
                         {room?.capacity ? (
                           <span className="shrink-0 text-xs text-neutral-500">
@@ -529,7 +537,7 @@ export default function EventModal({
                             !avail.known
                               ? 'shrink-0 text-xs text-neutral-400'
                               : busy
-                                ? 'shrink-0 text-xs text-amber-700 dark:text-amber-400'
+                                ? 'shrink-0 text-xs text-warning'
                                 : 'shrink-0 text-xs text-primary'
                           }
                           title={
@@ -544,7 +552,7 @@ export default function EventModal({
 
                       {state === 'undelivered' && (
                         <span
-                          className="flex shrink-0 items-center gap-1 text-xs text-amber-700 dark:text-amber-400"
+                          className="flex shrink-0 items-center gap-1 text-xs text-warning"
                           title={existing?.schedule_status ?? undefined}
                         >
                           <AlertTriangle size={12} /> not delivered
@@ -582,7 +590,7 @@ export default function EventModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
           {event && !readOnly ? (
             confirmDelete ? (
               <span className="flex items-center gap-2 text-sm">

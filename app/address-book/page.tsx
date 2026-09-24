@@ -478,7 +478,7 @@ function ContactForm({
                     setDraft({ ...draft, emails: next });
                   }}
                   aria-label="Email type"
-                  className="w-28"
+                  className="w-28 shrink-0"
                 >
                   <option value="WORK">Work</option>
                   <option value="HOME">Home</option>
@@ -524,7 +524,7 @@ function ContactForm({
                     setDraft({ ...draft, phones: next });
                   }}
                   aria-label="Phone type"
-                  className="w-28"
+                  className="w-28 shrink-0"
                 >
                   <option value="CELL">Mobile</option>
                   <option value="WORK">Work</option>

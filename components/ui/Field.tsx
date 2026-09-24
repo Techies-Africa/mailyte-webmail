@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 /**
  * Form controls in the guide's shape: 8px radius, zinc border, indigo focus
@@ -26,13 +27,65 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   return <textarea ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
 });
 
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
+type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> & {
+  /** 'md' matches Input (38px); 'sm' (32px) is for a select inside a sentence or a toolbar. */
+  size?: 'sm' | 'md';
+};
 
+const SELECT_SIZES = {
+  md: 'py-2 pl-3 pr-9 text-sm',
+  sm: 'py-1.5 pl-2.5 pr-8 text-[12.5px] leading-[18px]',
+};
+
+/**
+ * A native select in the field look, with its own chevron.
+ *
+ * `className` sizes a wrapper, not the select. Tailwind emits utilities of
+ * one group in its own order, not the order of the class list, so a caller's
+ * `w-28` or `py-1` on top of fieldClass's `w-full` and `py-2` never applied:
+ * the contact type selects were half the row, and the header pickers were
+ * 14px text clipped in a 32px box. Width and layout go on the wrapper
+ * (`block` fills a form column; in a flex row give it a width or flex-1), and
+ * the box itself comes from `size`.
+ *
+ * The ring is focus-visible, not focus: a native select keeps focus after its
+ * popup closes, and `focus:` kept the ring on after every mouse pick. How far
+ * that helps depends on the browser -- Chromium counts a select as taking
+ * typing and matches :focus-visible even after a click, so there the ring
+ * still shows while it has focus, as a text input's does. (The header
+ * pickers that looked broken are SelectMenu buttons now, which never ring
+ * after a click.) Text inputs keep `focus:`: typing is the point.
+ * appearance-none drops the browser's own arrow, which ignored the theme and
+ * sat in a different place in every browser.
+ */
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { className, ...rest },
+  { className, size = 'md', ...rest },
   ref,
 ) {
-  return <select ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return (
+    // A span, so the wrapper is valid inside a <label> or a <p>.
+    <span className={['relative block', className ?? ''].join(' ')}>
+      <select
+        ref={ref}
+        {...rest}
+        className={[
+          'peer block w-full cursor-pointer appearance-none rounded-lg border border-input bg-background text-foreground outline-none transition-colors',
+          'focus-visible:border-primary focus-visible:bg-primary/[0.04] focus-visible:ring-2 focus-visible:ring-primary/25',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          SELECT_SIZES[size],
+        ].join(' ')}
+      />
+      <ChevronDown
+        aria-hidden
+        size={size === 'sm' ? 13 : 14}
+        strokeWidth={2.2}
+        className={[
+          'pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground peer-disabled:opacity-50',
+          size === 'sm' ? 'right-2.5' : 'right-3',
+        ].join(' ')}
+      />
+    </span>
+  );
 });
 
 export function Label({
