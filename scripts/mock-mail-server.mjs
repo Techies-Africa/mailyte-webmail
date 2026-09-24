@@ -3,7 +3,7 @@
 // { type: 'success', msg, data }. Nothing here is persisted.
 import http from 'node:http';
 
-const PORT = Number(process.env.PORT || 8089);
+const PORT = Number(process.env.PORT || 8180);
 const TOKEN = 'mock-token';
 const SELF = 'devops@techies.africa';
 
