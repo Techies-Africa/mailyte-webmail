@@ -12,8 +12,8 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
 import { useCapabilities } from '@/lib/webmail/query/accountQueries';
@@ -27,14 +27,18 @@ import {
   createContact,
   deleteContact,
   displayName,
-  listAddressBooks,
-  listContacts,
   primaryEmail,
   updateContact,
   type AddressBook,
   type Contact,
   type ContactDraft,
 } from '@/lib/webmail/contacts';
+import { contactKeys, useAddressBooks, useBookContacts } from '@/lib/webmail/query/contactQueries';
+import { qk } from '@/lib/webmail/query/keys';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+
+const NO_BOOKS: AddressBook[] = [];
+const NO_CONTACTS: Contact[] = [];
 
 const EMPTY_DRAFT: ContactDraft = {
   first_name: '',
@@ -74,48 +78,29 @@ export default function AddressBookPage() {
 }
 
 function AddressBookScreen({ supported }: { supported: boolean | null }) {
-  const router = useRouter();
   const openMenu = useOpenPageMenu();
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
+  const queryClient = useQueryClient();
+  const onUnauthorized = useUnauthorizedHandler();
 
-  const [books, setBooks] = useState<AddressBook[]>([]);
+  const books = useAddressBooks(supported === true).data ?? NO_BOOKS;
   const [activeBook, setActiveBook] = useState('default');
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState<string | null>(null);
+  const contactsResult = useBookContacts(activeBook, supported === true);
+  const contacts = contactsResult.data ?? NO_CONTACTS;
+  // Only a book never opened before shows "Loading".
+  const loading = contactsResult.isPending;
+  /** What went wrong with the last thing the person did. */
+  const [actionError, setBanner] = useState<string | null>(null);
+  const banner = actionError ?? (contactsResult.isError ? contactsResult.error.message : null);
   const [query, setQuery] = useState('');
 
   const [editing, setEditing] = useState<Contact | null>(null);
   const [draft, setDraft] = useState<ContactDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Contact | null>(null);
 
   const currentBook = books.find((b) => b.uri === activeBook);
   const readOnly = currentBook?.read_only ?? false;
-
-  useEffect(() => {
-    if (supported !== true) return;
-    (async () => {
-      const res = await listAddressBooks(onUnauthorized);
-      if (res.success && Array.isArray(res.data)) setBooks(res.data);
-    })();
-  }, [supported, onUnauthorized]);
-
-  const load = useCallback(async () => {
-    const res = await listContacts(onUnauthorized, activeBook);
-    if (res.success && Array.isArray(res.data)) {
-      setContacts(res.data);
-      setBanner(null);
-    } else if (!res.success) {
-      setBanner(res.message);
-    }
-    setLoading(false);
-  }, [activeBook, onUnauthorized]);
-
-  useEffect(() => {
-    if (supported !== true) return;
-    void load();
-  }, [supported, load]);
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -128,9 +113,21 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
     });
   }, [contacts, query]);
 
+  /** This book changed: reload it behind the list, and compose's suggestions with it. */
+  const refreshBook = (book: string) => {
+    void queryClient.invalidateQueries({ queryKey: contactKeys.book(book) });
+    void queryClient.invalidateQueries({ queryKey: qk.suggestions });
+  };
+
+  /**
+   * Saving waits for the server, in the dialog: it assigns the id and the
+   * etag, and it can refuse. A refusal is shown in the dialog, where the
+   * person is looking, rather than on the page behind it.
+   */
   async function save() {
     if (!draft) return;
     setSaving(true);
+    setFormError(null);
     // Blank rows are how a form with "add another" always ends up; they are
     // not the user saying "save an empty address".
     const cleaned: ContactDraft = {
@@ -143,21 +140,29 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
       : await createContact(cleaned, onUnauthorized, activeBook);
     setSaving(false);
     if (!res.success) {
-      setBanner(res.message);
+      setFormError(res.message);
       return;
     }
     setDraft(null);
     setEditing(null);
-    await load();
+    setBanner(null);
+    refreshBook(activeBook);
   }
 
-  async function remove(contact: Contact) {
-    const res = await deleteContact(contact.id, contact.etag, onUnauthorized, activeBook);
-    if (!res.success) {
-      setBanner(res.message);
-      return;
-    }
-    await load();
+  /** Deleting (after the confirm) takes the card off the list at once; a refusal puts it back. */
+  function remove(contact: Contact) {
+    const book = activeBook;
+    const key = contactKeys.book(book);
+    const before = queryClient.getQueryData<Contact[]>(key);
+    queryClient.setQueryData<Contact[]>(key, (list) => list?.filter((c) => c.id !== contact.id));
+    void (async () => {
+      const res = await deleteContact(contact.id, contact.etag, onUnauthorized, book);
+      if (!res.success) {
+        queryClient.setQueryData(key, before);
+        setBanner(`Couldn't delete ${displayName(contact)}: ${res.message}`);
+      }
+      refreshBook(book);
+    })();
   }
 
   if (supported === null) {
@@ -189,10 +194,7 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         {books.length > 1 && (
           <Select
             value={activeBook}
-            onChange={(e) => {
-              setActiveBook(e.target.value);
-              setLoading(true);
-            }}
+            onChange={(e) => setActiveBook(e.target.value)}
             aria-label="Address book"
             className="ml-1 h-8 !w-auto py-0 text-[12.5px]"
           >
@@ -325,8 +327,10 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
           onClose={() => {
             setDraft(null);
             setEditing(null);
+            setFormError(null);
           }}
           saving={saving}
+          error={formError}
           isEdit={Boolean(editing)}
         />
       )}
@@ -335,7 +339,7 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         isOpen={confirmDelete !== null}
         onClose={() => setConfirmDelete(null)}
         onConfirm={() => {
-          if (confirmDelete) void remove(confirmDelete);
+          if (confirmDelete) remove(confirmDelete);
         }}
         icon={<Trash2 size={18} />}
         tone="danger"
@@ -358,6 +362,7 @@ function ContactForm({
   onSave,
   onClose,
   saving,
+  error,
   isEdit,
 }: {
   draft: ContactDraft;
@@ -365,6 +370,7 @@ function ContactForm({
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
+  error: string | null;
   isEdit: boolean;
 }) {
   const emails = draft.emails ?? [];
@@ -390,6 +396,11 @@ function ContactForm({
       }
     >
       <div className="space-y-4">
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="contact-first">First name</Label>
