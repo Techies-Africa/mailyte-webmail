@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Tag } from 'lucide-react';
 import Dialog from '@/components/ui/Dialog';
 import Button from '@/components/ui/Button';
@@ -58,14 +58,21 @@ export default function LabelPickerDialog({ isOpen, onClose, known, current, wha
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // Seeded as the dialog OPENS, and only then. `current` is rebuilt on every
+  // parent render, and a background refresh re-renders the parent -- re-seeding
+  // on each one would undo the ticks the person is in the middle of making.
+  const initialRef = useRef(initial);
+  useEffect(() => {
+    initialRef.current = initial;
+  }, [initial]);
   useEffect(() => {
     if (isOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setState(new Map(initial));
+      setState(new Map(initialRef.current));
       setDraft('');
       setError(null);
     }
-  }, [isOpen, initial]);
+  }, [isOpen]);
 
   const names = useMemo(() => [...state.keys()].sort(), [state]);
 

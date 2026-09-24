@@ -95,6 +95,10 @@ export default function MessageListPane({
     total,
     offset,
     loadingList,
+    refreshing,
+    isPlaceholderPage,
+    prefetchNextPage,
+    prefetchMessage,
     error,
     lastSyncAt,
     refreshAll,
@@ -125,6 +129,13 @@ export default function MessageListPane({
 
   const [showSearch, setShowSearch] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // A cached view now replaces the last one in the same frame, so the
+  // scroll position has to be reset by hand: a new folder starts at the top.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rowsRef.current?.scrollTo({ top: 0 });
+  }, [activeFolder, activeSearch, searchScope, filter, offset]);
   const [scope, setScope] = useState(searchScope);
 
   // Open the field automatically when there is an active search (a deep link
@@ -221,7 +232,7 @@ export default function MessageListPane({
             </IconButton>
           )}
           <IconButton label="Refresh (g)" size="sm" onClick={refreshAll}>
-            <RefreshCw size={13} strokeWidth={2.2} className={loadingList ? 'animate-spin' : ''} />
+            <RefreshCw size={13} strokeWidth={2.2} className={refreshing ? 'animate-spin' : ''} />
           </IconButton>
         </div>
 
@@ -374,7 +385,11 @@ export default function MessageListPane({
       )}
 
       {/* Rows */}
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+      {/* A neighbouring page stands in, dimmed, while the asked-for one loads. */}
+      <div
+        ref={rowsRef}
+        className={`thin-scroll min-h-0 flex-1 overflow-y-auto transition-opacity ${isPlaceholderPage ? 'opacity-60' : ''}`}
+      >
         {loadingList ? (
           <div>
             {Array.from({ length: 10 }).map((_, i) => (
@@ -413,6 +428,7 @@ export default function MessageListPane({
               showFolder={showFolderTags || isLabelView}
               autoTags={autoTags}
               onOpen={() => onOpen(email)}
+              onHover={() => prefetchMessage(email)}
               onSelect={(selected) =>
                 setSelectedIds((prev) =>
                   selected ? [...prev, email.id] : prev.filter((id) => id !== email.id),
@@ -443,7 +459,13 @@ export default function MessageListPane({
         >
           <ChevronLeft size={14} />
         </IconButton>
-        <IconButton label="Older messages" size="xs" disabled={!hasNext} onClick={() => goToPage(offset + PAGE_SIZE)}>
+        <IconButton
+          label="Older messages"
+          size="xs"
+          disabled={!hasNext}
+          onClick={() => goToPage(offset + PAGE_SIZE)}
+          onMouseEnter={prefetchNextPage}
+        >
           <ChevronRight size={14} />
         </IconButton>
       </div>

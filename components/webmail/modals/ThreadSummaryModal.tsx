@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Hash, RefreshCcw, Copy, Check } from 'lucide-react';
 import type { WebmailListItem } from '../types';
 import { formatDateTime } from '@/lib/webmail/dates';
@@ -13,7 +13,8 @@ type ThreadSummaryModalProps = {
   onClose: () => void;
   /** The real conversation, oldest first. Never a fabricated stand-in. */
   thread: WebmailListItem[];
-  onSummarize: () => Promise<string>;
+  /** The summary; `fresh` asks for a new one instead of the one already made. */
+  onSummarize: (fresh?: boolean) => Promise<string>;
 };
 
 export default function ThreadSummaryModal({ isOpen, onClose, thread, onSummarize }: ThreadSummaryModalProps) {
@@ -22,20 +23,27 @@ export default function ThreadSummaryModal({ isOpen, onClose, thread, onSummariz
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const generateSummary = useCallback(async () => {
+  // Read through a ref: the parent hands down a fresh arrow on every render,
+  // and the summary must not be asked for again each time it does.
+  const onSummarizeRef = useRef(onSummarize);
+  useEffect(() => {
+    onSummarizeRef.current = onSummarize;
+  }, [onSummarize]);
+
+  const generateSummary = useCallback(async (fresh = false) => {
     setIsGenerating(true);
     setError(null);
     try {
-      setSummary(await onSummarize());
+      setSummary(await onSummarizeRef.current(fresh));
     } catch {
       setError('Could not summarize this conversation. Please try again.');
     } finally {
       setIsGenerating(false);
     }
-  }, [onSummarize]);
+  }, []);
 
   // Kicked off from an effect keyed on isOpen so it runs exactly once per
-  // opening, never during render.
+  // opening, never during render. A summary already made is shown at once.
   useEffect(() => {
     if (isOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -87,7 +95,7 @@ export default function ThreadSummaryModal({ isOpen, onClose, thread, onSummariz
               >
                 {isCopied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               </IconButton>
-              <IconButton label="Regenerate" size="xs" onClick={() => void generateSummary()}>
+              <IconButton label="Regenerate" size="xs" onClick={() => void generateSummary(true)}>
                 <RefreshCcw size={13} />
               </IconButton>
             </div>

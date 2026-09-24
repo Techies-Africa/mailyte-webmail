@@ -7,21 +7,21 @@
  * This used to live inline in app/page.tsx, at 1,400 lines, next to the
  * markup. The redesign splits the screen into panes with their own
  * components, and they all need the same state -- so the state moved here
- * and the page became the wiring. Nothing about the behaviour changed in the
- * move: paging, server search, the delta poll, URL state, undo-send and the
- * Trash rules are the same code, re-homed.
+ * and the page became the wiring.
+ *
+ * What the server says lives in the query cache (lib/webmail/query), not in
+ * this hook: every folder, view and page visited stays cached, so going back
+ * to one paints at once and refreshes quietly. What the person is doing --
+ * which folder, which message, what is selected -- is this hook's own state.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
-import type { ComposeMode, WebmailFolder, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
+import type { ComposeMode, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import {
   listMessages,
-  listFolders,
-  getMessage,
-  getThread,
   trashMessage as apiTrash,
   deleteForever as apiDeleteForever,
   star as apiStar,
@@ -31,7 +31,6 @@ import {
   markUnread as apiMarkUnread,
   sendMessage as apiSend,
   aiCompose as apiAiCompose,
-  aiSummarize as apiAiSummarize,
   saveDraft as apiSaveDraft,
   discardDraft as apiDiscardDraft,
   cancelScheduled as apiCancelScheduled,
@@ -43,7 +42,7 @@ import {
 } from '@/lib/webmail/client';
 import type { SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
-import { FALLBACK_FOLDERS, foldersFingerprint, toFolder, toListItem, toMessage } from '@/lib/webmail/adapters';
+import { FALLBACK_FOLDERS } from '@/lib/webmail/adapters';
 import {
   useCapabilities,
   useLabels,
@@ -52,40 +51,36 @@ import {
   useSuggestions,
 } from '@/lib/webmail/query/accountQueries';
 import { qk } from '@/lib/webmail/query/keys';
+import {
+  PAGE_SIZE,
+  STARRED_VIEW,
+  labelOfView,
+  listParamsFor,
+  type ListFilter,
+  type SearchScope,
+} from '@/lib/webmail/query/listParams';
+import { POLL_MS, foldersQuery, listQuery, messageQuery, summaryQuery, threadQuery } from '@/lib/webmail/query/mailQueries';
+import { absorbNextFolders } from '@/lib/webmail/query/mailSync';
+import {
+  adjustFolderCounts,
+  findMessage,
+  forgetMessages,
+  invalidateFolderLists,
+  listParamsOf,
+  patchMessages,
+  removeFromLists,
+} from '@/lib/webmail/query/messageCache';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { isAuthError } from '@/lib/webmail/query/errors';
 
-/**
- * Delta poll interval (PRD P4). A tick is one folders call that transfers no
- * message content; only when a folder's uid_next has moved does anything
- * reload.
- */
-const POLL_MS = 45_000;
-
-/** One page. */
-export const PAGE_SIZE = 50;
+export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
+export type { ListFilter, SearchScope } from '@/lib/webmail/query/listParams';
 
 /** The most rows "mark all read" will touch in one go. */
 const MARK_ALL_CAP = 1000;
 
 /** Fallback window when the preference has not loaded yet. */
 const DEFAULT_UNDO_SECONDS = 5;
-
-/** Starred is a keyword view over the inbox, not an IMAP folder. */
-export const STARRED_VIEW = '__starred__';
-
-/**
- * A label view: every message carrying one label, across all folders. Not a
- * folder either -- it is `__label__:<slug>` in the folder slot, resolved to
- * a server-side KEYWORD search.
- */
-export const LABEL_VIEW_PREFIX = '__label__:';
-
-export function labelOfView(folder: string): string | null {
-  return folder.startsWith(LABEL_VIEW_PREFIX) ? folder.slice(LABEL_VIEW_PREFIX.length) : null;
-}
-
-export type ListFilter = 'all' | 'unread' | 'starred' | 'attachments';
-export type SearchScope = 'folder' | 'all';
 
 export function splitAddresses(value: string): string[] {
   return value
@@ -106,10 +101,10 @@ function readUrlState(): { folder: string | null; id: string | null } {
 }
 
 /**
- * Native history rather than router.push(): this screen holds the whole
- * mailbox in component state, and re-running the route for what is really an
- * in-page selection would throw it away. pushState feeds the address bar and
- * Back without disturbing the tree; the popstate listener restores state.
+ * Native history rather than router.push(): picking a folder or a message is
+ * an in-page selection, and re-running the route for it would remount the
+ * screen. pushState feeds the address bar and Back without disturbing the
+ * tree; the popstate listener restores state.
  */
 function pushUrlState(folder: string, id: string | null, replace = false) {
   if (typeof window === 'undefined') return;
@@ -136,13 +131,17 @@ export interface PendingSend {
 }
 
 const NO_SHARED_MAILBOXES: SharedMailbox[] = [];
+const NO_MESSAGES: WebmailListItem[] = [];
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function useMailbox() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const handleUnauthorized = useUnauthorizedHandler();
 
-  // Mailbox-wide data, shared with every other screen through the query cache.
+  // --- Mailbox-wide data, shared with every other screen ----------------------------
+
   const capabilitiesQuery = useCapabilities();
   const settings = useSettings().data ?? null;
   const contacts = useSuggestions();
@@ -151,27 +150,24 @@ export function useMailbox() {
   const capabilities = capabilitiesQuery.data?.capabilities ?? null;
   const sharedMailboxes = capabilitiesQuery.data?.shared_mailboxes ?? NO_SHARED_MAILBOXES;
 
+  const aiAvailable = capabilities?.ai === true;
+  const scheduleAvailable = capabilities?.scheduled_send === true;
+  const calendarAvailable = capabilities?.calendar === true;
+  const contactsAvailable = capabilities?.contacts === true;
+
   // A placeholder only, so the profile chip is not blank on first paint. The
   // authoritative address is the SERVER's, from capabilities -- the only
   // thing that knows whose session this actually is.
   const [placeholderEmail, setPlaceholderEmail] = useState('');
   const displayEmail = capabilitiesQuery.data?.email_address || placeholderEmail;
 
-  const [folders, setFolders] = useState<WebmailFolder[]>(FALLBACK_FOLDERS);
+  // --- What the person is looking at --------------------------------------------------
+
   const [activeFolder, setActiveFolder] = useState(() => readUrlState().folder ?? 'INBOX');
-  const [messages, setMessages] = useState<WebmailListItem[]>([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [openMessage, setOpenMessage] = useState<WebmailMessage | null>(null);
-  const [thread, setThread] = useState<WebmailListItem[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  // Until the first authenticated request comes back, we do not know whether
-  // there is a session at all. Rendering the mailbox before then meant a
-  // signed-out visitor saw the full interface, then a redirect.
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [loadingList, setLoadingList] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // `search` is what's typed; `activeSearch` is what the server was asked
   // for. Keeping them apart is what makes search a submit rather than a
   // keystroke-per-request against IMAP.
@@ -179,106 +175,79 @@ export function useMailbox() {
   const [activeSearch, setActiveSearch] = useState('');
   const [searchScope, setSearchScope] = useState<SearchScope>('folder');
   const [filter, setFilterState] = useState<ListFilter>('all');
-  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+  /** A message that would not open. List failures come from the list query itself. */
+  const [openError, setOpenError] = useState<string | null>(null);
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
-  const aiAvailable = capabilities?.ai === true;
-  const scheduleAvailable = capabilities?.scheduled_send === true;
-  const calendarAvailable = capabilities?.calendar === true;
-  const contactsAvailable = capabilities?.contacts === true;
+  // --- Folders: the rail, and the change signal ----------------------------------------
 
-  // The last folder fingerprint the list was built from. The poll compares
-  // against this and reloads only on a real change.
-  const syncTokenRef = useRef<string>('');
+  // Polled while the tab is visible and checked again when it comes back
+  // (P4). Only folders whose change tokens moved have their lists reloaded;
+  // see mailSync.ts.
+  const foldersResult = useQuery({
+    ...foldersQuery(queryClient, handleUnauthorized),
+    refetchInterval: POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+  const folders = foldersResult.data ?? FALLBACK_FOLDERS;
 
   const activeFolderMeta = folders.find((f) => f.name === activeFolder) ?? null;
   const inTrash = activeFolderMeta?.role === 'trash';
   const inJunk = activeFolderMeta?.role === 'junk';
-
-  // --- Loading ---------------------------------------------------------------
-
-  const loadMessages = useCallback(
-    async (
-      folder: string,
-      options: {
-        silent?: boolean;
-        offset?: number;
-        search?: string;
-        scope?: SearchScope;
-        filter?: ListFilter;
-      } = {},
-    ) => {
-      const {
-        silent = false,
-        offset: pageOffset = 0,
-        search: query = '',
-        scope = 'folder',
-        filter: listFilter = 'all',
-      } = options;
-      if (!silent) setLoadingList(true);
-      setError(null);
-
-      // Starred is a keyword view over the inbox: SEARCH FLAGGED, on the
-      // server. The "attachments" pill has no server counterpart and is
-      // applied to the page below.
-      const isStarredView = folder === STARRED_VIEW;
-      const labelView = labelOfView(folder);
-      const allMail = (query !== '' && scope === 'all') || labelView !== null;
-
-      const result = await listMessages(
-        {
-          folder: allMail ? null : isStarredView ? 'INBOX' : folder,
-          search: query || undefined,
-          offset: pageOffset,
-          limit: PAGE_SIZE,
-          unread: listFilter === 'unread' || undefined,
-          starred: isStarredView || listFilter === 'starred' || undefined,
-          label: labelView ?? undefined,
-        },
-        handleUnauthorized,
-      );
-
-      if (!result.success) {
-        if (!silent) setError(result.message);
-        setLoadingList(false);
-        return;
-      }
-
-      const items = result.data.messages.map(toListItem);
-
-      // The request was accepted, so a valid session exists -- only now is
-      // it safe to paint the mailbox.
-      setSessionChecked(true);
-      setMessages(items);
-      setTotal(result.data.total);
-      setOffset(pageOffset);
-      setLastSyncAt(new Date());
-      if (!silent) setLoadingList(false);
-    },
-    [handleUnauthorized],
+  const folderByRole = useCallback(
+    (role: string, fallback: string) => folders.find((f) => f.role === role)?.name ?? fallback,
+    [folders],
   );
+  const draftsFolder = folderByRole('drafts', 'Drafts');
+  const sentFolder = folderByRole('sent', 'Sent');
 
   /**
-   * Fetch the folder list, and report whether anything in the mailbox moved
-   * since the last time. This one call is both the sidebar's data and the
-   * change signal the poll runs on (P2 + P4).
+   * Fetch the folder list after the client changed something itself. Its
+   * answer carries that change, which is already on screen, so it becomes the
+   * new baseline instead of reloading lists.
    */
-  const loadFolders = useCallback(async (): Promise<{ changed: boolean }> => {
-    const result = await listFolders(handleUnauthorized);
-    if (!result.success) return { changed: false };
+  const refreshFolders = useCallback(() => {
+    absorbNextFolders(queryClient);
+    return queryClient.refetchQueries({ queryKey: qk.folders, exact: true });
+  }, [queryClient]);
 
-    const next = result.data.map(toFolder);
-    setFolders(next);
+  // --- The message list ------------------------------------------------------------------
 
-    const fingerprint = foldersFingerprint(next);
-    const changed = syncTokenRef.current !== '' && syncTokenRef.current !== fingerprint;
-    syncTokenRef.current = fingerprint;
+  const listParams = useMemo(
+    () => listParamsFor({ folder: activeFolder, search: activeSearch, scope: searchScope, filter, offset }),
+    [activeFolder, activeSearch, searchScope, filter, offset],
+  );
+  const listResult = useQuery(listQuery(listParams, handleUnauthorized));
+  const page = listResult.data;
+  const messages = page?.items ?? NO_MESSAGES;
+  const total = page?.total ?? 0;
+  // A page standing in for the next one keeps its own range on screen.
+  const shownOffset = page?.offset ?? offset;
+  /** Nothing to show for this view yet: the only time the list shows a skeleton. */
+  const loadingList = listResult.isPending;
+  /** A fetch is running behind what is on screen. */
+  const refreshing = listResult.isFetching;
+  const isPlaceholderPage = listResult.isPlaceholderData;
+  const listError = listResult.isError ? listResult.error.message : null;
+  const error = openError ?? listError;
 
-    return { changed };
-  }, [handleUnauthorized]);
+  // Until the first authenticated request comes back, we do not know whether
+  // there is a session at all. Rendering the mailbox before then meant a
+  // signed-out visitor saw the full interface, then a redirect. A 401 never
+  // opens this gate, so the mailbox never paints on the way out to sign-in.
+  const sessionChecked =
+    listResult.data !== undefined ||
+    foldersResult.isSuccess ||
+    capabilitiesQuery.isSuccess ||
+    // Any other failure is worth showing as one, with Try again.
+    (listResult.isError && !isAuthError(listResult.error));
 
-  // Both are account-wide queries now; after a change, ask them to look again.
+  const syncedAt = Math.max(foldersResult.dataUpdatedAt, listResult.dataUpdatedAt);
+  const lastSyncAt = useMemo(() => (syncedAt > 0 ? new Date(syncedAt) : null), [syncedAt]);
+
+  // Scheduled and labels are account-wide queries; after a change, ask them to look again.
   const loadScheduled = useCallback(
     () => queryClient.invalidateQueries({ queryKey: qk.scheduled }),
     [queryClient],
@@ -287,12 +256,6 @@ export function useMailbox() {
     () => queryClient.invalidateQueries({ queryKey: qk.labels }),
     [queryClient],
   );
-
-  useEffect(() => {
-    void loadMessages(activeFolder, { search: activeSearch, scope: searchScope, filter });
-    void loadFolders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFolder, activeSearch, searchScope, filter]);
 
   useEffect(() => {
     const raw = sessionStorage.getItem('mailyte_mailbox_display');
@@ -316,62 +279,28 @@ export function useMailbox() {
     }
   }, [serverEmail]);
 
-  /**
-   * Delta sync (P4). Paused while the tab is hidden, and run once on
-   * becoming visible again.
-   */
-  useEffect(() => {
-    const tick = async () => {
-      if (document.visibilityState !== 'visible') return;
-      const { changed } = await loadFolders();
-      if (changed) {
-        void loadMessages(activeFolder, {
-          silent: true,
-          offset,
-          search: activeSearch,
-          scope: searchScope,
-          filter,
-        });
-        void loadScheduled();
-      } else {
-        setLastSyncAt(new Date());
-      }
-    };
-
-    const interval = setInterval(() => void tick(), POLL_MS);
-    const onVisible = () => void tick();
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [activeFolder, activeSearch, searchScope, filter, offset, loadFolders, loadMessages, loadScheduled]);
-
-  const reloadList = useCallback(
-    (silent = true) =>
-      loadMessages(activeFolder, {
-        silent,
-        offset,
-        search: activeSearch,
-        scope: searchScope,
-        filter,
-      }),
-    [activeFolder, offset, activeSearch, searchScope, filter, loadMessages],
-  );
-
   const refreshAll = useCallback(() => {
-    void reloadList(false);
-    void loadFolders();
+    // The folder answer is compared as usual, so anything that changed
+    // elsewhere is picked up too; the list on screen is fetched regardless.
+    void queryClient.refetchQueries({ queryKey: qk.folders, exact: true });
+    void queryClient.invalidateQueries({ queryKey: qk.list(listParams), exact: true });
     void loadScheduled();
-  }, [reloadList, loadFolders, loadScheduled]);
+    setOpenError(null);
+  }, [queryClient, listParams, loadScheduled]);
+
+  /** The next page, fetched while the pointer is on "Older". */
+  const prefetchNextPage = useCallback(() => {
+    if (shownOffset + PAGE_SIZE >= total) return;
+    void queryClient.prefetchQuery(listQuery({ ...listParams, offset: shownOffset + PAGE_SIZE }, handleUnauthorized));
+  }, [queryClient, listParams, shownOffset, total, handleUnauthorized]);
 
   // --- Navigation --------------------------------------------------------------
 
   const setFolder = useCallback((folder: string) => {
     setActiveFolder(folder);
     setSelectedIds([]);
-    setOpenMessage(null);
-    setThread([]);
+    setOpenId(null);
+    setOpenError(null);
     setSearch('');
     setActiveSearch('');
     setFilterState('all');
@@ -385,7 +314,7 @@ export function useMailbox() {
     setActiveSearch(query.trim());
     setOffset(0);
     setSelectedIds([]);
-    setOpenMessage(null);
+    setOpenId(null);
   }, []);
 
   const clearSearch = useCallback(() => {
@@ -401,20 +330,30 @@ export function useMailbox() {
     setSelectedIds([]);
   }, []);
 
-  const goToPage = useCallback(
-    (nextOffset: number) => {
-      setSelectedIds([]);
-      void loadMessages(activeFolder, {
-        offset: nextOffset,
-        search: activeSearch,
-        scope: searchScope,
-        filter,
-      });
-    },
-    [activeFolder, activeSearch, searchScope, filter, loadMessages],
-  );
+  const goToPage = useCallback((nextOffset: number) => {
+    setSelectedIds([]);
+    setOffset(nextOffset);
+  }, []);
 
   // --- Reading -----------------------------------------------------------------
+
+  const messageResult = useQuery({ ...messageQuery(openId ?? '', handleUnauthorized), enabled: openId !== null });
+  const threadResult = useQuery({ ...threadQuery(openId ?? '', handleUnauthorized), enabled: openId !== null });
+  const openMessage = openId ? (messageResult.data ?? null) : null;
+  const thread = openId ? (threadResult.data ?? NO_MESSAGES) : NO_MESSAGES;
+  const loadingMessage = openingId !== null;
+
+  /** A message body, fetched ahead of a click. Drafts are skipped: they open in compose, fresh. */
+  const prefetchMessage = useCallback(
+    (item: WebmailListItem) => {
+      if (item.isDraft) return;
+      void queryClient.prefetchQuery(messageQuery(item.id, handleUnauthorized));
+    },
+    [queryClient, handleUnauthorized],
+  );
+
+  // Clicking A then B quickly must end on B, whichever answer lands last.
+  const openTicket = useRef(0);
 
   /**
    * Open a message in the reading pane. Returns the loaded message, or a
@@ -425,60 +364,54 @@ export function useMailbox() {
     async (
       item: WebmailListItem,
     ): Promise<{ kind: 'message' } | { kind: 'draft'; message: WebmailMessage } | { kind: 'error' }> => {
-      setThread([]);
-      setLoadingMessage(true);
+      const ticket = ++openTicket.current;
+      const isDraft = item.isDraft || item.folder === 'Drafts';
+      setOpenError(null);
+      setOpeningId(item.id);
+      // The conversation is asked for alongside the body, not after it (F1).
+      if (!isDraft) void queryClient.prefetchQuery(threadQuery(item.id, handleUnauthorized));
       try {
-        const result = await getMessage(item.id, handleUnauthorized);
-        if (!result.success || !result.data) {
-          setError(result.success ? 'That message could not be loaded.' : result.message);
-          return { kind: 'error' };
-        }
+        const options = messageQuery(item.id, handleUnauthorized);
+        // A draft is re-saved under a new id every autosave; never trust an old copy.
+        const message = await queryClient.fetchQuery(isDraft ? { ...options, staleTime: 0 } : options);
+        if (ticket !== openTicket.current) return { kind: 'error' };
+        if (isDraft) return { kind: 'draft', message };
 
-        const message = toMessage(result.data);
-        if (item.isDraft || item.folder === 'Drafts') {
-          return { kind: 'draft', message };
-        }
-
-        setOpenMessage(message);
-        pushUrlState(item.folder || activeFolder, item.id);
-        if (!result.data.is_read) {
+        const folder = item.folder || activeFolder;
+        setOpenId(item.id);
+        pushUrlState(folder, item.id);
+        if (!message.isRead) {
           void apiMarkRead(item.id, handleUnauthorized);
-          setMessages((prev) => prev.map((m) => (m.id === item.id ? { ...m, isRead: true } : m)));
-          setFolders((prev) =>
-            prev.map((f) =>
-              f.name === (item.folder || activeFolder)
-                ? { ...f, unreadEmails: Math.max(0, f.unreadEmails - 1) }
-                : f,
-            ),
-          );
+          patchMessages(queryClient, [item.id], (m) => ({ ...m, isRead: true }));
+          adjustFolderCounts(queryClient, new Map([[folder, { unread: -1, total: 0 }]]));
         }
 
-        // The conversation, fetched after the message so the body paints
-        // immediately (F1).
-        const threadResult = await getThread(item.id, handleUnauthorized);
-        if (threadResult.success && Array.isArray(threadResult.data)) {
-          setThread(threadResult.data.map(toListItem));
-        }
+        // The next message down is the likeliest to be read next (j, or after
+        // an archive), so it is fetched while this one is being read.
+        const index = messages.findIndex((m) => m.id === item.id);
+        const next = index >= 0 ? messages[index + 1] : undefined;
+        if (next) prefetchMessage(next);
         return { kind: 'message' };
+      } catch (err) {
+        if (ticket === openTicket.current) {
+          setOpenError(err instanceof Error ? err.message : 'That message could not be loaded.');
+        }
+        return { kind: 'error' };
       } finally {
-        setLoadingMessage(false);
+        if (ticket === openTicket.current) setOpeningId(null);
       }
     },
-    [handleUnauthorized, activeFolder],
+    [queryClient, handleUnauthorized, activeFolder, messages, prefetchMessage],
   );
 
   const close = useCallback(() => {
-    setOpenMessage(null);
-    setThread([]);
+    setOpenId(null);
     pushUrlState(activeFolder, null);
   }, [activeFolder]);
 
   const loadThreadMessage = useCallback(
-    async (id: string) => {
-      const result = await getMessage(id, handleUnauthorized);
-      return result.success && result.data ? toMessage(result.data) : null;
-    },
-    [handleUnauthorized],
+    (id: string) => queryClient.fetchQuery(messageQuery(id, handleUnauthorized)).catch(() => null),
+    [queryClient, handleUnauthorized],
   );
 
   // Back / Forward: pushUrlState changes the address bar without telling
@@ -489,10 +422,10 @@ export function useMailbox() {
       const nextFolder = folder ?? 'INBOX';
       setActiveFolder((prev) => (prev === nextFolder ? prev : nextFolder));
       if (!id) {
-        setOpenMessage(null);
+        setOpenId(null);
         return;
       }
-      setOpenMessage((prev) => (prev && prev.id === id ? prev : null));
+      setOpenId((prev) => (prev === id ? prev : null));
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -502,7 +435,7 @@ export function useMailbox() {
   // Latches so closing the message does not immediately reopen it.
   const restoredDeepLink = useRef(false);
   useEffect(() => {
-    if (restoredDeepLink.current || openMessage) return;
+    if (restoredDeepLink.current || openId) return;
     const { id } = readUrlState();
     if (!id) {
       restoredDeepLink.current = true;
@@ -512,35 +445,45 @@ export function useMailbox() {
     if (!item) return;
     restoredDeepLink.current = true;
     void open(item);
-  }, [messages, openMessage, open]);
+  }, [messages, openId, open]);
 
   // --- Actions on messages -----------------------------------------------------
 
-  const removeFromList = useCallback((ids: string[]) => {
-    const set = new Set(ids);
-    setMessages((prev) => prev.filter((m) => !set.has(m.id)));
-    setSelectedIds((prev) => prev.filter((id) => !set.has(id)));
-    setOpenMessage((prev) => (prev && set.has(prev.id) ? null : prev));
-    setTotal((prev) => Math.max(0, prev - ids.length));
-  }, []);
+  /**
+   * These messages are gone from where they were: out of every cached list,
+   * the selection and the reading pane. Their old ids are dead -- a moved
+   * message gets a new one in its new folder -- so their bodies go too.
+   */
+  const dropMessages = useCallback(
+    (ids: string[]) => {
+      const set = new Set(ids);
+      removeFromLists(queryClient, ids);
+      setSelectedIds((prev) => prev.filter((id) => !set.has(id)));
+      setOpenId((prev) => (prev && set.has(prev) ? null : prev));
+      forgetMessages(queryClient, ids);
+      // Every list could be holding them or be missing them now. Nothing is
+      // refetched under the pointer; each list reloads when next shown.
+      void invalidateFolderLists(queryClient, 'all', 'none');
+    },
+    [queryClient],
+  );
 
   const toggleStar = useCallback(
     async (id: string) => {
-      const target = messages.find((m) => m.id === id);
-      const currentlyStarred = target ? target.isStarred : (openMessage?.isStarred ?? false);
+      const currentlyStarred = findMessage(queryClient, id)?.isStarred ?? false;
       const result = await (currentlyStarred ? apiUnstar : apiStar)(id, handleUnauthorized);
       if (!result.success) {
         toast(result.message, { tone: 'error' });
         return;
       }
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, isStarred: !currentlyStarred } : m)),
-      );
-      setOpenMessage((prev) =>
-        prev && prev.id === id ? { ...prev, isStarred: !currentlyStarred } : prev,
-      );
+      patchMessages(queryClient, [id], (m) => ({ ...m, isStarred: !currentlyStarred }));
+      void queryClient.invalidateQueries({
+        queryKey: qk.lists,
+        refetchType: 'none',
+        predicate: (q) => listParamsOf(q.queryKey).starred,
+      });
     },
-    [messages, openMessage, handleUnauthorized, toast],
+    [queryClient, handleUnauthorized, toast],
   );
 
   const runOnIds = useCallback(
@@ -561,13 +504,11 @@ export function useMailbox() {
 
   const afterMove = useCallback(
     (ids: string[]) => {
-      removeFromList(ids);
-      void loadFolders();
+      dropMessages(ids);
+      void refreshFolders();
     },
-    [removeFromList, loadFolders],
+    [dropMessages, refreshFolders],
   );
-
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
   const archive = useCallback(
     async (ids: string[]) => {
@@ -613,25 +554,28 @@ export function useMailbox() {
   /** Not spam = back to the Inbox, resolved from the folder ROLE. */
   const markNotSpam = useCallback(
     async (ids: string[]) => {
-      const inbox = folders.find((f) => f.role === 'inbox')?.name ?? 'INBOX';
+      const inbox = folderByRole('inbox', 'INBOX');
       const n = await runOnIds(ids, (id) => apiMove(id, inbox, handleUnauthorized), afterMove);
       if (n > 0) toast('Moved to Inbox');
     },
-    [folders, runOnIds, handleUnauthorized, afterMove, toast],
+    [folderByRole, runOnIds, handleUnauthorized, afterMove, toast],
   );
 
   const setRead = useCallback(
     async (ids: string[], read: boolean) => {
       const action = read ? apiMarkRead : apiMarkUnread;
       await runOnIds(ids, (id) => action(id, handleUnauthorized), (done) => {
-        const set = new Set(done);
-        setMessages((prev) => prev.map((m) => (set.has(m.id) ? { ...m, isRead: read } : m)));
-        setOpenMessage((prev) => (prev && set.has(prev.id) ? { ...prev, isRead: read } : prev));
+        patchMessages(queryClient, done, (m) => ({ ...m, isRead: read }));
         setSelectedIds([]);
-        void loadFolders();
+        void refreshFolders();
+        void queryClient.invalidateQueries({
+          queryKey: qk.lists,
+          refetchType: 'none',
+          predicate: (q) => listParamsOf(q.queryKey).unread,
+        });
       });
     },
-    [runOnIds, handleUnauthorized, loadFolders],
+    [runOnIds, handleUnauthorized, queryClient, refreshFolders],
   );
 
   /**
@@ -647,10 +591,10 @@ export function useMailbox() {
     setMarkingAllRead(true);
     try {
       const ids: string[] = [];
-      let page = 0;
+      let from = 0;
       while (ids.length < MARK_ALL_CAP) {
         const result = await listMessages(
-          { folder: activeFolder, unread: true, limit: 200, offset: page },
+          { folder: activeFolder, unread: true, limit: 200, offset: from },
           handleUnauthorized,
         );
         if (!result.success) {
@@ -659,20 +603,25 @@ export function useMailbox() {
         }
         ids.push(...result.data.messages.map((m) => m.id));
         if (!result.data.has_more) break;
-        page += 200;
+        from += 200;
       }
       if (ids.length === 0) {
         toast('Nothing unread here', { tone: 'info' });
         return;
       }
       let done = 0;
+      const marked: string[] = [];
       for (let i = 0; i < ids.length; i += 25) {
         const chunk = ids.slice(i, i + 25);
         const results = await Promise.all(chunk.map((id) => apiMarkRead(id, handleUnauthorized)));
+        results.forEach((r, j) => {
+          if (r.success) marked.push(chunk[j]);
+        });
         done += results.filter((r) => r.success).length;
       }
-      setMessages((prev) => prev.map((m) => ({ ...m, isRead: true })));
-      void loadFolders();
+      patchMessages(queryClient, marked, (m) => ({ ...m, isRead: true }));
+      void refreshFolders();
+      void invalidateFolderLists(queryClient, [activeFolder], 'none');
       toast(
         done >= MARK_ALL_CAP
           ? `Marked ${done} as read — run it again for the rest`
@@ -681,7 +630,7 @@ export function useMailbox() {
     } finally {
       setMarkingAllRead(false);
     }
-  }, [activeFolder, markingAllRead, handleUnauthorized, loadFolders, toast]);
+  }, [activeFolder, markingAllRead, handleUnauthorized, queryClient, refreshFolders, toast]);
 
   /** Block a sender: future mail files to Junk at delivery. */
   const blockSender = useCallback(
@@ -698,9 +647,8 @@ export function useMailbox() {
   );
 
   /**
-   * Add and remove labels on some messages. Applied locally at once so the
-   * rows update under the pointer, then the label list is re-read in case a
-   * new name was introduced.
+   * Add and remove labels on some messages, then re-read the label list in
+   * case a new name was introduced.
    */
   const applyLabels = useCallback(
     async (ids: string[], add: string[], remove: string[]) => {
@@ -714,19 +662,24 @@ export function useMailbox() {
         raw.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '').replace(/_{2,}/g, '_').replace(/^[_-]+|[_-]+$/g, '');
       const adds = add.map(slug).filter(Boolean);
       const removes = new Set(remove.map(slug));
-      const relabel = <T extends { id: string; labels: string[] }>(m: T): T =>
-        done.has(m.id)
-          ? { ...m, labels: [...new Set([...m.labels.filter((l) => !removes.has(l)), ...adds])].sort() }
-          : m;
-      setMessages((prev) => prev.map(relabel));
-      setOpenMessage((prev) => (prev ? relabel(prev) : prev));
+      patchMessages(queryClient, done, (m) => ({
+        ...m,
+        labels: [...new Set([...m.labels.filter((l) => !removes.has(l)), ...adds])].sort(),
+      }));
       setSelectedIds([]);
-      // A message that just lost the label this view shows should leave the view.
+      // A message that just lost a label leaves that label's view.
+      removeFromLists(queryClient, done, (params) => params.label !== null && removes.has(params.label));
       const viewLabel = labelOfView(activeFolder);
-      if (viewLabel && removes.has(viewLabel)) {
-        setMessages((prev) => prev.filter((m) => !done.has(m.id)));
-        setOpenMessage((prev) => (prev && done.has(prev.id) ? null : prev));
-      }
+      if (viewLabel && removes.has(viewLabel)) setOpenId((prev) => (prev && done.has(prev) ? null : prev));
+      // And the views of the labels it gained are missing it until they reload.
+      void queryClient.invalidateQueries({
+        queryKey: qk.lists,
+        refetchType: 'none',
+        predicate: (q) => {
+          const label = listParamsOf(q.queryKey).label;
+          return label !== null && adds.includes(label);
+        },
+      });
       toast(
         adds.length > 0
           ? `Labelled ${done.size === 1 ? 'message' : `${done.size} messages`}`
@@ -734,7 +687,7 @@ export function useMailbox() {
       );
       void loadLabels();
     },
-    [handleUnauthorized, toast, activeFolder, loadLabels],
+    [handleUnauthorized, toast, queryClient, activeFolder, loadLabels],
   );
 
   // --- Folders -------------------------------------------------------------------
@@ -743,39 +696,41 @@ export function useMailbox() {
     async (name: string) => {
       const result = await apiCreateFolder(name, handleUnauthorized);
       if (!result.success) return result.message;
-      await loadFolders();
+      await refreshFolders();
       toast(`Created ${name}`);
       return null;
     },
-    [handleUnauthorized, loadFolders, toast],
+    [handleUnauthorized, refreshFolders, toast],
   );
 
   const renameFolder = useCallback(
-    async (folder: WebmailFolder, name: string) => {
+    async (folder: { id: string; name: string }, name: string) => {
       const result = await apiRenameFolder(folder.id, name, handleUnauthorized);
       if (!result.success) return result.message;
-      await loadFolders();
+      await refreshFolders();
       if (activeFolder === folder.name && result.data?.name) setFolder(result.data.name);
       toast(`Renamed to ${result.data?.name ?? name}`);
       return null;
     },
-    [handleUnauthorized, loadFolders, activeFolder, setFolder, toast],
+    [handleUnauthorized, refreshFolders, activeFolder, setFolder, toast],
   );
 
   const deleteFolder = useCallback(
-    async (folder: WebmailFolder) => {
+    async (folder: { id: string; name: string }) => {
       const result = await apiDeleteFolder(folder.id, handleUnauthorized);
       if (!result.success) return result.message;
-      await loadFolders();
+      await refreshFolders();
       if (activeFolder === folder.name) setFolder('INBOX');
       toast(`Deleted ${folder.name}`);
       return null;
     },
-    [handleUnauthorized, loadFolders, activeFolder, setFolder, toast],
+    [handleUnauthorized, refreshFolders, activeFolder, setFolder, toast],
   );
 
   // --- Drafts --------------------------------------------------------------------
 
+  // Stable across folder switches and paging, so compose's autosave timer is
+  // not restarted by every navigation.
   const saveDraft = useCallback(
     async (payload: ComposePayload, replaceId?: string) => {
       const result = await apiSaveDraft(
@@ -792,20 +747,22 @@ export function useMailbox() {
         handleUnauthorized,
       );
       if (!result.success || !result.data) return null;
-      void loadFolders();
-      if (activeFolder === 'Drafts') void reloadList();
+      void refreshFolders();
+      void invalidateFolderLists(queryClient, [draftsFolder]);
       return result.data.id;
     },
-    [handleUnauthorized, loadFolders, activeFolder, reloadList],
+    [handleUnauthorized, refreshFolders, queryClient, draftsFolder],
   );
 
   const discardDraft = useCallback(
     async (id: string) => {
       await apiDiscardDraft(id, handleUnauthorized);
-      void loadFolders();
-      if (activeFolder === 'Drafts') void reloadList();
+      removeFromLists(queryClient, [id]);
+      forgetMessages(queryClient, [id]);
+      void refreshFolders();
+      void invalidateFolderLists(queryClient, [draftsFolder]);
     },
-    [handleUnauthorized, loadFolders, activeFolder, reloadList],
+    [handleUnauthorized, queryClient, refreshFolders, draftsFolder],
   );
 
   // --- Sending -------------------------------------------------------------------
@@ -838,10 +795,11 @@ export function useMailbox() {
         return;
       }
 
+      void refreshFolders();
+
       if (payload.sendAt) {
         toast(`Scheduled to send ${formatSendAt(new Date(payload.sendAt))}`);
-        void reloadList();
-        void loadFolders();
+        void queryClient.invalidateQueries({ queryKey: qk.lists });
         void loadScheduled();
         return;
       }
@@ -856,10 +814,11 @@ export function useMailbox() {
             : `${recipients[0]} and ${recipients.length - 1} other${recipients.length === 2 ? '' : 's'}`;
         toast(`Message sent to ${who}`);
       }
-      void reloadList();
-      void loadFolders();
+      // Sent gains a copy, and a reply changes the conversation it answered.
+      void invalidateFolderLists(queryClient, [sentFolder]);
+      void queryClient.invalidateQueries({ queryKey: qk.threads });
     },
-    [handleUnauthorized, toast, reloadList, loadFolders, loadScheduled],
+    [handleUnauthorized, toast, refreshFolders, queryClient, loadScheduled, sentFolder],
   );
 
   /**
@@ -924,13 +883,16 @@ export function useMailbox() {
         toast(`Could not cancel that scheduled message: ${result.message}`, { tone: 'error' });
         return;
       }
-      setOpenMessage((prev) => (prev && prev.id === id ? null : prev));
+      // Back in Drafts, under a new id.
+      removeFromLists(queryClient, [id]);
+      setOpenId((prev) => (prev === id ? null : prev));
+      forgetMessages(queryClient, [id]);
       toast('Send cancelled — the message is in your drafts');
       void loadScheduled();
-      void loadFolders();
-      void reloadList();
+      void refreshFolders();
+      void queryClient.invalidateQueries({ queryKey: qk.lists });
     },
-    [handleUnauthorized, toast, loadScheduled, loadFolders, reloadList],
+    [handleUnauthorized, toast, queryClient, loadScheduled, refreshFolders],
   );
 
   // --- AI --------------------------------------------------------------------------
@@ -944,13 +906,13 @@ export function useMailbox() {
     [handleUnauthorized],
   );
 
+  /** A conversation's summary: made once and kept, unless asked for afresh. */
   const summarize = useCallback(
-    async (id: string) => {
-      const result = await apiAiSummarize(id, handleUnauthorized);
-      if (!result.success) throw new Error(result.message);
-      return result.data.summary;
+    (id: string, fresh = false) => {
+      const options = summaryQuery(id, handleUnauthorized);
+      return queryClient.fetchQuery(fresh ? { ...options, staleTime: 0 } : options);
     },
-    [handleUnauthorized],
+    [queryClient, handleUnauthorized],
   );
 
   // --- Derived ---------------------------------------------------------------------
@@ -1009,12 +971,15 @@ export function useMailbox() {
     // list
     messages: visibleMessages,
     total,
-    offset,
+    offset: shownOffset,
     loadingList,
+    refreshing,
+    isPlaceholderPage,
     error,
     lastSyncAt,
     refreshAll,
     goToPage,
+    prefetchNextPage,
     selectedIds,
     setSelectedIds,
     search,
@@ -1033,6 +998,7 @@ export function useMailbox() {
     open,
     close,
     loadThreadMessage,
+    prefetchMessage,
     // actions
     toggleStar,
     archive,

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Archive, CornerUpLeft, Paperclip, Star, Trash2, X } from 'lucide-react';
 import { differenceInCalendarDays, format, isThisYear, isToday, isValid } from 'date-fns';
 import type { WebmailListItem } from '../types';
@@ -33,12 +34,16 @@ type MessageRowProps = {
   /** Work out an automatic tag from the sender and subject (off in Sent and Drafts). */
   autoTags: boolean;
   onOpen: () => void;
+  /** The pointer has settled on the row: a good moment to fetch its body. */
+  onHover?: () => void;
   onSelect: (selected: boolean) => void;
   onStar: () => void;
   onArchive?: () => void;
   onTrash: () => void;
   onCancelScheduled?: () => void;
 };
+
+const HOVER_INTENT_MS = 120;
 
 const ACTION =
   'inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
@@ -52,6 +57,7 @@ export default function MessageRow({
   showFolder,
   autoTags,
   onOpen,
+  onHover,
   onSelect,
   onStar,
   onArchive,
@@ -80,6 +86,14 @@ export default function MessageRow({
   // The person's labels, then one automatic tag read off the message itself.
   for (const tag of rowTags(email, { auto: autoTags && !email.isDraft })) tags.push(tag);
 
+  // Only a pointer that stays a moment counts; one sweeping past fetches nothing.
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelHover = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+  };
+  useEffect(() => cancelHover, []);
+
   const stop = (e: React.MouseEvent, fn?: () => void) => {
     e.stopPropagation();
     fn?.();
@@ -91,6 +105,15 @@ export default function MessageRow({
       tabIndex={0}
       aria-current={open ? 'true' : undefined}
       onClick={onOpen}
+      onMouseEnter={
+        onHover
+          ? () => {
+              cancelHover();
+              hoverTimer.current = setTimeout(onHover, HOVER_INTENT_MS);
+            }
+          : undefined
+      }
+      onMouseLeave={cancelHover}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();

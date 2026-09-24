@@ -700,7 +700,7 @@ function MessageReader({
           isOpen={showSummary}
           onClose={() => setShowSummary(false)}
           thread={thread.length > 0 ? thread : [message]}
-          onSummarize={() => summarize(message.id)}
+          onSummarize={(fresh) => summarize(message.id, fresh)}
         />
       )}
 
