@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
-import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import PageShell, { pageMenuButtonProps, usePageMenu } from '@/components/webmail/shell/PageShell';
 import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
@@ -78,7 +78,7 @@ export default function AddressBookPage() {
 }
 
 function AddressBookScreen({ supported }: { supported: boolean | null }) {
-  const openMenu = useOpenPageMenu();
+  const [menuOpen, openMenu] = usePageMenu();
   const queryClient = useQueryClient();
   const onUnauthorized = useUnauthorizedHandler();
 
@@ -189,7 +189,7 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-card">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-5">
-        <IconButton label="Menu" size="sm" onClick={openMenu} className="md:hidden">
+        <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
           <MenuIcon size={15} />
         </IconButton>
         <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>

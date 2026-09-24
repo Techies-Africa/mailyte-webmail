@@ -30,8 +30,7 @@ import Menu from '@/components/ui/Menu';
 import { FilterPill } from '@/components/ui/Pill';
 import MessageRow from './MessageRow';
 import WebmailEmptyState from '../WebmailEmptyState';
-
-export const LIST_WIDTH = 360;
+import { LIST_PANE_ID, SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 function formatRelativeSync(date: Date): string {
   const seconds = Math.round((Date.now() - date.getTime()) / 1000);
@@ -65,8 +64,8 @@ type MessageListPaneProps = {
   onBulkDeleteForever: () => void;
   /** Phone drawer trigger, shown in the header under md. */
   onOpenMenu: () => void;
-  /** Fills the screen on phones; a fixed column otherwise. */
-  fullWidth: boolean;
+  /** Whether the phone drawer is out, for the Menu button's aria-expanded. */
+  menuOpen: boolean;
   /** Bumped by the `/` shortcut: opens the search field and focuses it. */
   searchSignal?: number;
 };
@@ -83,7 +82,7 @@ export default function MessageListPane({
   onBulkLabel,
   onBulkDeleteForever,
   onOpenMenu,
-  fullWidth,
+  menuOpen,
   searchSignal = 0,
 }: MessageListPaneProps) {
   const {
@@ -192,15 +191,25 @@ export default function MessageListPane({
   ];
 
   return (
+    // pane-list: the full width on a phone, the remembered (draggable) width
+    // at md and up -- set in CSS (globals.css), so it is right on the first
+    // render rather than after an effect has measured the window.
     <section
+      id={LIST_PANE_ID}
       aria-label={`${title} messages`}
-      style={fullWidth ? undefined : { width: LIST_WIDTH }}
-      className={`flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card ${fullWidth ? 'w-full' : ''}`}
+      className="pane-list flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card"
     >
       {/* Header */}
       <div className="shrink-0 border-b border-border px-3.5 pb-2 pt-3">
         <div className="mb-2 flex items-center gap-1.5">
-          <IconButton label="Menu" size="sm" onClick={onOpenMenu} className="md:hidden">
+          <IconButton
+            label="Menu"
+            size="sm"
+            onClick={onOpenMenu}
+            aria-expanded={menuOpen}
+            aria-controls={SIDEBAR_ID}
+            className="md:hidden"
+          >
             <MenuIcon size={15} />
           </IconButton>
           <h2 className="min-w-0 flex-1 truncate font-display text-[15px] font-bold tracking-tight">

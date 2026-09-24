@@ -1,12 +1,13 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
 import { useCapabilities, useSettings } from '@/lib/webmail/query/accountQueries';
+import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 type PageShellProps = {
   /** Which rail row is lit. */
@@ -14,12 +15,18 @@ type PageShellProps = {
   children: React.ReactNode;
 };
 
-const PageMenuContext = createContext<() => void>(() => {});
+const PageMenuContext = createContext<[boolean, () => void]>([false, () => {}]);
 
-/** The phone menu trigger, for a page header inside PageShell. */
-export function useOpenPageMenu(): () => void {
+/**
+ * The phone menu, for a page header inside PageShell: whether the drawer is
+ * out (for the Menu button's aria-expanded) and the opener.
+ */
+export function usePageMenu(): [boolean, () => void] {
   return useContext(PageMenuContext);
 }
+
+/** Props for a page header's Menu button, so all of them announce the drawer the same way. */
+export const pageMenuButtonProps = (open: boolean) => ({ 'aria-expanded': open, 'aria-controls': SIDEBAR_ID });
 
 /**
  * The rail around the calendar and address-book screens.
@@ -44,11 +51,14 @@ export default function PageShell({ current, children }: PageShellProps) {
       }
     : null;
 
-  const rail = collapsed && !menuOpen;
   const openMenu = useCallback(() => setMenuOpen(true), []);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const menu = useMemo<[boolean, () => void]>(() => [menuOpen, openMenu], [menuOpen, openMenu]);
 
+  // h-dvh: 100vh on iOS is taller than what is visible, which hid the rail's
+  // account chip behind the browser's toolbar.
   return (
-    <div className="relative flex h-screen overflow-hidden bg-pane">
+    <div className="relative flex h-dvh overflow-hidden bg-pane">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -58,21 +68,21 @@ export default function PageShell({ current, children }: PageShellProps) {
         onOpenSettings={() => router.push('/settings')}
         onOpenSecurity={() => router.push('/settings/security')}
         mobileOpen={menuOpen}
-        onCloseMobile={() => setMenuOpen(false)}
+        onCloseMobile={closeMenu}
       >
-        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={rail} as="a" href="/" />
+        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} as="a" href="/" />
         <SidebarDivider />
         {(caps?.calendar ?? current === 'calendar') && (
-          <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={rail} as="a" href="/calendar" />
+          <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={collapsed} as="a" href="/calendar" />
         )}
         {(caps?.contacts ?? current === 'contacts') && (
-          <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={rail} as="a" href="/address-book" />
+          <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={collapsed} as="a" href="/address-book" />
         )}
         <SidebarDivider />
-        <SidebarItem icon={<Settings />} label="Settings" collapsed={rail} as="a" href="/settings" />
+        <SidebarItem icon={<Settings />} label="Settings" collapsed={collapsed} as="a" href="/settings" />
       </Sidebar>
 
-      <PageMenuContext.Provider value={openMenu}>{children}</PageMenuContext.Provider>
+      <PageMenuContext.Provider value={menu}>{children}</PageMenuContext.Provider>
     </div>
   );
 }

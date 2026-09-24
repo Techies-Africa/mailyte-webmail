@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
@@ -23,11 +23,16 @@ import IconButton from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
 import { signOut, switchAccount } from '@/lib/webmail/client';
 import { useAccounts } from '@/lib/webmail/query/accountQueries';
-
-export const SIDEBAR_OPEN_WIDTH = 228;
-export const SIDEBAR_COLLAPSED_WIDTH = 58;
+import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
+import { isTypingTarget } from '@/lib/webmail/useKeyboardShortcuts';
+import { useIsMobile } from '@/lib/webmail/useIsMobile';
+import PaneResizeHandle from './PaneResizeHandle';
 
 type SidebarProps = {
+  /**
+   * Icons only. Already false on phones (useSidebarCollapsed), where the rail
+   * is a drawer that always opens full width.
+   */
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onCompose: () => void;
@@ -41,7 +46,7 @@ type SidebarProps = {
   onShowShortcuts?: () => void;
   /** The navigation: folders on the mailbox screen, sections on settings. */
   children: React.ReactNode;
-  /** On phones the rail is a drawer. */
+  /** On phones the rail is a drawer, and this says whether it is out. */
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
   /**
@@ -62,6 +67,18 @@ type SidebarProps = {
  * profile chip. The chip's menu is also the account switcher: every mailbox
  * signed in on this browser is listed, one click moves between them, and
  * sign-out is per mailbox or for all of them.
+ *
+ * At md and up its right edge can be dragged (PaneResizeHandle); the width
+ * is a CSS variable, never a React value, so a server-rendered rail is drawn
+ * at the remembered width from the first paint.
+ *
+ * On a phone it is a drawer that slides in over a dimmed page and slides back
+ * out. It is always mounted, so both directions can animate; closed, it is
+ * `visibility: hidden` once the slide ends, which takes its links out of the
+ * Tab order and the accessibility tree. Opening moves focus to Close, closing
+ * hands it back, and Escape closes it unless something inside it -- the
+ * account menu, a folder's menu or dialog, a folder name being typed -- takes
+ * the key first.
  */
 export default function Sidebar({
   collapsed,
@@ -107,6 +124,53 @@ export default function Sidebar({
 
   const others = accounts.filter((a) => !a.active && a.email !== email.toLowerCase());
 
+  const isMobile = useIsMobile();
+  const asideRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  // Read through a ref: callers pass a fresh arrow each render, and the
+  // listeners below should not re-attach -- and so move behind the ones they
+  // must run after -- every time the page re-renders.
+  const onCloseMobileRef = useRef(onCloseMobile);
+  useEffect(() => {
+    onCloseMobileRef.current = onCloseMobile;
+  }, [onCloseMobile]);
+
+  // Escape closes the drawer. On window, so every menu and dialog (on
+  // document) has had the key first; one that closed itself marks it
+  // handled, and the drawer stays. A folder name being typed keeps its own
+  // Escape too.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || isTypingTarget(event.target)) return;
+      event.preventDefault();
+      onCloseMobileRef.current?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileOpen]);
+
+  // Opening moves focus into the drawer; closing hands it back to whatever
+  // opened it -- only if focus is still inside (Compose has already moved it
+  // to the new window).
+  useEffect(() => {
+    if (mobileOpen) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      closeRef.current?.focus();
+      return;
+    }
+    const back = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (back?.isConnected && asideRef.current?.contains(document.activeElement)) back.focus();
+  }, [mobileOpen]);
+
+  // Widening past md with the drawer out would leave a desktop rail that
+  // thinks it is a drawer.
+  useEffect(() => {
+    if (!isMobile && mobileOpen) onCloseMobileRef.current?.();
+  }, [isMobile, mobileOpen]);
+
   const switchTo = async (target: string) => {
     setBusy(true);
     const error = await switchAccount(target);
@@ -116,22 +180,39 @@ export default function Sidebar({
     }
   };
 
-  const width = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_OPEN_WIDTH;
-  const rail = collapsed && !mobileOpen;
+  const rail = collapsed;
 
   return (
     <>
-      {mobileOpen && (
-        <div aria-hidden onClick={onCloseMobile} className="fixed inset-0 z-30 bg-black/50 md:hidden" />
-      )}
+      {/* Always mounted, so it can fade out as well as in. */}
+      <div
+        aria-hidden
+        onClick={onCloseMobile}
+        className={[
+          'fixed inset-0 z-30 bg-black/50 transition-[opacity,visibility] duration-200 md:hidden',
+          mobileOpen ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0',
+        ].join(' ')}
+      />
 
       <aside
+        ref={asideRef}
+        id={SIDEBAR_ID}
         aria-label="Navigation"
-        style={{ width: mobileOpen ? SIDEBAR_OPEN_WIDTH : width }}
+        data-sidebar=""
+        data-collapsed={rail ? '' : undefined}
         className={[
-          'flex h-full shrink-0 flex-col bg-sidebar pb-3.5 text-sidebar-foreground transition-[width] duration-200',
-          'fixed inset-y-0 left-0 z-40 md:static md:z-auto',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+          // pane-rail: 228px on a phone, the remembered width at md and up (globals.css).
+          'pane-rail flex h-full shrink-0 flex-col bg-sidebar pb-3.5 text-sidebar-foreground duration-200 ease-out',
+          'fixed inset-y-0 left-0 z-40 md:relative md:z-auto',
+          // Opening does not transition visibility, so the drawer is visible
+          // at once and Close can take focus in the same task; closing does,
+          // so it stays visible until the slide has finished. transform-none,
+          // not translate-x-0: a transformed box is the containing block for
+          // its fixed children, which shut the account menu's click-away
+          // layer and the delete-folder dialog inside the rail.
+          mobileOpen
+            ? 'visible transform-none transition-[width,transform]'
+            : 'invisible -translate-x-full transition-[width,transform,visibility] md:visible md:transform-none',
         ].join(' ')}
       >
         <div className={`flex shrink-0 items-center px-3 pb-2.5 pt-3.5 ${rail ? 'justify-center' : 'justify-between'}`}>
@@ -150,21 +231,22 @@ export default function Sidebar({
               <BrandLockup height={24} tone="dark" />
             </Link>
           )}
-          {mobileOpen ? (
-            <IconButton label="Close menu" tone="onDark" size="md" onClick={onCloseMobile}>
-              <X size={15} />
-            </IconButton>
-          ) : (
-            <IconButton
-              label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              tone="onDark"
-              size="md"
-              onClick={onToggleCollapsed}
-              className="hidden md:inline-flex"
-            >
-              <MenuIcon size={15} />
-            </IconButton>
-          )}
+          {/* Both, split by breakpoint rather than by mobileOpen, so the X
+              does not vanish halfway through the slide out. */}
+          <IconButton ref={closeRef} label="Close menu" tone="onDark" size="md" onClick={onCloseMobile} className="md:hidden">
+            <X size={15} />
+          </IconButton>
+          <IconButton
+            label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            aria-controls={SIDEBAR_ID}
+            tone="onDark"
+            size="md"
+            onClick={onToggleCollapsed}
+            className="hidden md:inline-flex"
+          >
+            <MenuIcon size={15} />
+          </IconButton>
         </div>
 
         <div className="shrink-0 px-2.5 pb-3">
@@ -235,12 +317,14 @@ export default function Sidebar({
 
           {profileOpen && (
             <>
-              <div aria-hidden onClick={() => setProfileOpen(false)} className="fixed inset-0 z-40" />
+              {/* Above the docked compose windows (z-140 and up): with a wide
+                  rail the menu opens over them. */}
+              <div aria-hidden onClick={() => setProfileOpen(false)} className="fixed inset-0 z-[155]" />
               <div
                 role="menu"
                 aria-label="Account"
                 className={[
-                  'absolute bottom-[calc(100%+6px)] z-50 w-64 animate-fade-in overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel',
+                  'absolute bottom-[calc(100%+6px)] z-[160] w-64 animate-fade-in overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel',
                   rail ? 'left-0' : 'inset-x-0 w-auto',
                 ].join(' ')}
               >
@@ -339,6 +423,10 @@ export default function Sidebar({
             </>
           )}
         </div>
+
+        {!rail && (
+          <PaneResizeHandle pane="rail" controls={SIDEBAR_ID} label="Resize sidebar" className="left-full hidden md:block" />
+        )}
       </aside>
     </>
   );

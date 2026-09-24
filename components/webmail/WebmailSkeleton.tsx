@@ -1,21 +1,23 @@
-import { SIDEBAR_OPEN_WIDTH } from './shell/Sidebar';
-import { LIST_WIDTH } from './shell/MessageListPane';
-
 /**
  * What the mailbox looks like before it has anything to show.
  *
  * A skeleton of the real layout: the dark rail, the list column and the
  * reading pane are already in place, so nothing jumps when the mailbox
  * paints, and the shapes say what is coming. Deliberately not a spinner.
+ *
+ * The rail and list take their widths from the same CSS variables as the real
+ * panes (pane-rail, pane-list in globals.css), which the <head> script has set
+ * before this first paint -- a remembered width or a collapsed rail is drawn
+ * right from the start. On a phone the list is the full width.
  */
 export default function WebmailSkeleton() {
   return (
-    <div className="flex h-screen overflow-hidden bg-pane" role="status" aria-busy="true" aria-label="Loading your mailbox">
+    <div className="flex h-dvh overflow-hidden bg-pane" role="status" aria-busy="true" aria-label="Loading your mailbox">
       <span className="sr-only">Loading your mailbox…</span>
 
-      <div style={{ width: SIDEBAR_OPEN_WIDTH }} className="hidden h-full shrink-0 flex-col bg-sidebar px-2.5 pb-3.5 md:flex">
+      <div className="pane-rail hidden h-full shrink-0 flex-col overflow-hidden bg-sidebar px-2.5 pb-3.5 md:flex">
         <div className="flex items-center justify-between px-0.5 pb-2.5 pt-3.5">
-          <Block dark className="h-6 w-24 rounded" />
+          <Block dark className="rail-open-only h-6 w-24 rounded" />
           <Block dark className="h-[30px] w-[30px] rounded-md" />
         </div>
         <Block dark className="mb-3 h-10 w-full rounded-xl" />
@@ -23,7 +25,7 @@ export default function WebmailSkeleton() {
           {[72, 58, 46, 62, 50, 52, 60].map((w, i) => (
             <div key={i} className="flex items-center gap-2 px-2.5 py-[7px]">
               <Block dark className="h-[14px] w-[14px] rounded" />
-              <Block dark className="h-3 rounded" style={{ width: w }} />
+              <Block dark className="rail-open-only h-3 rounded" style={{ width: w }} />
             </div>
           ))}
         </div>
@@ -32,10 +34,14 @@ export default function WebmailSkeleton() {
         </div>
       </div>
 
-      <div style={{ width: LIST_WIDTH }} className="flex h-full w-full shrink-0 flex-col border-r border-border bg-card md:w-[360px]">
+      <div className="pane-list flex h-full shrink-0 flex-col border-r border-border bg-card">
         <div className="border-b border-border px-3.5 pb-2.5 pt-3">
           <div className="mb-2.5 flex items-center justify-between">
-            <Block className="h-4 w-16 rounded" />
+            <div className="flex items-center gap-2">
+              {/* The phone's Menu button. */}
+              <Block className="h-7 w-7 rounded-md md:hidden" />
+              <Block className="h-4 w-16 rounded" />
+            </div>
             <div className="flex gap-1">
               <Block className="h-7 w-7 rounded-md" />
               <Block className="h-7 w-7 rounded-md" />

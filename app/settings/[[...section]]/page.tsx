@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Menu as MenuIcon } from 'lucide-react';
@@ -12,6 +12,7 @@ import IconButton from '@/components/ui/IconButton';
 import { useSettings } from '@/lib/webmail/query/accountQueries';
 import { qk } from '@/lib/webmail/query/keys';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 /**
  * Settings, inside the same shell as the mailbox: the rail stays, with the
@@ -25,6 +26,7 @@ export default function WebmailSettingsPage() {
   const requested = params?.section?.[0];
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   // Shared with the inbox, and cached: moving between sections, or back
   // here from mail, does not load it again.
@@ -58,7 +60,8 @@ export default function WebmailSettingsPage() {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-pane">
+    // h-dvh: 100vh on iOS is taller than what is visible.
+    <div className="relative flex h-dvh overflow-hidden bg-pane">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -68,11 +71,11 @@ export default function WebmailSettingsPage() {
         onOpenSettings={() => goTo(SETTINGS_SECTIONS[0].id)}
         onOpenSecurity={() => goTo('security')}
         mobileOpen={menuOpen}
-        onCloseMobile={() => setMenuOpen(false)}
+        onCloseMobile={closeMenu}
       >
-        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed && !menuOpen} onClick={() => leave('/')} />
+        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} onClick={() => leave('/')} />
         <SidebarDivider />
-        <SidebarEyebrow collapsed={collapsed && !menuOpen}>Settings</SidebarEyebrow>
+        <SidebarEyebrow collapsed={collapsed}>Settings</SidebarEyebrow>
         {SETTINGS_SECTIONS.map((section) => {
           const Icon = section.icon;
           return (
@@ -81,7 +84,7 @@ export default function WebmailSettingsPage() {
               icon={<Icon />}
               label={section.label}
               active={section.id === active.id}
-              collapsed={collapsed && !menuOpen}
+              collapsed={collapsed}
               badge={dirty[section.id] ? '•' : undefined}
               badgeTone="muted"
               onClick={() => goTo(section.id)}
@@ -92,7 +95,14 @@ export default function WebmailSettingsPage() {
 
       <main className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto">
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-card px-4 py-3 sm:px-8">
-          <IconButton label="Menu" size="sm" onClick={() => setMenuOpen(true)} className="md:hidden">
+          <IconButton
+            label="Menu"
+            size="sm"
+            onClick={() => setMenuOpen(true)}
+            aria-expanded={menuOpen}
+            aria-controls={SIDEBAR_ID}
+            className="md:hidden"
+          >
             <MenuIcon size={15} />
           </IconButton>
           <div className="min-w-0">

@@ -7,6 +7,7 @@ import Sidebar from '@/components/webmail/shell/Sidebar';
 import FolderNav from '@/components/webmail/shell/FolderNav';
 import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
 import MessageListPane from '@/components/webmail/shell/MessageListPane';
+import PaneResizeHandle from '@/components/webmail/shell/PaneResizeHandle';
 import ReadingPane, { type QuickReplyMode } from '@/components/webmail/shell/ReadingPane';
 import CalendarPanel from '@/components/webmail/shell/CalendarPanel';
 import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
@@ -22,6 +23,8 @@ import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
 import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
+import { useIsMobile } from '@/lib/webmail/useIsMobile';
+import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
 
 /**
  * The mailbox screen: the rail, the message list, the reading pane, and the
@@ -34,8 +37,9 @@ export default function WebmailInboxPage() {
   const compose = useComposeWindows();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
 
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [panel, setPanel] = useState<'calendar' | 'contacts' | null>(null);
   const [quickReply, setQuickReply] = useState<QuickReplyMode>(null);
   const [showBulkMove, setShowBulkMove] = useState(false);
@@ -56,13 +60,6 @@ export default function WebmailInboxPage() {
     signatureSeed,
     sharedMailboxes,
   } = mailbox;
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   // A different message means a fresh reply box.
   useEffect(() => {
@@ -256,7 +253,9 @@ export default function WebmailInboxPage() {
   const showList = !isMobile || !openMessage;
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-pane">
+    // h-dvh: 100vh on iOS is taller than what is visible, which hid the
+    // list's pager and the rail's account chip behind the browser's toolbar.
+    <div className="relative flex h-dvh overflow-hidden bg-pane">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -276,12 +275,12 @@ export default function WebmailInboxPage() {
         }}
         onLeave={confirmLeave}
         mobileOpen={menuOpen}
-        onCloseMobile={() => setMenuOpen(false)}
+        onCloseMobile={closeMenu}
       >
         <FolderNav
           folders={folders}
           activeFolder={activeFolder}
-          collapsed={collapsed && !menuOpen}
+          collapsed={collapsed}
           onFolderChange={(folder) => {
             mailbox.setFolder(folder);
             setMenuOpen(false);
@@ -292,12 +291,25 @@ export default function WebmailInboxPage() {
           labels={mailbox.labels}
           calendar={
             mailbox.calendarAvailable
-              ? { active: panel === 'calendar', onToggle: () => setPanel((p) => (p === 'calendar' ? null : 'calendar')) }
+              ? {
+                  active: panel === 'calendar',
+                  // On a phone the panel opens over the page, so the drawer goes.
+                  onToggle: () => {
+                    setPanel((p) => (p === 'calendar' ? null : 'calendar'));
+                    setMenuOpen(false);
+                  },
+                }
               : undefined
           }
           contacts={
             mailbox.contactsAvailable
-              ? { active: panel === 'contacts', onToggle: () => setPanel((p) => (p === 'contacts' ? null : 'contacts')) }
+              ? {
+                  active: panel === 'contacts',
+                  onToggle: () => {
+                    setPanel((p) => (p === 'contacts' ? null : 'contacts'));
+                    setMenuOpen(false);
+                  },
+                }
               : undefined
           }
         />
@@ -307,7 +319,7 @@ export default function WebmailInboxPage() {
         {showList && (
           <MessageListPane
             mailbox={mailbox}
-            fullWidth={isMobile}
+            menuOpen={menuOpen}
             onOpen={(item) => void handleOpen(item)}
             onTrashRow={trashRow}
             onBulkMove={() => setShowBulkMove(true)}
@@ -321,6 +333,13 @@ export default function WebmailInboxPage() {
             onOpenMenu={() => setMenuOpen(true)}
             searchSignal={searchSignal}
           />
+        )}
+
+        {!isMobile && (
+          // No width of its own; the handle hangs off it over the list's border.
+          <div className="relative hidden w-0 shrink-0 md:block">
+            <PaneResizeHandle pane="list" controls={LIST_PANE_ID} label="Resize message list" className="left-0" />
+          </div>
         )}
 
         <ReadingPane

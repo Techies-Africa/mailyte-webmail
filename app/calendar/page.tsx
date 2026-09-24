@@ -17,7 +17,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus 
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
 import InvitationsPanel from '@/components/calendar/InvitationsPanel';
-import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import PageShell, { pageMenuButtonProps, usePageMenu } from '@/components/webmail/shell/PageShell';
 import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
@@ -97,7 +97,7 @@ export default function CalendarPage() {
 
 function CalendarScreen({ supported }: { supported: boolean | null }) {
   const router = useRouter();
-  const openMenu = useOpenPageMenu();
+  const [menuOpen, openMenu] = usePageMenu();
   const queryClient = useQueryClient();
   const onUnauthorized = useUnauthorizedHandler();
 
@@ -267,7 +267,7 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-card">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-5">
-        <IconButton label="Menu" size="sm" onClick={openMenu} className="md:hidden">
+        <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
           <MenuIcon size={15} />
         </IconButton>
         <Button size="xs" onClick={() => setAnchor(new Date())}>
