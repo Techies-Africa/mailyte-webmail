@@ -16,11 +16,13 @@ import {
   Pencil,
   Send,
   Star,
+  Tag,
   Trash2,
   Users,
 } from 'lucide-react';
 import type { WebmailFolder } from '../types';
-import { STARRED_VIEW } from '@/lib/webmail/useMailbox';
+import { LABEL_VIEW_PREFIX, STARRED_VIEW } from '@/lib/webmail/useMailbox';
+import { labelTitle } from '@/lib/webmail/tags';
 import SidebarItem, { SidebarDivider, SidebarEyebrow } from './SidebarItem';
 import Menu from '@/components/ui/Menu';
 import ConfirmModal from '../modals/ConfirmModal';
@@ -36,6 +38,8 @@ type FolderNavProps = {
   /** Absent = this server has no calendar; the row is not rendered. */
   calendar?: { active: boolean; onToggle: () => void };
   contacts?: { active: boolean; onToggle: () => void };
+  /** Every label in use, as slugs. Empty on a server without labels. */
+  labels?: string[];
 };
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
@@ -128,6 +132,7 @@ export default function FolderNav({
   onDeleteFolder,
   calendar,
   contacts,
+  labels = [],
 }: FolderNavProps) {
   const [openShared, setOpenShared] = useState<Record<string, boolean>>(() => {
     try {
@@ -386,6 +391,23 @@ export default function FolderNav({
           </div>
         );
       })}
+
+      {labels.length > 0 && (
+        <>
+          <SidebarDivider />
+          <SidebarEyebrow collapsed={collapsed}>Labels</SidebarEyebrow>
+          {labels.map((label) => (
+            <SidebarItem
+              key={label}
+              icon={<Tag />}
+              label={labelTitle(label)}
+              active={activeFolder === `${LABEL_VIEW_PREFIX}${label}`}
+              collapsed={collapsed}
+              onClick={() => onFolderChange(`${LABEL_VIEW_PREFIX}${label}`)}
+            />
+          ))}
+        </>
+      )}
 
       {(customFolders.length > 0 || onCreateFolder) && (
         <>

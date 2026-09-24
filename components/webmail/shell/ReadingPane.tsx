@@ -24,6 +24,7 @@ import {
   AlertOctagon,
   Sparkles,
   Star,
+  Tag as TagIcon,
   Trash2,
 } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailAttachment, WebmailListItem, WebmailMessage } from '../types';
@@ -41,7 +42,10 @@ import MoveEmailModal from '../modals/MoveEmailModal';
 import AiWriterModal from '../modals/AiWriterModal';
 import ThreadSummaryModal from '../modals/ThreadSummaryModal';
 import ConfirmModal from '../modals/ConfirmModal';
+import LabelPickerDialog from '../modals/LabelPickerDialog';
 import QuickReply from './QuickReply';
+import { Tag } from '@/components/ui/Pill';
+import { labelTag } from '@/lib/webmail/tags';
 
 export type QuickReplyMode = 'reply' | 'replyAll' | null;
 
@@ -230,9 +234,12 @@ function MessageReader({
     displayEmail,
     signatureSeed,
     open: openItem,
+    labels,
+    applyLabels,
   } = mailbox;
 
   const [showMove, setShowMove] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
   const [showAiWriter, setShowAiWriter] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -311,6 +318,7 @@ function MessageReader({
   };
 
   const moreItems = [
+    { key: 'labels', label: 'Label…', icon: <TagIcon size={14} />, onSelect: () => setShowLabels(true) },
     { key: 'move', label: 'Move to folder…', icon: <FolderInput size={14} />, onSelect: () => setShowMove(true) },
     {
       key: 'unread',
@@ -465,6 +473,25 @@ function MessageReader({
             {formatShortDateTime(message.timestamp)}
           </div>
         </div>
+        {message.labels.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {message.labels.map((slug) => {
+              const tag = labelTag(slug);
+              return (
+                <Tag key={slug} tone={tag.tone}>
+                  {tag.label}
+                </Tag>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setShowLabels(true)}
+              className="text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+            >
+              Edit
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -648,6 +675,15 @@ function MessageReader({
         label={message.subject}
         currentFolder={message.folder}
         folders={folders}
+      />
+
+      <LabelPickerDialog
+        isOpen={showLabels}
+        onClose={() => setShowLabels(false)}
+        known={labels}
+        current={[message.labels]}
+        what={message.subject}
+        onApply={(add, remove) => void applyLabels([message.id], add, remove)}
       />
 
       {aiAvailable && (

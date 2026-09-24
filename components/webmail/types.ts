@@ -33,6 +33,8 @@ export interface WebmailListItem {
   isStarred: boolean;
   isAnswered: boolean;
   isDraft: boolean;
+  /** Labels the message carries, as the server's lowercase slugs. */
+  labels: string[];
   hasAttachment: boolean;
   /**
    * The date to DISPLAY. Never null -- a message whose header carried no date

@@ -37,6 +37,8 @@ export interface ApiMessageSummary {
   is_starred: boolean;
   is_answered?: boolean;
   is_draft?: boolean;
+  /** Labels (IMAP keywords) on the message, as lowercase slugs. */
+  keywords?: string[];
   preview?: string | null;
   thread_id?: string | null;
   message_id?: string | null;
@@ -136,6 +138,7 @@ export function toListItem(m: ApiMessageSummary): WebmailListItem {
     isStarred: m.is_starred,
     isAnswered: m.is_answered ?? false,
     isDraft: m.is_draft ?? false,
+    labels: Array.isArray(m.keywords) ? m.keywords : [],
     hasAttachment: m.has_attachment,
     timestamp: m.received_at ? new Date(m.received_at) : new Date(),
     // The real header date, kept separate from `timestamp` because the two

@@ -103,6 +103,8 @@ export interface ListOptions {
   /** Server-side filters: IMAP SEARCH UNSEEN / FLAGGED. */
   unread?: boolean;
   starred?: boolean;
+  /** A label (IMAP keyword). With no folder, searched across every folder. */
+  label?: string;
 }
 
 /**
@@ -121,6 +123,7 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.limit) qs.set("limit", String(options.limit));
   if (options.unread) qs.set("unread", "true");
   if (options.starred) qs.set("starred", "true");
+  if (options.label) qs.set("label", options.label);
 
   const query = qs.toString();
   return call<MessagePage>(
@@ -366,6 +369,24 @@ export const moveMessage = (
   folder: string,
   onUnauthorized: () => void,
 ) => messageAction(id, "move", { folder }, onUnauthorized);
+
+/**
+ * Add and remove labels on one message. Labels are IMAP keywords: the server
+ * stores them beside \Seen and \Flagged, every client sees them, and a
+ * filter rule can set them at delivery. Names are normalised to lowercase
+ * slugs on the server ("Action needed" -> "action_needed").
+ */
+export const setLabels = (
+  id: string,
+  add: string[],
+  remove: string[],
+  onUnauthorized: () => void,
+) => messageAction(id, "labels", { add, remove }, onUnauthorized);
+
+/** Every label in use in the mailbox, as slugs. */
+export function listLabels(onUnauthorized: () => void) {
+  return call<{ labels: string[] }>("/api/webmail/labels", undefined, onUnauthorized);
+}
 
 /**
  * Move to Trash -- recoverable, and what the delete button does everywhere

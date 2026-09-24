@@ -51,6 +51,8 @@ import {
   renameFolder as apiRenameFolder,
   deleteFolder as apiDeleteFolder,
   blockSender as apiBlockSender,
+  setLabels as apiSetLabels,
+  listLabels,
 } from '@/lib/webmail/client';
 import type { ApiCapabilities, ScheduledMessage, SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
@@ -82,6 +84,17 @@ const DEFAULT_UNDO_SECONDS = 5;
 
 /** Starred is a keyword view over the inbox, not an IMAP folder. */
 export const STARRED_VIEW = '__starred__';
+
+/**
+ * A label view: every message carrying one label, across all folders. Not a
+ * folder either -- it is `__label__:<slug>` in the folder slot, resolved to
+ * a server-side KEYWORD search.
+ */
+export const LABEL_VIEW_PREFIX = '__label__:';
+
+export function labelOfView(folder: string): string | null {
+  return folder.startsWith(LABEL_VIEW_PREFIX) ? folder.slice(LABEL_VIEW_PREFIX.length) : null;
+}
 
 export type ListFilter = 'all' | 'unread' | 'starred' | 'attachments';
 export type SearchScope = 'folder' | 'all';
@@ -167,6 +180,7 @@ export function useMailbox() {
   const [capabilities, setCapabilities] = useState<ApiCapabilities['capabilities'] | null>(null);
   const [sharedMailboxes, setSharedMailboxes] = useState<SharedMailbox[]>([]);
   const [scheduled, setScheduled] = useState<ScheduledMessage[]>([]);
+  const [labels, setLabels] = useState<string[]>([]);
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
@@ -216,7 +230,8 @@ export function useMailbox() {
       // server. The "attachments" pill has no server counterpart and is
       // applied to the page below.
       const isStarredView = folder === STARRED_VIEW;
-      const allMail = query !== '' && scope === 'all';
+      const labelView = labelOfView(folder);
+      const allMail = (query !== '' && scope === 'all') || labelView !== null;
 
       const result = await listMessages(
         {
@@ -226,6 +241,7 @@ export function useMailbox() {
           limit: PAGE_SIZE,
           unread: listFilter === 'unread' || undefined,
           starred: isStarredView || listFilter === 'starred' || undefined,
+          label: labelView ?? undefined,
         },
         handleUnauthorized,
       );
@@ -275,10 +291,17 @@ export function useMailbox() {
     setScheduled(result.success ? (result.data?.messages ?? []) : []);
   }, [handleUnauthorized]);
 
+  /** Every label in use, for the rail and the picker. Quiet on failure: an older server has no labels. */
+  const loadLabels = useCallback(async () => {
+    const result = await listLabels(handleUnauthorized);
+    if (result.success && Array.isArray(result.data?.labels)) setLabels(result.data.labels);
+  }, [handleUnauthorized]);
+
   useEffect(() => {
     void loadMessages(activeFolder, { search: activeSearch, scope: searchScope, filter });
     void loadFolders();
     void loadScheduled();
+    void loadLabels();
     // A placeholder only, so the profile chip is not blank on first paint.
     // The authoritative address arrives from /capabilities below.
     const raw = sessionStorage.getItem('mailyte_mailbox_display');
@@ -683,7 +706,7 @@ export function useMailbox() {
    * requests from one click -- the toast says how many it did.
    */
   const markAllRead = useCallback(async () => {
-    if (activeFolder === STARRED_VIEW || markingAllRead) return;
+    if (activeFolder === STARRED_VIEW || labelOfView(activeFolder) !== null || markingAllRead) return;
     setMarkingAllRead(true);
     try {
       const ids: string[] = [];
@@ -735,6 +758,46 @@ export function useMailbox() {
       return true;
     },
     [handleUnauthorized, toast],
+  );
+
+  /**
+   * Add and remove labels on some messages. Applied locally at once so the
+   * rows update under the pointer, then the label list is re-read in case a
+   * new name was introduced.
+   */
+  const applyLabels = useCallback(
+    async (ids: string[], add: string[], remove: string[]) => {
+      if (ids.length === 0 || (add.length === 0 && remove.length === 0)) return;
+      const results = await Promise.all(ids.map((id) => apiSetLabels(id, add, remove, handleUnauthorized)));
+      const failed = results.find((r) => !r.success);
+      if (failed) toast(failed.message ?? 'Some labels could not be changed', { tone: 'error' });
+      const done = new Set(ids.filter((_, i) => results[i].success));
+      if (done.size === 0) return;
+      const slug = (raw: string) =>
+        raw.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '').replace(/_{2,}/g, '_').replace(/^[_-]+|[_-]+$/g, '');
+      const adds = add.map(slug).filter(Boolean);
+      const removes = new Set(remove.map(slug));
+      const relabel = <T extends { id: string; labels: string[] }>(m: T): T =>
+        done.has(m.id)
+          ? { ...m, labels: [...new Set([...m.labels.filter((l) => !removes.has(l)), ...adds])].sort() }
+          : m;
+      setMessages((prev) => prev.map(relabel));
+      setOpenMessage((prev) => (prev ? relabel(prev) : prev));
+      setSelectedIds([]);
+      // A message that just lost the label this view shows should leave the view.
+      const viewLabel = labelOfView(activeFolder);
+      if (viewLabel && removes.has(viewLabel)) {
+        setMessages((prev) => prev.filter((m) => !done.has(m.id)));
+        setOpenMessage((prev) => (prev && done.has(prev.id) ? null : prev));
+      }
+      toast(
+        adds.length > 0
+          ? `Labelled ${done.size === 1 ? 'message' : `${done.size} messages`}`
+          : `Removed ${remove.length === 1 ? 'label' : 'labels'}`,
+      );
+      void loadLabels();
+    },
+    [handleUnauthorized, toast, activeFolder, loadLabels],
   );
 
   // --- Folders -------------------------------------------------------------------
@@ -1045,6 +1108,8 @@ export function useMailbox() {
     markAllRead,
     markingAllRead,
     blockSender,
+    labels,
+    applyLabels,
     cancelScheduledSend,
     // compose plumbing
     saveDraft,

@@ -4,7 +4,7 @@ import { apiBaseUrl, mailboxToken } from '@/lib/webmail/server';
 // Proxies mark-read/mark-unread/star/unstar/move/trash -- one route instead
 // of six near-identical files, since they're all "POST, forward the body,
 // forward the status" with no per-action logic on this side.
-const ALLOWED_ACTIONS = new Set(['mark-read', 'mark-unread', 'star', 'unstar', 'move', 'trash']);
+const ALLOWED_ACTIONS = new Set(['mark-read', 'mark-unread', 'star', 'unstar', 'move', 'trash', 'labels']);
 
 export async function POST(
   request: NextRequest,

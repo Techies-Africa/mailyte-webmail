@@ -16,12 +16,14 @@ import {
   Search,
   ShieldCheck,
   AlertOctagon,
+  Tag,
   Trash2,
   X,
 } from 'lucide-react';
 import type { WebmailListItem } from '../types';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
-import { STARRED_VIEW, PAGE_SIZE } from '@/lib/webmail/useMailbox';
+import { STARRED_VIEW, PAGE_SIZE, labelOfView } from '@/lib/webmail/useMailbox';
+import { labelTitle } from '@/lib/webmail/tags';
 import IconButton from '@/components/ui/IconButton';
 import Button from '@/components/ui/Button';
 import Menu from '@/components/ui/Menu';
@@ -42,6 +44,8 @@ function formatRelativeSync(date: Date): string {
 
 export function folderLabel(name: string): string {
   if (name === STARRED_VIEW) return 'Starred';
+  const label = labelOfView(name);
+  if (label) return labelTitle(label);
   if (name === 'INBOX') return 'Inbox';
   if (name.startsWith('Shared/')) {
     const rest = name.slice('Shared/'.length);
@@ -57,6 +61,7 @@ type MessageListPaneProps = {
   onOpen: (item: WebmailListItem) => void;
   onTrashRow: (item: WebmailListItem) => void;
   onBulkMove: () => void;
+  onBulkLabel: () => void;
   onBulkDeleteForever: () => void;
   /** Phone drawer trigger, shown in the header under md. */
   onOpenMenu: () => void;
@@ -75,6 +80,7 @@ export default function MessageListPane({
   onOpen,
   onTrashRow,
   onBulkMove,
+  onBulkLabel,
   onBulkDeleteForever,
   onOpenMenu,
   fullWidth,
@@ -141,6 +147,9 @@ export default function MessageListPane({
 
   const title = folderLabel(activeFolder);
   const isStarredView = activeFolder === STARRED_VIEW;
+  const isLabelView = labelOfView(activeFolder) !== null;
+  // Automatic tags describe incoming mail; a sent message or a draft is yours.
+  const autoTags = activeFolderMeta?.role !== 'sent' && activeFolderMeta?.role !== 'drafts';
   const allSelected = messages.length > 0 && selectedIds.length === messages.length;
   const rangeStart = messages.length === 0 ? 0 : offset + 1;
   const rangeEnd = offset + messages.length;
@@ -161,6 +170,7 @@ export default function MessageListPane({
   const bulkMenuItems = [
     { key: 'read', label: 'Mark as read', icon: <MailOpen size={14} />, onSelect: () => void setRead(selectedIds, true) },
     { key: 'unread', label: 'Mark as unread', icon: <Mail size={14} />, onSelect: () => void setRead(selectedIds, false) },
+    { key: 'label', label: 'Label…', icon: <Tag size={14} />, onSelect: onBulkLabel },
     { key: 'move', label: 'Move to folder…', icon: <FolderInput size={14} />, onSelect: onBulkMove },
     ...(inJunk
       ? [{ key: 'notspam', label: 'Not spam — move to Inbox', icon: <ShieldCheck size={14} />, onSelect: () => void markNotSpam(selectedIds) }]
@@ -187,6 +197,9 @@ export default function MessageListPane({
             {isStarredView && (
               <span className="ml-1.5 font-sans text-[11px] font-medium text-muted-foreground">in Inbox</span>
             )}
+            {isLabelView && (
+              <span className="ml-1.5 font-sans text-[11px] font-medium text-muted-foreground">label · all folders</span>
+            )}
           </h2>
           <IconButton
             label="Search"
@@ -197,7 +210,7 @@ export default function MessageListPane({
           >
             <Search size={13} strokeWidth={2.2} />
           </IconButton>
-          {!isStarredView && (
+          {!isStarredView && !isLabelView && (
             <IconButton
               label="Mark all as read"
               size="sm"
@@ -386,6 +399,7 @@ export default function MessageListPane({
             role={activeFolderMeta?.role ?? null}
             searchQuery={activeSearch || undefined}
             filter={filter}
+            labelView={labelOfView(activeFolder) ? title : undefined}
           />
         ) : (
           messages.map((email) => (
@@ -396,7 +410,8 @@ export default function MessageListPane({
               open={openMessage?.id === email.id}
               density={density}
               scheduled={sendTimes[email.id]}
-              showFolder={showFolderTags}
+              showFolder={showFolderTags || isLabelView}
+              autoTags={autoTags}
               onOpen={() => onOpen(email)}
               onSelect={(selected) =>
                 setSelectedIds((prev) =>

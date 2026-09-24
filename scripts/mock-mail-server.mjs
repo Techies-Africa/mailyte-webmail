@@ -74,6 +74,7 @@ for (const folder of folders) {
       is_starred: i % 5 === 1,
       is_answered: i % 6 === 2,
       is_draft: folder === 'Drafts',
+      keywords: i % 4 === 1 ? ['receipt'] : i % 7 === 3 ? ['action_needed', 'q4_launch'] : [],
       preview: bodies[(i + folder.length) % bodies.length].replace(/<[^>]+>/g, ' ').trim().slice(0, 120),
       thread_id: null,
       message_id: `<${uid}.${i}@mock>`,
@@ -176,11 +177,18 @@ const server = http.createServer(async (req, res) => {
     if (q) rows = rows.filter((m) => (m.subject + m.preview + m.from[0].email).toLowerCase().includes(q));
     if (unread) rows = rows.filter((m) => !m.is_read);
     if (starred) rows = rows.filter((m) => m.is_starred);
+    const label = url.searchParams.get('label');
+    if (label) rows = [...messages.values()].filter((m) => m.keywords.includes(label) && (!folder || m.folder === folder));
     rows.sort((a, b) => b.received_at.localeCompare(a.received_at));
     const page = rows.slice(offset, offset + limit).map(summary);
     return ok(res, 'ok', { messages: page, total: rows.length, offset, limit, has_more: offset + limit < rows.length, folder: folder || 'INBOX' });
   }
   if (path === '/mailbox/messages/scheduled') return ok(res, 'ok', { messages: [] });
+  if (path === '/mailbox/labels') {
+    const all = new Set(['receipt', 'action_needed', 'q4_launch', 'follow_up']);
+    for (const m of messages.values()) for (const k of m.keywords) all.add(k);
+    return ok(res, 'ok', { labels: [...all].sort() });
+  }
   if (path === '/mailbox/messages/send' && req.method === 'POST') return ok(res, 'Sent', { sent: true, filed_to_sent: true });
   if (path === '/mailbox/messages/draft' && req.method === 'POST') return ok(res, 'Saved', { id: 'Drafts:9999' });
   if (path.startsWith('/mailbox/messages/draft/') && req.method === 'DELETE') return ok(res, 'Discarded', null);
@@ -204,6 +212,11 @@ const server = http.createServer(async (req, res) => {
     if (action === 'mark-unread') m.is_read = false;
     if (action === 'star') m.is_starred = true;
     if (action === 'unstar') m.is_starred = false;
+    if (action === 'labels') {
+      const slug = (x) => x.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
+      for (const a of json.add || []) if (!m.keywords.includes(slug(a))) m.keywords.push(slug(a));
+      for (const r of json.remove || []) m.keywords = m.keywords.filter((k) => k !== slug(r));
+    }
     if (action === 'move') { m.folder = json.folder; m.id = `${json.folder}:${uid++}`; messages.delete(id); messages.set(m.id, m); }
     if (action === 'trash') { m.folder = 'Trash'; m.id = `Trash:${uid++}`; messages.delete(id); messages.set(m.id, m); }
     if (action === 'raw') { res.writeHead(200, { 'Content-Type': 'message/rfc822', 'Content-Disposition': 'attachment; filename="message.eml"' }); return res.end('Subject: mock\r\n\r\nhello'); }

@@ -16,6 +16,7 @@ import WebmailShortcutHelp from '@/components/webmail/WebmailShortcutHelp';
 import WebmailUndoToast from '@/components/webmail/WebmailUndoToast';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import MoveEmailModal from '@/components/webmail/modals/MoveEmailModal';
+import LabelPickerDialog from '@/components/webmail/modals/LabelPickerDialog';
 import type { ComposeMode, WebmailListItem } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
@@ -38,6 +39,7 @@ export default function WebmailInboxPage() {
   const [panel, setPanel] = useState<'calendar' | 'contacts' | null>(null);
   const [quickReply, setQuickReply] = useState<QuickReplyMode>(null);
   const [showBulkMove, setShowBulkMove] = useState(false);
+  const [showBulkLabel, setShowBulkLabel] = useState(false);
   const [pendingDeleteForever, setPendingDeleteForever] = useState<{ ids: string[]; label: string } | null>(null);
 
   const {
@@ -261,6 +263,7 @@ export default function WebmailInboxPage() {
           onCreateFolder={mailbox.createFolder}
           onRenameFolder={mailbox.renameFolder}
           onDeleteFolder={mailbox.deleteFolder}
+          labels={mailbox.labels}
           calendar={
             mailbox.calendarAvailable
               ? { active: panel === 'calendar', onToggle: () => setPanel((p) => (p === 'calendar' ? null : 'calendar')) }
@@ -282,6 +285,7 @@ export default function WebmailInboxPage() {
             onOpen={(item) => void handleOpen(item)}
             onTrashRow={trashRow}
             onBulkMove={() => setShowBulkMove(true)}
+            onBulkLabel={() => setShowBulkLabel(true)}
             onBulkDeleteForever={() =>
               setPendingDeleteForever({
                 ids: selectedIds,
@@ -365,6 +369,15 @@ export default function WebmailInboxPage() {
         label={`${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`}
         currentFolder={activeFolder}
         folders={folders}
+      />
+
+      <LabelPickerDialog
+        isOpen={showBulkLabel}
+        onClose={() => setShowBulkLabel(false)}
+        known={mailbox.labels}
+        current={messages.filter((m) => selectedIds.includes(m.id)).map((m) => m.labels)}
+        what={`${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`}
+        onApply={(add, remove) => void mailbox.applyLabels(selectedIds, add, remove)}
       />
 
       {helpOpen && <WebmailShortcutHelp onClose={() => setHelpOpen(false)} />}
