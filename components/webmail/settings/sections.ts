@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
+import RulesSettings from './RulesSettings';
 import ForwardingSettings from './ForwardingSettings';
 import VacationSettings from './VacationSettings';
 import BlockedSendersSettings from './BlockedSendersSettings';
@@ -20,11 +21,10 @@ import type { SettingsSectionProps } from './types';
  * Ordered the way a mailbox holder looks for things: the everyday ones
  * first, the ones you set up once at the end.
  *
- * Deliberately ABSENT until each has a working backend, per the PRD's rule
- * that a control which does nothing is removed rather than greyed:
- *   - Filter rules: the compiler and endpoints exist, but the rule-builder
- *     UI is not built yet.
- *   - Labels: managed from the sidebar, where folders already live.
+ * Deliberately ABSENT, per the PRD's rule that a control which does nothing
+ * is removed rather than greyed:
+ *   - Labels: managed from the message itself and the sidebar, where folders
+ *     already live. A rule can set one (see Rules).
  *
  * Calendar is listed unconditionally even though the calendar service is
  * optional: the section explains how to reach the calendar from other apps,
@@ -54,6 +54,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'How writing and sending behave, including undo send.',
     icon: PenSquare,
     component: ComposingSettings,
+  },
+  {
+    id: 'rules',
+    label: 'Rules',
+    description: 'Sort mail as it arrives: move it, label it, star it, or send a copy on.',
+    icon: ListFilter,
+    component: RulesSettings,
   },
   {
     id: 'forwarding',
