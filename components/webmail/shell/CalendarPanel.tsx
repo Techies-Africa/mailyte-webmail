@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   addDays,
   addMonths,
@@ -20,7 +20,8 @@ import {
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import FloatingPanel from '@/components/ui/Popover';
 import IconButton from '@/components/ui/IconButton';
-import { listCalendars, listEvents, type CalendarEvent } from '@/lib/webmail/calendar';
+import type { CalendarEvent } from '@/lib/webmail/calendar';
+import { pickDefaultCalendar, useCalendars, useEvents } from '@/lib/webmail/query/calendarQueries';
 
 type CalendarPanelProps = {
   open: boolean;
@@ -29,6 +30,7 @@ type CalendarPanelProps = {
 };
 
 const WEEK_OPTS = { weekStartsOn: 0 as const };
+const NO_EVENTS: CalendarEvent[] = [];
 const UPCOMING_DAYS = 7;
 
 /**
@@ -38,59 +40,30 @@ const UPCOMING_DAYS = 7;
  * same endpoint the calendar screen uses. The month grid marks days that
  * have something on them, and clicking a day opens the full calendar there.
  */
-export default function CalendarPanel({ open, onClose, onUnauthorized }: CalendarPanelProps) {
+export default function CalendarPanel({ open, onClose }: CalendarPanelProps) {
   const [anchor, setAnchor] = useState(() => new Date());
-  const [calendar, setCalendar] = useState<string | null>(null);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
 
   // Which calendar to read: the default one, or the first the server lists.
-  useEffect(() => {
-    if (!open || calendar) return;
-    let cancelled = false;
-    void listCalendars(onUnauthorized).then((res) => {
-      if (cancelled) return;
-      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-        setCalendar((res.data.find((c) => c.is_default) ?? res.data[0]).uri);
-      } else {
-        setCalendar('default');
-        if (!res.success) setFailed(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, calendar, onUnauthorized]);
+  // Shared with the calendar screen, so opening either after the other is instant.
+  const calendarsResult = useCalendars(open);
+  const calendar = calendarsResult.data
+    ? pickDefaultCalendar(calendarsResult.data)
+    : calendarsResult.isError
+      ? 'default'
+      : null;
 
   // The visible month plus the upcoming window, in one request.
-  useEffect(() => {
-    if (!open || !calendar) return;
-    let cancelled = false;
-    setLoading(true);
+  const range = useMemo(() => {
     const start = startOfWeek(startOfMonth(anchor), WEEK_OPTS);
     const end = addDays(endOfWeek(endOfMonth(anchor), WEEK_OPTS), 1);
-    const upcomingEnd = addDays(startOfDay(new Date()), UPCOMING_DAYS + 1);
-    void listEvents(
-      calendar,
-      start < new Date() ? start : startOfDay(new Date()),
-      end > upcomingEnd ? end : upcomingEnd,
-      onUnauthorized,
-    ).then((res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (res.success && Array.isArray(res.data)) {
-        setEvents(res.data);
-        setFailed(false);
-      } else {
-        setEvents([]);
-        setFailed(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, calendar, anchor, onUnauthorized]);
+    const today = startOfDay(new Date());
+    const upcomingEnd = addDays(today, UPCOMING_DAYS + 1);
+    return { start: start < today ? start : today, end: end > upcomingEnd ? end : upcomingEnd };
+  }, [anchor]);
+  const eventsResult = useEvents(calendar, range.start, range.end, open);
+  const events = eventsResult.data ?? NO_EVENTS;
+  const loading = eventsResult.isFetching;
+  const failed = eventsResult.isError || (calendarsResult.isError && !eventsResult.data);
 
   const days = useMemo(() => {
     const first = startOfWeek(startOfMonth(anchor), WEEK_OPTS);

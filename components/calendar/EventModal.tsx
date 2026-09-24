@@ -9,12 +9,14 @@ import {
   checkAvailability,
   clashes,
   deliveryState,
-  listRooms,
   type Availability,
   type CalendarEvent,
   type EventDraft,
   type Room,
 } from '@/lib/webmail/calendar';
+import { useRooms } from '@/lib/webmail/query/calendarQueries';
+
+const NO_ROOMS: Room[] = [];
 
 type Props = {
   event: CalendarEvent | null;
@@ -136,7 +138,6 @@ export default function EventModal({
   );
   const [guestInput, setGuestInput] = useState('');
   const [availability, setAvailability] = useState<Availability[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -157,12 +158,8 @@ export default function EventModal({
   // resolves to an empty list and the room controls never render. Failure
   // is treated the same way -- a meeting you can still create without a
   // room beats a modal that refuses to open because a side lookup failed.
-  useEffect(() => {
-    (async () => {
-      const res = await listRooms(onUnauthorized);
-      if (res.success) setRooms(res.data);
-    })();
-  }, [onUnauthorized]);
+  // Cached for the session: every dialog after the first opens with them.
+  const rooms = useRooms().data ?? NO_ROOMS;
 
   // Availability, refreshed when the guest list or the slot changes. Debounced
   // because this is an organization-directory lookup, not a local calculation:

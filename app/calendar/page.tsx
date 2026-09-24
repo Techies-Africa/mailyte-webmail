@@ -9,8 +9,9 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { addDays, addMonths, endOfMonth, endOfWeek, format, isSameDay, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
@@ -25,9 +26,6 @@ import { Select } from '@/components/ui/Field';
 import {
   createEvent,
   deleteEvent,
-  listCalendars,
-  listEvents,
-  listInvitations,
   rsvp as sendRsvp,
   updateEvent,
   type CalendarEvent,
@@ -36,6 +34,15 @@ import {
   type Invitation,
   type RsvpResponse,
 } from '@/lib/webmail/calendar';
+import {
+  calendarKeys,
+  pickDefaultCalendar,
+  prefetchEvents,
+  useCalendars,
+  useEvents,
+  useInvitations,
+} from '@/lib/webmail/query/calendarQueries';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -52,6 +59,34 @@ function initialAnchor(): Date {
   return anchorFromUrl() ?? new Date();
 }
 
+/**
+ * The range on screen. Month view shows leading and trailing days from the
+ * neighbouring months, so the query covers the whole grid.
+ */
+function rangeFor(anchor: Date, view: ViewMode): { start: Date; end: Date } {
+  if (view === 'week') {
+    const start = startOfWeek(anchor, WEEK_OPTS);
+    return { start, end: addDays(start, 7) };
+  }
+  if (view === 'agenda') {
+    return { start: startOfWeek(anchor, WEEK_OPTS), end: addDays(anchor, 60) };
+  }
+  return {
+    start: startOfWeek(startOfMonth(anchor), WEEK_OPTS),
+    end: addDays(endOfWeek(endOfMonth(anchor), WEEK_OPTS), 1),
+  };
+}
+
+/** Where Previous and Next go from here. */
+function stepAnchor(anchor: Date, view: ViewMode, direction: -1 | 1): Date {
+  if (view === 'week') return addDays(anchor, 7 * direction);
+  return direction === 1 ? addMonths(anchor, 1) : subMonths(anchor, 1);
+}
+
+const NO_CALENDARS: CalendarSummary[] = [];
+const NO_EVENTS: CalendarEvent[] = [];
+const NO_INVITATIONS: Invitation[] = [];
+
 export default function CalendarPage() {
   // Null until the server has answered once; cached after that, so a revisit gates at once.
   const capabilities = useCapabilities().data;
@@ -66,10 +101,17 @@ export default function CalendarPage() {
 function CalendarScreen({ supported }: { supported: boolean | null }) {
   const router = useRouter();
   const openMenu = useOpenPageMenu();
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
+  const queryClient = useQueryClient();
+  const onUnauthorized = useUnauthorizedHandler();
 
-  const [calendars, setCalendars] = useState<CalendarSummary[]>([]);
-  const [active, setActive] = useState('default');
+  // The calendars, cached and shared with the inbox's calendar panel. Until
+  // one is picked, the server's default is shown -- known before any events
+  // are asked for, so entering the screen fetches events once, not twice.
+  const calendarsResult = useCalendars(supported === true);
+  const calendars = calendarsResult.data ?? NO_CALENDARS;
+  const [picked, setActive] = useState<string | null>(null);
+  const active = picked ?? pickDefaultCalendar(calendarsResult.data);
+
   const [view, setView] = useState<ViewMode>('month');
   const [anchor, setAnchor] = useState(initialAnchor);
 
@@ -81,11 +123,10 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (fromUrl) setAnchor((prev) => (isSameDay(prev, fromUrl) ? prev : fromUrl));
   }, []);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState<string | null>(null);
 
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  /** What went wrong with the last thing the person did. Load failures come from the queries. */
+  const [actionError, setBanner] = useState<string | null>(null);
+
   const [invitationsHidden, setInvitationsHidden] = useState(false);
   const [answering, setAnswering] = useState<string | null>(null);
 
@@ -95,85 +136,42 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  // The range on screen. Month view shows leading and trailing days from the
-  // neighbouring months, so the query covers the whole grid.
-  const range = useMemo(() => {
-    if (view === 'week') {
-      const start = startOfWeek(anchor, WEEK_OPTS);
-      return { start, end: addDays(start, 7) };
-    }
-    if (view === 'agenda') {
-      return { start: startOfWeek(anchor, WEEK_OPTS), end: addDays(anchor, 60) };
-    }
-    return {
-      start: startOfWeek(startOfMonth(anchor), WEEK_OPTS),
-      end: addDays(endOfWeek(endOfMonth(anchor), WEEK_OPTS), 1),
-    };
-  }, [anchor, view]);
+  const range = useMemo(() => rangeFor(anchor, view), [anchor, view]);
+  const eventsResult = useEvents(active, range.start, range.end, supported === true);
+  const events = eventsResult.data ?? NO_EVENTS;
+  // Dimmed while another range stands in for this one; a range seen before shows at once.
+  const loading = eventsResult.isPlaceholderData || (eventsResult.isPending && eventsResult.fetchStatus === 'fetching');
+  const banner =
+    actionError ??
+    (eventsResult.isError ? eventsResult.error.message : null) ??
+    (calendarsResult.isError ? calendarsResult.error.message : null);
 
+  // The ranges either side, fetched once this one is in, so Previous and Next are instant.
+  const settled = !eventsResult.isFetching;
   useEffect(() => {
-    if (supported !== true) return;
-    let cancelled = false;
-    (async () => {
-      const res = await listCalendars(onUnauthorized);
-      if (cancelled) return;
-      if (res.success && Array.isArray(res.data)) {
-        setCalendars(res.data);
-        if (!res.data.some((c) => c.uri === active)) {
-          setActive(res.data[0]?.uri ?? 'default');
-        }
-      } else if (!res.success) {
-        setBanner(res.message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supported, onUnauthorized]);
-
-  // A request in flight when the range changes must not overwrite a newer one.
-  const requestRef = useRef(0);
-
-  const load = useCallback(async () => {
-    if (supported !== true) return;
-    const ticket = ++requestRef.current;
-    setLoading(true);
-    const res = await listEvents(active, range.start, range.end, onUnauthorized);
-    if (ticket !== requestRef.current) return;
-    if (res.success && Array.isArray(res.data)) {
-      setEvents(res.data);
-      setBanner(null);
-    } else {
-      setEvents([]);
-      if (!res.success) setBanner(res.message);
+    if (!active || supported !== true || !settled) return;
+    for (const direction of [-1, 1] as const) {
+      const next = rangeFor(stepAnchor(anchor, view, direction), view);
+      prefetchEvents(queryClient, active, next.start, next.end, onUnauthorized);
     }
-    setLoading(false);
-  }, [active, range.start, range.end, supported, onUnauthorized]);
+  }, [active, supported, settled, anchor, view, queryClient, onUnauthorized]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const invitations = useInvitations(supported === true).data ?? NO_INVITATIONS;
 
-  const loadInvitations = useCallback(async () => {
-    if (supported !== true) return;
-    const res = await listInvitations(onUnauthorized);
-    if (res.success && Array.isArray(res.data)) setInvitations(res.data);
-  }, [supported, onUnauthorized]);
-
-  useEffect(() => {
-    void loadInvitations();
-  }, [loadInvitations]);
-
+  /** An answer takes the invitation off the list at once; a refusal puts it back. */
   async function respond(invitation: Invitation, response: RsvpResponse) {
     setAnswering(invitation.id);
+    const previous = queryClient.getQueryData<Invitation[]>(calendarKeys.invitations);
+    queryClient.setQueryData<Invitation[]>(calendarKeys.invitations, (list) => list?.filter((i) => i.id !== invitation.id));
     const res = await sendRsvp(invitation.id, response, onUnauthorized);
     setAnswering(null);
     if (!res.success) {
+      queryClient.setQueryData(calendarKeys.invitations, previous);
       setBanner(res.message);
       return;
     }
-    await Promise.all([loadInvitations(), load()]);
+    void queryClient.invalidateQueries({ queryKey: calendarKeys.invitations });
+    void queryClient.invalidateQueries({ queryKey: calendarKeys.events });
   }
 
   const readOnly = useMemo(() => calendars.find((c) => c.uri === active)?.read_only ?? false, [calendars, active]);
@@ -193,7 +191,13 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
     setModalOpen(true);
   }
 
+  /**
+   * Saving waits for the server, inside the dialog: it can refuse (a changed
+   * etag, a bad date) and it sends the invitations. Once it says yes the
+   * dialog closes and the grid refreshes behind it, without blanking.
+   */
   async function save(draft: EventDraft) {
+    if (!active) return;
     setSaving(true);
     setModalError(null);
     const res = editing
@@ -205,26 +209,32 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
       return;
     }
     setModalOpen(false);
-    await load();
+    setBanner(null);
+    void queryClient.invalidateQueries({ queryKey: calendarKeys.events });
   }
 
-  async function remove() {
-    if (!editing) return;
-    setSaving(true);
-    const res = await deleteEvent(active, editing.id, editing.etag, onUnauthorized);
-    setSaving(false);
-    if (!res.success) {
-      setModalError(res.message);
-      return;
-    }
+  /** Deleting (after the dialog's own confirm) takes the event off every cached range at once. */
+  function remove() {
+    if (!editing || !active) return;
+    const target = editing;
+    const calendar = active;
     setModalOpen(false);
-    await load();
+    const before = queryClient.getQueriesData<CalendarEvent[]>({ queryKey: calendarKeys.events });
+    queryClient.setQueriesData<CalendarEvent[]>({ queryKey: calendarKeys.events }, (list) =>
+      list?.filter((e) => e.id !== target.id),
+    );
+    void (async () => {
+      const res = await deleteEvent(calendar, target.id, target.etag, onUnauthorized);
+      if (!res.success) {
+        for (const [key, data] of before) queryClient.setQueryData(key, data);
+        setBanner(`Couldn't delete "${target.summary ?? 'that event'}": ${res.message}`);
+      }
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.events });
+    })();
   }
 
   function step(direction: -1 | 1) {
-    setAnchor((current) =>
-      view === 'week' ? addDays(current, 7 * direction) : direction === 1 ? addMonths(current, 1) : subMonths(current, 1),
-    );
+    setAnchor((current) => stepAnchor(current, view, direction));
   }
 
   if (supported === null) {
@@ -270,7 +280,7 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
 
         <div className="ml-auto flex items-center gap-2">
           {calendars.length > 1 && (
-            <Select id="calendar-picker" value={active} onChange={(e) => setActive(e.target.value)} className="h-8 !w-auto py-0 text-[12.5px]">
+            <Select id="calendar-picker" value={active ?? ''} onChange={(e) => setActive(e.target.value)} className="h-8 !w-auto py-0 text-[12.5px]">
               {calendars.map((calendar) => (
                 <option key={calendar.uri} value={calendar.uri}>
                   {calendar.name}
