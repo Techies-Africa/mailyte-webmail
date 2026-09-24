@@ -44,7 +44,7 @@ import {
   blockSender as apiBlockSender,
   setLabels as apiSetLabels,
 } from '@/lib/webmail/client';
-import type { SharedMailbox } from '@/lib/webmail/client';
+import type { BulkRequest, SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
 import { splitAddresses } from '@/lib/webmail/addresses';
 import { useOutbox, type PendingSend, type SendContext } from '@/components/providers/OutboxProvider';
@@ -93,7 +93,9 @@ import {
   releaseHeld,
   type OpOutcome,
   type OpRequest,
+  type OpSender,
 } from '@/lib/webmail/query/opRunner';
+import { BULK_CHUNK, bulkAvailable, bulkSender } from '@/lib/webmail/query/bulk';
 import {
   applyFlagPatch,
   opsStoreOf,
@@ -480,9 +482,21 @@ export function useMailbox() {
     [queryClient, store, refreshFolders, loadLabels, toast],
   );
 
+  /**
+   * How an action goes to the server: one request per message, and -- when
+   * the server has bulk actions -- the same action for many messages in one
+   * request. The queue uses the bulk form for a batch and falls back to one
+   * by one if the server turns out not to have it.
+   */
+  const sendAs = useCallback(
+    (one: OpRequest, bulk: Omit<BulkRequest, 'ids'>): OpSender =>
+      bulkAvailable(queryClient) ? { one, many: bulkSender(bulk, handleUnauthorized) } : one,
+    [queryClient, handleUnauthorized],
+  );
+
   /** Change flags now, send behind. */
   const runFlags = useCallback(
-    (ids: string[], patch: FlagPatch, request: OpRequest, options: { quiet?: boolean } = {}) => {
+    (ids: string[], patch: FlagPatch, request: OpSender, options: { quiet?: boolean } = {}) => {
       if (ids.length === 0) return;
       const deltasById = new Map<string, FolderDeltas>();
       if (patch.isRead !== undefined) {
@@ -694,7 +708,7 @@ export function useMailbox() {
       requested: string[],
       reason: RemoveReason,
       dest: string | null,
-      request: OpRequest,
+      request: OpSender,
       confirmation: string | null,
       undo: boolean,
     ) => {
@@ -793,7 +807,7 @@ export function useMailbox() {
         ids,
         'archive',
         archiveFolder,
-        (id) => apiMove(id, archiveFolder, handleUnauthorized),
+        sendAs((id) => apiMove(id, archiveFolder, handleUnauthorized), { action: 'move', folder: archiveFolder }),
         ids.length === 1 ? 'Archived' : `Archived ${plural(ids.length, 'message')}`,
         true,
       );
@@ -807,7 +821,7 @@ export function useMailbox() {
         ids,
         'trash',
         trashFolder,
-        (id) => apiTrash(id, handleUnauthorized),
+        sendAs((id) => apiTrash(id, handleUnauthorized), { action: 'trash' }),
         ids.length === 1 ? 'Moved to Trash' : `Moved ${plural(ids.length, 'message')} to Trash`,
         true,
       );
@@ -822,7 +836,7 @@ export function useMailbox() {
         ids,
         'deleteForever',
         null,
-        (id) => apiDeleteForever(id, handleUnauthorized),
+        sendAs((id) => apiDeleteForever(id, handleUnauthorized), { action: 'delete' }),
         ids.length === 1 ? 'Deleted forever' : `Deleted ${plural(ids.length, 'message')} forever`,
         false,
       );
@@ -836,7 +850,7 @@ export function useMailbox() {
         ids,
         'move',
         folder,
-        (id) => apiMove(id, folder, handleUnauthorized),
+        sendAs((id) => apiMove(id, folder, handleUnauthorized), { action: 'move', folder }),
         `Moved to ${folder === 'INBOX' ? 'Inbox' : folder}`,
         true,
       );
@@ -847,7 +861,14 @@ export function useMailbox() {
   /** Mark as spam = file into Junk. Per-mailbox filing; nothing is trained. */
   const markSpam = useCallback(
     async (ids: string[]) => {
-      runRemoval(ids, 'spam', junkFolder, (id) => apiMove(id, junkFolder, handleUnauthorized), 'Moved to Junk', true);
+      runRemoval(
+        ids,
+        'spam',
+        junkFolder,
+        sendAs((id) => apiMove(id, junkFolder, handleUnauthorized), { action: 'move', folder: junkFolder }),
+        'Moved to Junk',
+        true,
+      );
     },
     [runRemoval, junkFolder, handleUnauthorized],
   );
@@ -855,14 +876,27 @@ export function useMailbox() {
   /** Not spam = back to the Inbox, resolved from the folder ROLE. */
   const markNotSpam = useCallback(
     async (ids: string[]) => {
-      runRemoval(ids, 'notSpam', inboxFolder, (id) => apiMove(id, inboxFolder, handleUnauthorized), 'Moved to Inbox', true);
+      runRemoval(
+        ids,
+        'notSpam',
+        inboxFolder,
+        sendAs((id) => apiMove(id, inboxFolder, handleUnauthorized), { action: 'move', folder: inboxFolder }),
+        'Moved to Inbox',
+        true,
+      );
     },
     [runRemoval, inboxFolder, handleUnauthorized],
   );
 
   const setRead = useCallback(
     async (ids: string[], read: boolean) => {
-      runFlags(ids, { isRead: read }, (id) => (read ? apiMarkRead : apiMarkUnread)(id, handleUnauthorized));
+      runFlags(
+        ids,
+        { isRead: read },
+        sendAs((id) => (read ? apiMarkRead : apiMarkUnread)(id, handleUnauthorized), {
+          action: read ? 'mark_read' : 'mark_unread',
+        }),
+      );
       setSelectedIds([]);
     },
     [runFlags, handleUnauthorized],
@@ -909,13 +943,30 @@ export function useMailbox() {
         toast('Nothing unread here', { tone: 'info' });
         return;
       }
-      for (let i = 0; i < ids.length; i += 25) {
+      // 200 at a time in one request each where the server takes bulk
+      // actions; otherwise, or once it turns out not to, 25 at a time one by one.
+      let many = bulkAvailable(queryClient) ? bulkSender({ action: 'mark_read' }, handleUnauthorized) : null;
+      for (let i = 0; i < ids.length; ) {
         if (!stillOurs()) return;
-        const chunk = ids.slice(i, i + 25);
-        const results = await Promise.all(chunk.map((id) => apiMarkRead(id, handleUnauthorized)));
-        results.forEach((r, j) => {
-          if (r.success) marked.push(chunk[j]);
-        });
+        if (many) {
+          const chunk = ids.slice(i, i + BULK_CHUNK);
+          const answer = await many(chunk);
+          if (answer.kind === 'unsupported') {
+            many = null;
+            continue;
+          }
+          if (answer.kind === 'results') {
+            for (const id of chunk) if (answer.perId.get(id)?.success) marked.push(id);
+          }
+          i += chunk.length;
+        } else {
+          const chunk = ids.slice(i, i + 25);
+          const results = await Promise.all(chunk.map((id) => apiMarkRead(id, handleUnauthorized)));
+          results.forEach((r, j) => {
+            if (r.success) marked.push(chunk[j]);
+          });
+          i += chunk.length;
+        }
       }
       toast(
         marked.length >= MARK_ALL_CAP
@@ -973,7 +1024,11 @@ export function useMailbox() {
         raw.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '').replace(/_{2,}/g, '_').replace(/^[_-]+|[_-]+$/g, '');
       const adds = add.map(slug).filter(Boolean);
       const removes = remove.map(slug).filter(Boolean);
-      runFlags(ids, { addLabels: adds, removeLabels: removes }, (id) => apiSetLabels(id, add, remove, handleUnauthorized));
+      runFlags(
+        ids,
+        { addLabels: adds, removeLabels: removes },
+        sendAs((id) => apiSetLabels(id, add, remove, handleUnauthorized), { action: 'labels', add, remove }),
+      );
       setSelectedIds([]);
       // A message that loses the label this view shows leaves the view.
       const viewLabel = labelOfView(activeFolder);

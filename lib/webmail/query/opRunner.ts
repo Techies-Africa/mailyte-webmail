@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { ApiResult } from '@/lib/webmail/client';
+import type { ApiResult, BulkRequest } from '@/lib/webmail/client';
+import { BULK_CHUNK, bulkAvailable, type BulkAnswer } from './bulk';
 import { opsStoreOf, type PendingOp, type RemoveOp } from './pendingOps';
 import { accountHeaders, runSessionDropHandlers } from './session';
 
@@ -43,6 +44,8 @@ interface Runner {
   cursors: Map<number, Cursor>;
   /** The generation each op was committed in; a closing page sends nothing from an older one. */
   committedIn: Map<number, number>;
+  /** The server answered a bulk request as if it had no such endpoint: stop trying for this tab. */
+  bulkUnsupported: boolean;
 }
 
 const runners = new WeakMap<QueryClient, Runner>();
@@ -57,6 +60,7 @@ function runnerOf(queryClient: QueryClient): Runner {
       held: new Map(),
       cursors: new Map(),
       committedIn: new Map(),
+      bulkUnsupported: false,
     };
     runners.set(queryClient, runner);
   }
@@ -93,22 +97,32 @@ export interface OpOutcome {
 
 export type OpRequest = (id: string) => Promise<ApiResult<unknown>>;
 
+/**
+ * How an op is sent: one request per message, and optionally also a way to
+ * send many at once, used when the server has bulk actions.
+ */
+export type OpSender = OpRequest | { one: OpRequest; many?: (ids: string[]) => Promise<BulkAnswer> };
+
 /** A message already gone from where it was is, for most removals, done -- but not a cancelled send: then it went. */
 function goneCountsAsDone(op: PendingOp): boolean {
   return op.kind === 'remove' && op.reason !== 'cancelScheduled';
 }
 
 /**
- * Send `op` now: through the queue, one request per message (the API has no
- * bulk endpoints), at most six at a time so fifty selected rows do not starve
- * the poll and the list. An action undone before its turn comes is skipped.
+ * Send `op` now, through the queue. Where the server takes bulk actions, a
+ * batch of messages goes in one request per 200 of them; otherwise, or once
+ * the server turns out not to have the endpoint, one request per message, at
+ * most six at a time so fifty selected rows do not starve the poll and the
+ * list. An action undone before its turn comes is skipped.
  */
 export function commitOp(
   queryClient: QueryClient,
   opId: number,
-  request: OpRequest,
+  sender: OpSender,
   onOutcome: (op: PendingOp, outcome: OpOutcome) => void,
 ): void {
+  const request = typeof sender === 'function' ? sender : sender.one;
+  const many = typeof sender === 'function' ? undefined : sender.many;
   const runner = runnerOf(queryClient);
   const store = opsStoreOf(queryClient);
   const op = store.get(opId);
@@ -129,8 +143,34 @@ export function commitOp(
     runner.cursors.set(opId, cursor);
 
     const results = new Array<ApiResult<unknown> | null>(current.ids.length).fill(null);
+    const live = () => !cursor.stopped && runner.generation === generation;
+
+    // In bulk while the server takes it. If it turns out not to, the chunk
+    // goes back and the one-by-one workers below carry on from there.
+    if (many && current.ids.length > 1 && !runner.bulkUnsupported) {
+      while (live() && cursor.next < current.ids.length) {
+        const start = cursor.next;
+        const chunk = current.ids.slice(start, start + BULK_CHUNK);
+        cursor.next += chunk.length;
+        chunk.forEach((_, j) => cursor.inFlight.add(start + j));
+        const answer = await many(chunk);
+        chunk.forEach((_, j) => cursor.inFlight.delete(start + j));
+        if (answer.kind === 'unsupported') {
+          runner.bulkUnsupported = true;
+          cursor.next = start;
+          break;
+        }
+        chunk.forEach((id, j) => {
+          results[start + j] =
+            answer.kind === 'failed'
+              ? answer.result
+              : (answer.perId.get(id) ?? { success: false, message: 'The mail server did not answer for this message', status: 0 });
+        });
+      }
+    }
+
     const worker = async () => {
-      while (!cursor.stopped && runner.generation === generation && cursor.next < current.ids.length) {
+      while (live() && cursor.next < current.ids.length) {
         const index = cursor.next++;
         cursor.inFlight.add(index);
         results[index] = await request(current.ids[index]);
@@ -242,6 +282,20 @@ function beaconFor(op: RemoveOp, id: string): { url: string; method: string; bod
   }
 }
 
+/** The same removal for many messages as one bulk request body, or null if it cannot be one. */
+function bulkBeaconFor(op: RemoveOp, ids: string[]): string | null {
+  if (ids.length < 2) return null;
+  let request: BulkRequest | null = null;
+  if (op.reason === 'trash') request = { ids, action: 'trash' };
+  else if (op.reason === 'deleteForever') request = { ids, action: 'delete' };
+  else if (op.dest && (op.reason === 'archive' || op.reason === 'move' || op.reason === 'spam' || op.reason === 'notSpam')) {
+    request = { ids, action: 'move', folder: op.dest };
+  }
+  const body = request ? JSON.stringify(request) : null;
+  // Keepalive bodies share a 64 KB budget; past that, one beacon per message.
+  return body && body.length < 60_000 ? body : null;
+}
+
 /**
  * The page is going away -- a reload, the tab closing -- with removals the
  * person saw happen still unsent: waiting out their Undo window, queued, or
@@ -264,6 +318,18 @@ export function flushHeldOnExit(queryClient: QueryClient): void {
         cursor.stopped = true;
         // In flight may be cut off by the unload; sending it again is harmless (a 404).
         unsent = [...[...cursor.inFlight].map((i) => op.ids[i]), ...op.ids.slice(cursor.next)];
+      }
+      // One bulk beacon where the server takes them -- the browser allows only
+      // so many keepalive requests, and so much body, while a page closes.
+      const bulk = bulkBeaconFor(op, unsent);
+      if (bulk && bulkAvailable(queryClient) && !runner.bulkUnsupported) {
+        void fetch('/api/webmail/messages/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...accountHeaders() },
+          body: bulk,
+          keepalive: true,
+        }).catch(() => undefined);
+        unsent = [];
       }
       for (const id of unsent) {
         const beacon = beaconFor(op, id);

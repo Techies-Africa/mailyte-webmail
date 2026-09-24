@@ -204,6 +204,12 @@ export interface ApiCapabilities {
      * the worst kind of wrong.
      */
     scheduled_send?: boolean;
+    /**
+     * The server takes one action on many messages in one request
+     * (POST /mailbox/messages/bulk). Optional: an older server does not have
+     * it, and the client then sends one request per message.
+     */
+    bulk_actions?: boolean;
   };
   /**
    * Shared mailboxes this person is a member of, with what they may do there.
@@ -411,6 +417,51 @@ export const setLabels = (
   remove: string[],
   onUnauthorized: () => void,
 ) => messageAction(id, "labels", { add, remove }, onUnauthorized);
+
+export type BulkAction =
+  | "mark_read"
+  | "mark_unread"
+  | "star"
+  | "unstar"
+  | "move"
+  | "trash"
+  | "delete"
+  | "labels";
+
+export interface BulkRequest {
+  ids: string[];
+  action: BulkAction;
+  /** The destination, for `move`. */
+  folder?: string;
+  /** Label names to add and remove, for `labels`. */
+  add?: string[];
+  remove?: string[];
+}
+
+/** One message's outcome. `new_id` is its id after a move; `error_code` says why it failed. */
+export interface BulkItemResult {
+  id: string;
+  ok: boolean;
+  new_id?: string | null;
+  error_code?: string | null;
+  message?: string | null;
+}
+
+/**
+ * One action on many messages at once. Answers 200 with a result per message
+ * even when some fail; a whole-request failure means none were attempted.
+ */
+export function bulkMessageAction(body: BulkRequest, onUnauthorized: () => void) {
+  return call<{ results: BulkItemResult[]; succeeded?: number; failed?: number }>(
+    "/api/webmail/messages/bulk",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    onUnauthorized,
+  );
+}
 
 /** Every label in use in the mailbox, as slugs. */
 export function listLabels(onUnauthorized: () => void) {
