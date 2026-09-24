@@ -10,6 +10,8 @@ import Avatar from '@/components/ui/Avatar';
 type ContactsPanelProps = {
   open: boolean;
   onClose: () => void;
+  /** Asked before a link leaves the inbox; false stays. */
+  onLeave?: () => boolean;
   /** The merged suggestion list: saved cards first, then the directory. */
   contacts: WebmailContact[];
   onWriteTo: (email: string, name: string | null) => void;
@@ -25,7 +27,12 @@ const LIMIT = 40;
  * header addresses are left out -- this panel is the address book, not the
  * history.
  */
-export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: ContactsPanelProps) {
+export default function ContactsPanel({ open, onClose, onLeave, contacts, onWriteTo }: ContactsPanelProps) {
+  // Every link here leaves the inbox; the page may want to ask first.
+  const guardLeave = (e: React.MouseEvent) => {
+    if (onLeave && !onLeave()) e.preventDefault();
+  };
+
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -92,7 +99,7 @@ export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: Co
         )}
       </div>
 
-      <Link
+      <Link onClick={guardLeave}
         href="/address-book"
         className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[12.5px] font-semibold text-primary hover:bg-muted"
       >

@@ -44,6 +44,12 @@ type SidebarProps = {
   /** On phones the rail is a drawer. */
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
+  /**
+   * What the logo does on the inbox itself. There it cannot be a plain link to
+   * "/": the page would not remount, and the address bar would say Inbox while
+   * the screen stayed where it was.
+   */
+  onHome?: () => void;
 };
 
 /**
@@ -68,6 +74,7 @@ export default function Sidebar({
   children,
   mobileOpen = false,
   onCloseMobile,
+  onHome,
 }: SidebarProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -123,7 +130,17 @@ export default function Sidebar({
       >
         <div className={`flex shrink-0 items-center px-3 pb-2.5 pt-3.5 ${rail ? 'justify-center' : 'justify-between'}`}>
           {!rail && (
-            <Link href="/" aria-label="Inbox" className="flex min-w-0 items-center">
+            <Link
+              href="/"
+              aria-label="Inbox"
+              className="flex min-w-0 items-center"
+              onClick={(e) => {
+                // A modified click still opens a new tab; a plain one stays on this page.
+                if (!onHome || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                e.preventDefault();
+                onHome();
+              }}
+            >
               <BrandLockup height={24} tone="dark" />
             </Link>
           )}

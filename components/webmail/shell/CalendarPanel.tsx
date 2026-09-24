@@ -26,6 +26,8 @@ import { pickDefaultCalendar, useCalendars, useEvents } from '@/lib/webmail/quer
 type CalendarPanelProps = {
   open: boolean;
   onClose: () => void;
+  /** Asked before a link leaves the inbox; false stays. */
+  onLeave?: () => boolean;
   onUnauthorized: () => void;
 };
 
@@ -40,7 +42,12 @@ const UPCOMING_DAYS = 7;
  * same endpoint the calendar screen uses. The month grid marks days that
  * have something on them, and clicking a day opens the full calendar there.
  */
-export default function CalendarPanel({ open, onClose }: CalendarPanelProps) {
+export default function CalendarPanel({ open, onClose, onLeave }: CalendarPanelProps) {
+  // Every link here leaves the inbox; the page may want to ask first.
+  const guardLeave = (e: React.MouseEvent) => {
+    if (onLeave && !onLeave()) e.preventDefault();
+  };
+
   const [anchor, setAnchor] = useState(() => new Date());
 
   // Which calendar to read: the default one, or the first the server lists.
@@ -116,7 +123,7 @@ export default function CalendarPanel({ open, onClose }: CalendarPanelProps) {
             const today = isToday(day);
             const busy = busyDays.has(format(day, 'yyyy-MM-dd'));
             return (
-              <Link
+              <Link onClick={guardLeave}
                 key={day.toISOString()}
                 href={dayHref(day)}
                 aria-label={format(day, 'EEEE d MMMM yyyy')}
@@ -159,7 +166,7 @@ export default function CalendarPanel({ open, onClose }: CalendarPanelProps) {
               const start = new Date(event.start);
               return (
                 <li key={`${event.id}-${event.start}`}>
-                  <Link href={dayHref(start)} className="flex items-start gap-2.5 py-2 hover:text-primary">
+                  <Link onClick={guardLeave} href={dayHref(start)} className="flex items-start gap-2.5 py-2 hover:text-primary">
                     <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] font-semibold">{event.summary ?? 'Untitled'}</span>
@@ -177,7 +184,7 @@ export default function CalendarPanel({ open, onClose }: CalendarPanelProps) {
         )}
       </div>
 
-      <Link
+      <Link onClick={guardLeave}
         href="/calendar"
         className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[12.5px] font-semibold text-primary hover:bg-muted"
       >

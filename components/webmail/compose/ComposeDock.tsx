@@ -40,7 +40,7 @@ export default function ComposeDock({
   onSaveDraft,
   onDiscardDraft,
 }: ComposeDockProps) {
-  const { windows, closeCompose, setLayout, setLabel, setDraftId } = compose;
+  const { windows, closeCompose, setLayout, setLabel, setDraftId, reportAttachments } = compose;
   const open = windows.filter((w) => w.layout === 'open');
   const fullscreen = windows.find((w) => w.layout === 'fullscreen');
   const minimized = windows.filter((w) => w.layout === 'minimized');
@@ -71,6 +71,7 @@ export default function ComposeDock({
             onRestore={() => setLayout(w.id, 'open')}
             onLabelChange={(label) => setLabel(w.id, label)}
             onDraftId={(draftId) => setDraftId(w.id, draftId)}
+            onAttachmentsChange={(count) => reportAttachments(w.id, count)}
             onSend={(payload) => onSend(payload, { mode: w.mode, replyTo: w.replyTo, draftId: w.draftId })}
             onSaveDraft={onSaveDraft}
             onDiscardDraft={onDiscardDraft}

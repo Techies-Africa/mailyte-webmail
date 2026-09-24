@@ -76,6 +76,14 @@ export function accountChanged(email: string): boolean {
 // redirects; the rest have nowhere better to send anyone.
 let redirecting = false;
 
+/**
+ * A page other than sign-in is now showing, so any redirect that was under way
+ * was overtaken (a link clicked, Back pressed). The next 401 must redirect again.
+ */
+export function clearUnauthorizedRedirect(): void {
+  redirecting = false;
+}
+
 /** Called by the login page, which is where every session ends and the next begins. */
 export function resetSessionState(): void {
   redirecting = false;
@@ -92,6 +100,9 @@ export function useUnauthorizedHandler(): () => void {
   const queryClient = useQueryClient();
   return useCallback(() => {
     if (redirecting) return;
+    // Already there: a late 401 (a draft saved on the way out) must not arm the
+    // flag again, or it would stay set with nothing left to clear it.
+    if (typeof window !== 'undefined' && window.location.pathname === '/login') return;
     redirecting = true;
     void queryClient.cancelQueries();
     router.replace('/login');

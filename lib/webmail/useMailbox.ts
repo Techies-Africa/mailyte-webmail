@@ -317,12 +317,19 @@ export function useMailbox() {
   // there is a session at all. Rendering the mailbox before then meant a
   // signed-out visitor saw the full interface, then a redirect. A 401 never
   // opens this gate, so the mailbox never paints on the way out to sign-in.
-  const sessionChecked =
+  const sessionConfirmed =
     listResult.data !== undefined ||
-    foldersResult.isSuccess ||
-    capabilitiesQuery.isSuccess ||
+    foldersResult.data !== undefined ||
+    capabilitiesQuery.data !== undefined ||
     // Any other failure is worth showing as one, with Try again.
     (listResult.isError && !isAuthError(listResult.error));
+  // Once open, the gate stays open. A background refetch that fails flips a
+  // query's status to error while keeping its data; closing the gate then
+  // would swap the whole mailbox -- open compose windows included -- for the
+  // skeleton. A real sign-out leaves the page, so nothing needs to close it.
+  const [sessionLatched, setSessionLatched] = useState(false);
+  if (sessionConfirmed && !sessionLatched) setSessionLatched(true);
+  const sessionChecked = sessionLatched || sessionConfirmed;
 
   const syncedAt = Math.max(foldersResult.dataUpdatedAt, listResult.dataUpdatedAt);
   const lastSyncAt = useMemo(() => (syncedAt > 0 ? new Date(syncedAt) : null), [syncedAt]);
@@ -395,6 +402,7 @@ export function useMailbox() {
     setOffset(0);
     setSelectedIds([]);
     setOpenId(null);
+    setOpenError(null);
   }, []);
 
   const clearSearch = useCallback(() => {
@@ -402,25 +410,39 @@ export function useMailbox() {
     setActiveSearch('');
     setOffset(0);
     setSelectedIds([]);
+    setOpenError(null);
   }, []);
 
   const setFilter = useCallback((next: ListFilter) => {
     setFilterState(next);
     setOffset(0);
     setSelectedIds([]);
+    setOpenError(null);
   }, []);
 
   const goToPage = useCallback((nextOffset: number) => {
     setSelectedIds([]);
     setOffset(nextOffset);
+    setOpenError(null);
   }, []);
 
   // --- Optimistic actions: the plumbing ------------------------------------------------
 
-  /** A message as the person sees it now: its cached row with pending actions laid over. */
+  // The rows on screen, readable from callbacks without re-creating them.
+  const shownRef = useRef<{ rows: WebmailListItem[]; open: WebmailListItem | null }>({ rows: [], open: null });
+
+  /**
+   * A message as the person sees it now: the row on screen if there is one,
+   * else the open message, else the freshest cached copy -- with pending
+   * actions laid over. The row on screen matters: another cached list may
+   * hold an older copy, and acting on its flags would do the opposite of
+   * what was clicked.
+   */
   const currentRow = useCallback(
     (id: string) => {
-      const row = findMessage(queryClient, id);
+      const { rows, open } = shownRef.current;
+      const row =
+        rows.find((m) => m.id === id) ?? (open && open.id === id ? open : undefined) ?? findMessage(queryClient, id);
       return row ? overlayMessage(row, store.getSnapshot()) : undefined;
     },
     [queryClient, store],
@@ -542,6 +564,30 @@ export function useMailbox() {
   );
   const loadingMessage = openingId !== null;
 
+  useEffect(() => {
+    shownRef.current = { rows: visibleMessages, open: openMessage };
+  }, [visibleMessages, openMessage]);
+
+  // The open message stopped existing under its id -- its folder's ids were
+  // reissued, or the server says it is gone. Close the pane rather than leave
+  // it blank, or show whatever now has that id.
+  useEffect(() => {
+    if (!openId) return;
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type === 'removed' && event.query.queryKey[2] === openId && event.query.queryKey[1] === 'message') {
+        setOpenId(null);
+        pushUrlState(activeFolderRef.current, null, true);
+      }
+    });
+  }, [queryClient, openId]);
+  useEffect(() => {
+    if (!openId || !messageResult.isError || messageResult.data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpenError(messageResult.error.message);
+    setOpenId(null);
+    pushUrlState(activeFolderRef.current, null, true);
+  }, [openId, messageResult.isError, messageResult.data, messageResult.error]);
+
   /** A message body, fetched ahead of a click. Drafts are skipped: they open in compose, fresh. */
   const prefetchMessage = useCallback(
     (item: WebmailListItem) => {
@@ -578,7 +624,10 @@ export function useMailbox() {
 
         setOpenId(item.id);
         pushUrlState(item.folder || activeFolder, item.id);
-        if (!currentRow(item.id)?.isRead && !message.isRead) {
+        // Either being unread is enough: the row is what the poll keeps
+        // current, the body may be a copy cached minutes ago. Marking read
+        // twice is harmless on the server.
+        if (!currentRow(item.id)?.isRead || !message.isRead) {
           runFlags([item.id], { isRead: true }, (id) => apiMarkRead(id, handleUnauthorized), { quiet: true });
         }
 
@@ -612,11 +661,24 @@ export function useMailbox() {
 
   // Back / Forward: pushUrlState changes the address bar without telling
   // React, so history navigation has to be applied to state here.
+  const activeFolderRef = useRef(activeFolder);
+  useEffect(() => {
+    activeFolderRef.current = activeFolder;
+  }, [activeFolder]);
+
   useEffect(() => {
     const onPopState = () => {
       const { folder, id } = readUrlState();
       const nextFolder = folder ?? 'INBOX';
-      setActiveFolder((prev) => (prev === nextFolder ? prev : nextFolder));
+      // Another folder starts on its first page, as a click on it would.
+      // Back from an open message stays on the page it was opened from.
+      if (nextFolder !== activeFolderRef.current) {
+        activeFolderRef.current = nextFolder;
+        setActiveFolder(nextFolder);
+        setOffset(0);
+        setSelectedIds([]);
+        setOpenError(null);
+      }
       if (!id) {
         setOpenId(null);
         return;
@@ -736,10 +798,10 @@ export function useMailbox() {
 
   const toggleStar = useCallback(
     async (id: string) => {
-      const starred = currentRow(id)?.isStarred ?? (openMessage?.id === id ? openMessage.isStarred : false);
+      const starred = currentRow(id)?.isStarred ?? false;
       runFlags([id], { isStarred: !starred }, (target) => (starred ? apiUnstar : apiStar)(target, handleUnauthorized));
     },
-    [currentRow, openMessage, runFlags, handleUnauthorized],
+    [currentRow, runFlags, handleUnauthorized],
   );
 
   const archive = useCallback(

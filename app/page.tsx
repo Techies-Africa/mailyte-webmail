@@ -171,6 +171,16 @@ export default function WebmailInboxPage() {
   const { setSendFailureHandler } = mailbox;
   useEffect(() => setSendFailureHandler(reopenFailedSend), [setSendFailureHandler, reopenFailedSend]);
 
+  // Leaving the inbox keeps what is being written -- it is saved to Drafts --
+  // but not its attachments. Ask first, only when there are some.
+  const { hasAttachments } = compose;
+  const confirmLeave = useCallback(
+    () =>
+      !hasAttachments() ||
+      window.confirm('Leave the inbox? The message you are writing is saved to Drafts, but its attachments are not kept.'),
+    [hasAttachments],
+  );
+
   const fromOptions = useMemo(
     () =>
       sharedMailboxes
@@ -263,9 +273,13 @@ export default function WebmailInboxPage() {
         email={displayEmail}
         name={settings?.name ?? null}
         unreadCount={unreadCount}
-        onOpenSettings={() => router.push('/settings')}
-        onOpenSecurity={() => router.push('/settings/security')}
+        onOpenSettings={() => confirmLeave() && router.push('/settings')}
+        onOpenSecurity={() => confirmLeave() && router.push('/settings/security')}
         onShowShortcuts={() => setHelpOpen(true)}
+        onHome={() => {
+          mailbox.setFolder('INBOX');
+          setMenuOpen(false);
+        }}
         mobileOpen={menuOpen}
         onCloseMobile={() => setMenuOpen(false)}
       >
@@ -332,12 +346,18 @@ export default function WebmailInboxPage() {
       </div>
 
       {mailbox.calendarAvailable && (
-        <CalendarPanel open={panel === 'calendar'} onClose={() => setPanel(null)} onUnauthorized={mailbox.handleUnauthorized} />
+        <CalendarPanel
+          open={panel === 'calendar'}
+          onClose={() => setPanel(null)}
+          onUnauthorized={mailbox.handleUnauthorized}
+          onLeave={confirmLeave}
+        />
       )}
       {mailbox.contactsAvailable && (
         <ContactsPanel
           open={panel === 'contacts'}
           onClose={() => setPanel(null)}
+          onLeave={confirmLeave}
           contacts={mailbox.contacts}
           onWriteTo={(email, name) => {
             setPanel(null);

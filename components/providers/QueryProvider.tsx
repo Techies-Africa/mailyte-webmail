@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
 import { dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
-import { onAccountChange, setBeforeSessionChange } from '@/lib/webmail/query/session';
+import { clearUnauthorizedRedirect, onAccountChange, setBeforeSessionChange } from '@/lib/webmail/query/session';
 
 /**
  * The query cache for the whole app.
@@ -17,6 +18,12 @@ import { onAccountChange, setBeforeSessionChange } from '@/lib/webmail/query/ses
  */
 export default function QueryProvider({ children }: { children: React.ReactNode }) {
   const [client] = useState(makeQueryClient);
+
+  // Arriving anywhere but sign-in means a redirect to it is no longer under way.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (pathname !== '/login') clearUnauthorizedRedirect();
+  }, [pathname]);
 
   // Another tab signed in, switched mailbox or signed out: whatever this tab
   // holds belongs to the previous account. Forget it and start over.

@@ -29,7 +29,13 @@ export function listParamsOf(key: QueryKey): ListParams {
  * clock rather than to the edit.
  */
 function quietSet<T>(queryClient: QueryClient, key: QueryKey, data: T): void {
-  queryClient.setQueryData(key, data, { updatedAt: queryClient.getQueryState(key)?.dataUpdatedAt });
+  const state = queryClient.getQueryState(key);
+  queryClient.setQueryData(key, data, { updatedAt: state?.dataUpdatedAt });
+  // Writing data clears a pending "reload when next shown"; an edit made
+  // here must not cancel one, or that view would show stale rows next time.
+  if (state?.isInvalidated) {
+    void queryClient.invalidateQueries({ queryKey: key, exact: true, refetchType: 'none' });
+  }
 }
 
 /** Rewrite every cached list page. Return the same page to leave it untouched. */
@@ -125,13 +131,20 @@ export function adjustFolderCounts(queryClient: QueryClient, deltas: FolderDelta
   );
 }
 
-/** The newest cached copy of a message's row, from any list, or from its open body. */
+/** The freshest cached copy of a message's row: from whichever list or body was fetched last. */
 export function findMessage(queryClient: QueryClient, id: string): WebmailListItem | undefined {
-  for (const [, page] of queryClient.getQueriesData<ListPage>({ queryKey: qk.lists })) {
-    const found = page?.items.find((m) => m.id === id);
-    if (found) return found;
+  let best: WebmailListItem | undefined;
+  let bestAt = -1;
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: qk.lists })) {
+    const found = (query.state.data as ListPage | undefined)?.items.find((m) => m.id === id);
+    if (found && query.state.dataUpdatedAt > bestAt) {
+      best = found;
+      bestAt = query.state.dataUpdatedAt;
+    }
   }
-  return queryClient.getQueryData<WebmailMessage>(qk.message(id));
+  const body = queryClient.getQueryState<WebmailMessage>(qk.message(id));
+  if (body?.data && body.dataUpdatedAt > bestAt) best = body.data;
+  return best;
 }
 
 /**

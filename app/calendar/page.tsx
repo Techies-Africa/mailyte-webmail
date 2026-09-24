@@ -9,10 +9,10 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { addDays, addMonths, endOfMonth, endOfWeek, format, isSameDay, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
+import { addDays, addMonths, endOfMonth, endOfWeek, format, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
@@ -46,17 +46,11 @@ import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
-/** `/calendar?date=2026-09-24` opens on that day (the inbox's mini calendar links here). */
-function anchorFromUrl(): Date | null {
-  if (typeof window === 'undefined') return null;
-  const raw = new URLSearchParams(window.location.search).get('date');
-  if (!raw) return null;
+/** `/calendar?date=2026-09-24` opens on that day (the inbox's mini calendar links here); no date is today. */
+function anchorFor(raw: string | null): Date {
+  if (!raw) return new Date();
   const parsed = parseISO(raw);
-  return isValid(parsed) ? parsed : null;
-}
-
-function initialAnchor(): Date {
-  return anchorFromUrl() ?? new Date();
+  return isValid(parsed) ? parsed : new Date();
 }
 
 /**
@@ -93,7 +87,10 @@ export default function CalendarPage() {
   const supported = capabilities ? capabilities.capabilities?.calendar === true : null;
   return (
     <PageShell current="calendar">
-      <CalendarScreen supported={supported} />
+      {/* useSearchParams below needs a boundary to render statically. */}
+      <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Loading…</div>}>
+        <CalendarScreen supported={supported} />
+      </Suspense>
     </PageShell>
   );
 }
@@ -113,16 +110,18 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
   const active = picked ?? pickDefaultCalendar(calendarsResult.data);
 
   const [view, setView] = useState<ViewMode>('month');
-  const [anchor, setAnchor] = useState(initialAnchor);
-
-  // Arriving by a client-side link, the page renders before the address bar
-  // changes, so the initializer above can miss `?date=`. Read it again once
-  // mounted; a hard load already has it and keeps the same day.
-  useEffect(() => {
-    const fromUrl = anchorFromUrl();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (fromUrl) setAnchor((prev) => (isSameDay(prev, fromUrl) ? prev : fromUrl));
-  }, []);
+  // The day comes from the address. Read through the router, not
+  // window.location: a client-side arrival renders before the address bar
+  // changes. A link to the calendar while it is already open -- a day in the
+  // inbox panel, the rail's Calendar row -- changes only the query, so it is
+  // followed here too.
+  const dateParam = useSearchParams().get('date');
+  const [anchor, setAnchor] = useState(() => anchorFor(dateParam));
+  const [followedParam, setFollowedParam] = useState(dateParam);
+  if (dateParam !== followedParam) {
+    setFollowedParam(dateParam);
+    setAnchor(anchorFor(dateParam));
+  }
 
   /** What went wrong with the last thing the person did. Load failures come from the queries. */
   const [actionError, setBanner] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { ComposeMode, WebmailMessage } from '@/components/webmail/types';
 import type { ComposeLayout, ComposeWindow } from '@/components/webmail/compose/types';
 
@@ -84,7 +84,17 @@ export function useComposeWindows() {
     return id;
   }, []);
 
+  // How many attachments each window holds. A draft keeps the text but not
+  // the files, so leaving the inbox with any attached is worth a question.
+  const attachmentsRef = useRef(new Map<string, number>());
+  const reportAttachments = useCallback((id: string, count: number) => {
+    if (count > 0) attachmentsRef.current.set(id, count);
+    else attachmentsRef.current.delete(id);
+  }, []);
+  const hasAttachments = useCallback(() => attachmentsRef.current.size > 0, []);
+
   const closeCompose = useCallback((id: string) => {
+    attachmentsRef.current.delete(id);
     setWindows((current) => current.filter((w) => w.id !== id));
   }, []);
 
@@ -129,7 +139,7 @@ export function useComposeWindows() {
     });
   }, []);
 
-  return { windows, openCompose, closeCompose, setLayout, setLabel, setDraftId };
+  return { windows, openCompose, closeCompose, setLayout, setLabel, setDraftId, reportAttachments, hasAttachments };
 }
 
 export type ComposeWindows = ReturnType<typeof useComposeWindows>;

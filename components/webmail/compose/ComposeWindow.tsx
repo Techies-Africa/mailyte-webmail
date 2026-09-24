@@ -83,6 +83,8 @@ type ComposeWindowProps = {
   onRestore: () => void;
   onLabelChange: (label: string) => void;
   onDraftId: (draftId: string) => void;
+  /** How many files are attached, so the page can warn before they are lost. */
+  onAttachmentsChange?: (count: number) => void;
   onSend: (payload: ComposePayload) => Promise<SendResult>;
   onSaveDraft: (payload: ComposePayload, replaceId?: string) => Promise<string | null>;
   onDiscardDraft: (id: string) => Promise<void>;
@@ -110,6 +112,7 @@ export default function ComposeWindow({
   onRestore,
   onLabelChange,
   onDraftId,
+  onAttachmentsChange,
   onSend,
   onSaveDraft,
   onDiscardDraft,
@@ -253,6 +256,16 @@ export default function ComposeWindow({
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
+
+  const onAttachmentsChangeRef = useRef(onAttachmentsChange);
+  useEffect(() => {
+    onAttachmentsChangeRef.current = onAttachmentsChange;
+  }, [onAttachmentsChange]);
+  useEffect(() => {
+    onAttachmentsChangeRef.current?.(sentRef.current ? 0 : attachments.length);
+  }, [attachments.length]);
+  // Gone from the screen, the files are gone too; nothing left to warn about.
+  useEffect(() => () => onAttachmentsChangeRef.current?.(0), []);
 
   // Moving to Calendar, Contacts or Settings is a client-side navigation: it
   // unmounts this window without a beforeunload, so the guard above never
