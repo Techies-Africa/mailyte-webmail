@@ -89,6 +89,21 @@ for (const folder of folders) {
 
 const blocked = { addresses: ['spam@example.com'], managed: true, folder: 'Junk', limit: 500 };
 
+// Filter rules, in the shape the server's marker comments round-trip.
+let rules = [
+  {
+    id: 'rule-seed-1',
+    name: 'Receipts',
+    match: 'any',
+    conditions: [
+      { field: 'from', operator: 'contains', value: 'billing@' },
+      { field: 'subject', operator: 'contains', value: 'receipt' },
+    ],
+    actions: [{ type: 'label', value: 'receipt' }, { type: 'mark_read' }],
+    enabled: true,
+  },
+];
+
 function ok(res, msg, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ type: 'success', msg, data }));
@@ -231,7 +246,20 @@ const server = http.createServer(async (req, res) => {
   if (path === '/mailbox/security/sessions') return ok(res, 'ok', { scope: 'webmail', sessions: [{ id: 's1', signed_in_at: new Date().toISOString(), expires_at: null, ip_address: '102.89.1.4', user_agent: 'Chrome on macOS', revoked: false, active: true, current: true }] });
   if (path === '/mailbox/forwarding') return ok(res, 'ok', { enabled: false, addresses: [], keep_copy: true, managed: true });
   if (path === '/mailbox/vacation') return ok(res, 'ok', { enabled: false, subject: null, message: null, start_date: null, end_date: null, managed: true });
-  if (path === '/mailbox/rules') return ok(res, 'ok', { rules: [], active: false, managed: true });
+  if (path === '/mailbox/rules' && req.method === 'GET') return ok(res, 'ok', { rules, managed: true });
+  if (path === '/mailbox/rules' && req.method === 'PUT') {
+    if ((json.rules || []).length > 50) return fail(res, 422, 'At most 50 rules');
+    // What the server's compiler keeps: id assigned, name defaulted, match normalised.
+    rules = (json.rules || []).map((r, i) => ({
+      id: r.id || `rule-${Date.now()}-${i}`,
+      name: r.name || 'Rule',
+      match: r.match === 'any' ? 'any' : 'all',
+      conditions: r.conditions || [],
+      actions: r.actions || [],
+      enabled: r.enabled !== false,
+    }));
+    return ok(res, 'Rules saved', { rules, managed: true });
+  }
   if (path === '/mailbox/blocked-senders' && req.method === 'GET') return ok(res, 'ok', blocked);
   if (path === '/mailbox/blocked-senders' && req.method === 'POST') { if (!blocked.addresses.includes(json.address)) blocked.addresses.push(json.address); return ok(res, 'Sender blocked', blocked); }
   if (path.startsWith('/mailbox/blocked-senders/') && req.method === 'DELETE') { const a = decodeURIComponent(path.split('/').pop()); blocked.addresses = blocked.addresses.filter((x) => x !== a); return ok(res, 'Unblocked', blocked); }
