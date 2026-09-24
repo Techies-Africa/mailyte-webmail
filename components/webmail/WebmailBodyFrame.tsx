@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { ImageOff } from 'lucide-react';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
+import { DRAGGING_ATTR, PANE_RESIZE_END_EVENT } from '@/lib/webmail/paneLayout';
 import type { WebmailAttachment } from './types';
 
 // Renders a message body in a sandboxed iframe rather than injecting it into
@@ -63,6 +64,26 @@ import type { WebmailAttachment } from './types';
  *
  * `color-scheme` follows the same split, so the browser's form controls and
  * scrollbars inside the frame match whichever surface they sit on.
+ *
+ * **Wide mail is scaled to fit, not cut off.** A template built on a fixed
+ * 600-650px table (GitHub's invitation, most newsletters) cannot shrink below
+ * that -- `max-width` does not narrow an auto-layout table past its
+ * min-content width -- and the frame's `overflow-x: hidden` then cut its
+ * right side off on a phone. So the message sits in a `<mailyte-fit>`
+ * wrapper (a custom element, so no sender rule for `div` can reach it), and
+ * when its natural width is wider than the frame the wrapper is zoomed down
+ * to fit (fit() below):
+ *
+ * - `zoom`, not `transform: scale()`: zoom changes layout, so the body's
+ *   height -- what measure() sizes the frame by -- is the scaled height, with
+ *   no bounding-box arithmetic.
+ * - Measured at natural size: the previous scale is removed first, or the
+ *   last pass would feed this one (the same trap as measure()).
+ * - Never below MIN_FIT_SCALE; past that, and where zoom is unsupported, the
+ *   wrapper scrolls sideways instead. Panning beats both clipping and text
+ *   too small to read.
+ * - Mail that is already responsive never scales: its `@media` rules see
+ *   the frame's own width and lay it out to fit, so it is never too wide.
  */
 function emailSafeReset(darkPlainText: boolean) {
   const surface = darkPlainText
@@ -81,12 +102,24 @@ function emailSafeReset(darkPlainText: boolean) {
      depend on the frame's -- a message shipping "body { height: 100% }"
      would otherwise resolve to the viewport and grow every time we resized
      to fit it. See the measure() comment below. */
-  html, body { height: auto !important; min-height: 0 !important; }
+  html, body { height: auto !important; min-height: 0 !important; min-width: 0 !important; }
+  /* The scaling wrapper; see "Wide mail" above. It, not the body, is what
+     clips or scrolls sideways, so its scrollWidth is the content's width. */
+  mailyte-fit { display: block; overflow-x: hidden; }
+  /* One long line in a <pre> would otherwise shrink the whole message to its
+     width. Wrapped, it reads at full size, as other mail clients show it. */
+  pre { white-space: pre-wrap !important; }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
   img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
 </style>`;
 }
+
+/** Smaller than this is too small to read; the message scrolls sideways instead. */
+const MIN_FIT_SCALE = 0.45;
+/** A widening smaller than this keeps the current scale: it still fits, and a pane dragged a few pixels need not reflow the message. */
+const FIT_STEP = 0.01;
+const FIT_TAG = 'mailyte-fit';
 
 type WebmailBodyFrameProps = {
   html: string;
@@ -125,6 +158,55 @@ export default function WebmailBodyFrame({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [height, setHeight] = useState(150);
+  const fitRef = useRef({ scale: 1, pan: false });
+
+  /** Scale a message wider than the frame down to fit it. See "Wide mail" above. */
+  const fit = useCallback(() => {
+    const wrap = iframeRef.current?.contentDocument?.querySelector<HTMLElement>(FIT_TAG);
+    if (!wrap) return;
+    // Measure at natural size: the last pass must not feed this one.
+    wrap.style.removeProperty('zoom');
+    wrap.style.removeProperty('overflow-x');
+    const available = wrap.clientWidth;
+    const natural = wrap.scrollWidth;
+    let scale = 1;
+    let pan = false;
+    if (available > 0 && natural > available + 1) {
+      const exact = available / natural;
+      if (typeof CSS !== 'undefined' && CSS.supports('zoom', '0.5')) {
+        // Floored, so rounding never leaves it a pixel too wide.
+        scale = Math.max(MIN_FIT_SCALE, Math.floor(exact * 1000) / 1000);
+        pan = exact < MIN_FIT_SCALE;
+      } else {
+        pan = true;
+      }
+    }
+    const previous = fitRef.current;
+    if (scale > previous.scale && scale - previous.scale < FIT_STEP) scale = previous.scale;
+    if (scale < 1) wrap.style.setProperty('zoom', String(scale));
+    if (pan) wrap.style.setProperty('overflow-x', 'auto');
+    fitRef.current = { scale, pan };
+  }, []);
+
+  // The frame's width changes -- a phone rotated, a pane dragged, the window
+  // resized: fit again. Not while a pane edge is being dragged (every frame of
+  // the drag would reflow the whole message); once when it is let go.
+  useEffect(() => {
+    const frame = iframeRef.current;
+    if (!frame || typeof ResizeObserver === 'undefined') return;
+    let width = frame.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (frame.clientWidth === width) return; // our own height changes land here too
+      width = frame.clientWidth;
+      if (!document.documentElement.hasAttribute(DRAGGING_ATTR)) fit();
+    });
+    observer.observe(frame);
+    window.addEventListener(PANE_RESIZE_END_EVENT, fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener(PANE_RESIZE_END_EVENT, fit);
+    };
+  }, [fit]);
 
   // Seeded from the <html> class rather than from useTheme(), because
   // next-themes resolves to undefined until after mount and its blocking
@@ -160,7 +242,10 @@ export default function WebmailBodyFrame({
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
-      srcDoc={emailSafeReset(darkPlainText) + sanitized.html}
+      // The sender's head styles are inside the wrapper; they still apply.
+      // DOMPurify returns balanced markup, so nothing in the message can
+      // close the wrapper early.
+      srcDoc={`${emailSafeReset(darkPlainText)}<${FIT_TAG}>${sanitized.html}</${FIT_TAG}>`}
       onLoad={() => {
         const doc = iframeRef.current?.contentWindow?.document;
         if (!doc?.documentElement) return;
@@ -181,6 +266,9 @@ export default function WebmailBodyFrame({
           // Sub-pixel jitter must not ping-pong between two values forever.
           setHeight((prev) => (Math.abs(prev - next) > 1 ? next : prev));
         };
+        // A new document (Show images, a theme change): nothing is scaled yet.
+        fitRef.current = { scale: 1, pan: false };
+        fit();
         measure();
 
         // scrollHeight at `load` doesn't account for images still
