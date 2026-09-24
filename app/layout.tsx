@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import AccentTheme from '@/components/providers/AccentTheme';
+import OutboxProvider from '@/components/providers/OutboxProvider';
 import QueryProvider from '@/components/providers/QueryProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { brand } from '@/lib/webmail/brand';
@@ -65,7 +66,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AccentTheme />
           {/* Inside the toasts: mutations report through useToast. */}
           <ToastProvider>
-            <QueryProvider>{children}</QueryProvider>
+            <QueryProvider>
+              {/* The undo-send window, held above every page. */}
+              <OutboxProvider>{children}</OutboxProvider>
+            </QueryProvider>
           </ToastProvider>
         </ThemeProvider>
       </body>

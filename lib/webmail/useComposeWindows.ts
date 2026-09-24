@@ -30,6 +30,14 @@ export interface OpenComposeOptions {
   draftId?: string;
   resumed?: { to: string; cc: string; bcc: string; subject: string };
   layout?: ComposeLayout;
+  /** Files to start with: a message coming back from Undo or a failed send. */
+  attachments?: File[];
+  /** The address it was being sent from, when not the person's own. */
+  from?: string;
+  /** initialBody already carries the quotation; do not add it again. */
+  quoteIncluded?: boolean;
+  /** Put back from somewhere, not typed yet: closing it should still save it. */
+  restored?: boolean;
 }
 
 /**
@@ -81,6 +89,10 @@ export function useComposeWindows() {
           initialBody: options.initialBody,
           draftId: options.draftId,
           resumed: options.resumed,
+          attachments: options.attachments,
+          from: options.from,
+          quoteIncluded: options.quoteIncluded,
+          restored: options.restored,
           layout,
           label,
           seed: 0,

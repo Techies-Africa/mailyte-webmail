@@ -121,16 +121,20 @@ export default function ComposeWindow({
   onDiscardDraft,
 }: ComposeWindowProps) {
   const { mode, replyTo, resumed, initialBody, draftId: existingDraftId } = model;
+  // A message put back by Undo or Reopen keeps the address it was going from,
+  // if this session may still send as it.
+  const restoredFrom =
+    model.from && fromOptions.some((option) => option.address === model.from) ? model.from : selfAddress;
   const fullscreen = layout === 'fullscreen' || isMobile;
 
   const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, selfAddress, resumed));
   const [showCc, setShowCc] = useState(!!resumed?.cc);
   const [showBcc, setShowBcc] = useState(!!resumed?.bcc);
-  const [from, setFrom] = useState(selfAddress);
+  const [from, setFrom] = useState(restoredFrom);
   const [isSending, setIsSending] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachments, setAttachments] = useState<File[]>(model.attachments ?? []);
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,7 +146,8 @@ export default function ComposeWindow({
   // draft without re-subscribing on every keystroke.
   const draftRef = useRef<ComposeDraft>(draft);
   const draftIdRef = useRef<string | undefined>(existingDraftId);
-  const dirtyRef = useRef(false);
+  // A restored message counts as edited: it exists nowhere else as it is now.
+  const dirtyRef = useRef(!!model.restored);
   const sentRef = useRef(false);
 
   useEffect(() => {
@@ -164,7 +169,11 @@ export default function ComposeWindow({
     onLabelChangeRef.current(draft.subject.trim() || MODE_TITLE[mode]);
   }, [draft.subject, mode]);
 
-  const quoted = useMemo(() => (replyTo ? quotedBody(mode, replyTo) : ''), [mode, replyTo]);
+  // A restored message already carries its quotation in initialBody.
+  const quoted = useMemo(
+    () => (replyTo && !model.quoteIncluded ? quotedBody(mode, replyTo) : ''),
+    [mode, replyTo, model.quoteIncluded],
+  );
 
   /**
    * What the editor starts with: whatever was passed in followed by the

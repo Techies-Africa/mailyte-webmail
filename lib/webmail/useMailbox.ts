@@ -34,7 +34,6 @@ import {
   moveMessage as apiMove,
   markRead as apiMarkRead,
   markUnread as apiMarkUnread,
-  sendMessage as apiSend,
   aiCompose as apiAiCompose,
   saveDraft as apiSaveDraft,
   discardDraft as apiDiscardDraft,
@@ -47,6 +46,16 @@ import {
 } from '@/lib/webmail/client';
 import type { SharedMailbox } from '@/lib/webmail/client';
 import { formatSendAt } from '@/lib/webmail/scheduleTimes';
+import { splitAddresses } from '@/lib/webmail/addresses';
+import { useOutbox, type PendingSend, type SendContext } from '@/components/providers/OutboxProvider';
+import {
+  deltasOf,
+  failureText,
+  isSessionStatus,
+  loadScheduled as loadScheduledIn,
+  refreshFolders as refreshFoldersIn,
+  settleRemoval as settleRemovalIn,
+} from '@/lib/webmail/query/removals';
 import { FALLBACK_FOLDERS, toFolder } from '@/lib/webmail/adapters';
 import {
   useCapabilities,
@@ -66,17 +75,14 @@ import {
   type SearchScope,
 } from '@/lib/webmail/query/listParams';
 import { POLL_MS, foldersQuery, listQuery, messageQuery, summaryQuery, threadQuery } from '@/lib/webmail/query/mailQueries';
-import { absorbNextFolders } from '@/lib/webmail/query/mailSync';
 import {
   addDelta,
   adjustFolderCounts,
   findMessage,
-  forgetMessages,
   invalidateFolderLists,
   listParamsOf,
   patchMessages,
   removeFromLists,
-  updateListPages,
   type FolderDeltas,
 } from '@/lib/webmail/query/messageCache';
 import {
@@ -97,16 +103,10 @@ import {
   usePendingOps,
   type FlagPatch,
   type FlagsOp,
-  type PendingOp,
   type RemoveOp,
   type RemoveReason,
 } from '@/lib/webmail/query/pendingOps';
-import {
-  addBeforeSessionChange,
-  addSessionDropHandler,
-  trackSessionWork,
-  useUnauthorizedHandler,
-} from '@/lib/webmail/query/session';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
 import { settingsKeys } from '@/lib/webmail/query/settingsQueries';
 
 export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
@@ -115,18 +115,12 @@ export type { ListFilter, SearchScope } from '@/lib/webmail/query/listParams';
 /** The most rows "mark all read" will touch in one go. */
 const MARK_ALL_CAP = 1000;
 
-/** Fallback window when the preference has not loaded yet. */
-const DEFAULT_UNDO_SECONDS = 5;
 
 /** How long a move or a delete to Trash can be taken back before it is sent. */
 const UNDO_MS = 6000;
 
-export function splitAddresses(value: string): string[] {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+export { splitAddresses };
+export type { PendingSend, SendContext };
 
 /**
  * What the URL is currently describing. The address bar carries folder and
@@ -156,51 +150,11 @@ function pushUrlState(folder: string, id: string | null, replace = false) {
   window.history[replace ? 'replaceState' : 'pushState']({ folder, id }, '', url);
 }
 
-export interface SendContext {
-  mode: ComposeMode;
-  replyTo?: WebmailMessage;
-  draftId?: string;
-}
-
-export interface PendingSend {
-  subject: string;
-  until: number;
-  payload: ComposePayload;
-  context: SendContext;
-}
 
 const NO_SHARED_MAILBOXES: SharedMailbox[] = [];
 const NO_MESSAGES: WebmailListItem[] = [];
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-/** What these messages of an action move in the rail's counts. */
-function deltasOf(op: PendingOp, ids: Iterable<string>): FolderDeltas {
-  const sum: FolderDeltas = new Map();
-  for (const id of ids) {
-    for (const [folder, delta] of op.deltasById.get(id) ?? []) addDelta(sum, folder, delta.unread, delta.total);
-  }
-  return sum;
-}
-
-/** 401 and 403 already send the person to sign in; a toast on top says nothing more. */
-const isSessionStatus = (status: number | null) => status === 401 || status === 403;
-
-const REMOVAL_VERB: Record<RemoveReason, string> = {
-  archive: 'archive',
-  trash: 'move to Trash',
-  move: 'move',
-  spam: 'move to Junk',
-  notSpam: 'move to Inbox',
-  deleteForever: 'delete',
-  cancelScheduled: 'cancel',
-  discardDraft: 'discard',
-};
-
-function failureText(verb: string, failed: number, total: number, error: string | null): string {
-  const what = failed === total ? (total === 1 ? 'that message' : `${total} messages`) : `${failed} of ${total} messages`;
-  return `Couldn't ${verb} ${what}${error ? `: ${error}` : ''}`;
-}
 
 export function useMailbox() {
   const { toast } = useToast();
@@ -246,7 +200,6 @@ export function useMailbox() {
   const [filter, setFilterState] = useState<ListFilter>('all');
   /** A message that would not open. List failures come from the list query itself. */
   const [openError, setOpenError] = useState<string | null>(null);
-  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
   // The open message, readable from callbacks that outlive the render they
@@ -293,10 +246,7 @@ export function useMailbox() {
    * answer carries that change, which is already on screen, so it becomes the
    * new baseline instead of reloading lists.
    */
-  const refreshFolders = useCallback(() => {
-    absorbNextFolders(queryClient);
-    return queryClient.refetchQueries({ queryKey: qk.folders, exact: true });
-  }, [queryClient]);
+  const refreshFolders = useCallback(() => refreshFoldersIn(queryClient), [queryClient]);
 
   // --- The message list ------------------------------------------------------------------
 
@@ -349,10 +299,7 @@ export function useMailbox() {
   const lastSyncAt = useMemo(() => (syncedAt > 0 ? new Date(syncedAt) : null), [syncedAt]);
 
   // Scheduled and labels are account-wide queries; after a change, ask them to look again.
-  const loadScheduled = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: qk.scheduled }),
-    [queryClient],
-  );
+  const loadScheduled = useCallback(() => loadScheduledIn(queryClient), [queryClient]);
   const loadLabels = useCallback(
     () => queryClient.invalidateQueries({ queryKey: qk.labels }),
     [queryClient],
@@ -462,67 +409,9 @@ export function useMailbox() {
     [queryClient, store],
   );
 
-  /**
-   * A removal was answered. What the server confirmed is written into the
-   * cache for good; what it refused simply reappears, because the pending
-   * action is dropped. Then the folders it touched are asked for the truth.
-   */
   const settleRemoval = useCallback(
-    (op: RemoveOp, outcome: OpOutcome) => {
-      // A move leaves a label view or an all-mail search holding the message
-      // under a new id; there it stays, in its new folder, until that list
-      // reloads -- rather than vanishing and coming back.
-      const movedTo =
-        op.dest && (op.reason === 'archive' || op.reason === 'move' || op.reason === 'notSpam') ? op.dest : null;
-      const ok = new Set(outcome.ok);
-
-      // One batch: the cache writes and the end of the pending action reach
-      // the screen in the same render, so no count or row flickers for a frame.
-      notifyManager.batch(() => {
-        if (ok.size > 0) {
-          if (movedTo) {
-            removeFromLists(queryClient, ok, (params) => params.folder !== null);
-            updateListPages(queryClient, (page, params) =>
-              params.folder === null && page.items.some((m) => ok.has(m.id))
-                ? { ...page, items: page.items.map((m) => (ok.has(m.id) ? { ...m, folder: movedTo } : m)) }
-                : page,
-            );
-          } else {
-            removeFromLists(queryClient, ok);
-          }
-          forgetMessages(queryClient, ok);
-          adjustFolderCounts(queryClient, deltasOf(op, ok));
-        }
-        notifyManager.schedule(() => store.settleRemoval(op.opId, ok, movedTo));
-      });
-
-      void refreshFolders();
-      const touched = [...deltasOf(op, ok).keys()];
-      // The source list backfills its page; the destination gains the
-      // message under its new id; label views and searches pick that id up.
-      if (touched.length > 0) void invalidateFolderLists(queryClient, touched);
-      if (op.reason === 'cancelScheduled' || op.reason === 'discardDraft') void loadScheduled();
-
-      if (op.reason === 'cancelScheduled') {
-        // Said only once the server agrees: a send that already went cannot be cancelled.
-        if (ok.size > 0) toast('Send cancelled — the message is in your drafts');
-        else if (outcome.firstStatus === 404) {
-          toast('That message is no longer scheduled — it may already have been sent', { tone: 'warning' });
-          void invalidateFolderLists(queryClient, 'all');
-        }
-      }
-      if (
-        outcome.failed.length > 0 &&
-        op.reason !== 'discardDraft' &&
-        !(op.reason === 'cancelScheduled' && outcome.firstStatus === 404) &&
-        !isSessionStatus(outcome.firstStatus)
-      ) {
-        toast(failureText(REMOVAL_VERB[op.reason], outcome.failed.length, op.ids.length, outcome.firstError), {
-          tone: 'error',
-        });
-      }
-    },
-    [store, queryClient, refreshFolders, loadScheduled, toast],
+    (op: RemoveOp, outcome: OpOutcome) => settleRemovalIn(queryClient, toast, op, outcome),
+    [queryClient, toast],
   );
 
   /** A flag change was answered: the same, for read, starred and labels. */
@@ -1206,177 +1095,9 @@ export function useMailbox() {
 
   // --- Sending -------------------------------------------------------------------
 
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The message in the undo window, readable from the timer that sends it.
-  const heldSendRef = useRef<{ payload: ComposePayload; context: SendContext } | null>(null);
-
-  // What the page does with a send that failed: put it back in a compose
-  // window. Registered by the page, which owns the compose windows.
-  const sendFailureRef = useRef<((payload: ComposePayload, context: SendContext) => void) | null>(null);
-  const setSendFailureHandler = useCallback(
-    (handler: ((payload: ComposePayload, context: SendContext) => void) | null) => {
-      sendFailureRef.current = handler;
-      return () => {
-        if (sendFailureRef.current === handler) sendFailureRef.current = null;
-      };
-    },
-    [],
-  );
-
-  const deliver = useCallback(
-    async (payload: ComposePayload, context: SendContext) => {
-      // Tracked: a switch or sign-out waits for it rather than cutting it off.
-      const result = await trackSessionWork(apiSend(
-        {
-          to: splitAddresses(payload.to),
-          cc: payload.cc ? splitAddresses(payload.cc) : undefined,
-          bcc: payload.bcc ? splitAddresses(payload.bcc) : undefined,
-          subject: payload.subject,
-          body_html: payload.body,
-          in_reply_to: payload.inReplyTo,
-          references: payload.references,
-          send_at: payload.sendAt,
-          from: payload.from,
-        },
-        payload.attachments ?? [],
-        handleUnauthorized,
-      ));
-
-      if (!result.success) {
-        const verb = payload.sendAt ? 'was not scheduled' : 'was not sent';
-        const reopen = sendFailureRef.current;
-        toast(`"${payload.subject || '(no subject)'}" ${verb}: ${result.message}`, {
-          tone: 'error',
-          // Its draft is still in Drafts; Reopen brings back the rest as well.
-          action: reopen ? { label: 'Reopen', onClick: () => reopen(payload, context) } : undefined,
-        });
-        return;
-      }
-
-      // It has gone: the draft it was saved as is not a draft any more.
-      const draftId = payload.draftId ?? context.draftId;
-      if (draftId) void discardDraft(draftId);
-      void refreshFolders();
-
-      if (payload.sendAt) {
-        toast(`Scheduled to send ${formatSendAt(new Date(payload.sendAt))}`);
-        void queryClient.invalidateQueries({ queryKey: qk.lists });
-        void loadScheduled();
-        return;
-      }
-
-      if (result.data && result.data.filed_to_sent === false) {
-        toast('Sent — filing to your Sent folder is still in progress', { tone: 'warning' });
-      } else {
-        const recipients = splitAddresses(payload.to);
-        const who =
-          recipients.length === 1
-            ? recipients[0]
-            : `${recipients[0]} and ${recipients.length - 1} other${recipients.length === 2 ? '' : 's'}`;
-        toast(`Message sent to ${who}`);
-      }
-      // Sent gains a copy, and a reply changes the conversation it answered.
-      void invalidateFolderLists(queryClient, [sentFolder]);
-      void queryClient.invalidateQueries({ queryKey: qk.threads });
-    },
-    [handleUnauthorized, toast, discardDraft, refreshFolders, queryClient, loadScheduled, sentFolder],
-  );
-
-  /**
-   * Undo send: a client-side hold, not a server-side recall. The message has
-   * simply not been handed to Postfix yet. Once the window closes it is gone
-   * and nothing on screen offers an Undo that would no longer work.
-   */
-  const send = useCallback(
-    async (payload: ComposePayload, sendContext: SendContext) => {
-      const context = { ...sendContext, draftId: payload.draftId ?? sendContext.draftId };
-      // A scheduled message skips the hold; it can be called back from the
-      // Scheduled folder for the whole of the wait.
-      if (payload.sendAt || !settings?.undoSendEnabled) {
-        void deliver(payload, context);
-        return { success: true as const };
-      }
-
-      // A second message inside the first one's window: the first goes now.
-      // Replacing it used to drop it without a word.
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-      const earlier = heldSendRef.current;
-      if (earlier) void deliver(earlier.payload, earlier.context);
-
-      const windowMs = (settings.undoSendSeconds || DEFAULT_UNDO_SECONDS) * 1000;
-      heldSendRef.current = { payload, context };
-      undoTimerRef.current = setTimeout(() => {
-        undoTimerRef.current = null;
-        const held = heldSendRef.current;
-        heldSendRef.current = null;
-        setPendingSend(null);
-        if (held) void deliver(held.payload, held.context);
-      }, windowMs);
-
-      setPendingSend({
-        subject: payload.subject || '(no subject)',
-        until: Date.now() + windowMs,
-        payload,
-        context,
-      });
-      return { success: true as const };
-    },
-    [deliver, settings],
-  );
-
-  /** Stop the pending send. Returns what was held so the caller can reopen it. */
-  const cancelUndo = useCallback((): PendingSend | null => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    undoTimerRef.current = null;
-    heldSendRef.current = null;
-    const held = pendingSend;
-    setPendingSend(null);
-    return held;
-  }, [pendingSend]);
-
-  // The held send belongs to this session. Switching or signing out here
-  // sends it first, while it is still this mailbox's to send; a session
-  // changed elsewhere drops it (its draft stays in Drafts); leaving the inbox
-  // sends it at once, since its Undo does not come along.
-  const deliverRef = useRef(deliver);
-  useEffect(() => {
-    deliverRef.current = deliver;
-  }, [deliver]);
-  const takeHeldSend = useCallback(() => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    undoTimerRef.current = null;
-    const held = heldSendRef.current;
-    heldSendRef.current = null;
-    setPendingSend(null);
-    return held;
-  }, []);
-  useEffect(
-    () =>
-      addBeforeSessionChange(async () => {
-        const held = takeHeldSend();
-        if (held) await deliverRef.current(held.payload, held.context);
-      }),
-    [takeHeldSend],
-  );
-  useEffect(() => addSessionDropHandler(() => void takeHeldSend()), [takeHeldSend]);
-  useEffect(
-    () => () => {
-      const held = takeHeldSend();
-      if (held) void deliverRef.current(held.payload, held.context);
-    },
-    [takeHeldSend],
-  );
-
-  // Closing the tab inside the undo window would lose the message: ask first.
-  useEffect(() => {
-    if (!pendingSend) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [pendingSend]);
+  // Held in the OutboxProvider, above every page, so the undo window and its
+  // Undo follow the person anywhere.
+  const { send } = useOutbox();
 
   /** Send times keyed by message id, for the list to render. */
   const sendTimes = useMemo(() => {
@@ -1532,9 +1253,6 @@ export function useMailbox() {
     saveDraft,
     discardDraft,
     send,
-    pendingSend,
-    cancelUndo,
-    setSendFailureHandler,
     aiWrite,
     summarize,
     signatureSeed,

@@ -13,13 +13,13 @@ import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
 import ComposeDock from '@/components/webmail/compose/ComposeDock';
 import WebmailSkeleton from '@/components/webmail/WebmailSkeleton';
 import WebmailShortcutHelp from '@/components/webmail/WebmailShortcutHelp';
-import WebmailUndoToast from '@/components/webmail/WebmailUndoToast';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import MoveEmailModal from '@/components/webmail/modals/MoveEmailModal';
 import LabelPickerDialog from '@/components/webmail/modals/LabelPickerDialog';
 import type { ComposeMode, WebmailListItem } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
+import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 
@@ -136,40 +136,29 @@ export default function WebmailInboxPage() {
     [mailbox],
   );
 
-  /** Undo puts the message back in front of the person, exactly as it was. */
-  const undoSend = useCallback(() => {
-    const held = mailbox.cancelUndo();
-    if (!held) return;
-    compose.openCompose({
-      mode: held.context.mode,
-      replyTo: held.context.replyTo,
-      initialBody: held.payload.body,
-      draftId: held.context.draftId,
-      resumed: {
-        to: held.payload.to,
-        cc: held.payload.cc,
-        bcc: held.payload.bcc,
-        subject: held.payload.subject,
-      },
-    });
-  }, [mailbox, compose]);
-
-  // A send that failed can be put back in front of the person to fix and retry.
+  // Undo, or Reopen after a failed send -- from this page or any other --
+  // puts the message back in a compose window exactly as it was: its text
+  // (quote included, so it is not quoted twice), attachments and From, and
+  // marked as edited, so closing it saves what is there.
   const { openCompose } = compose;
-  const reopenFailedSend = useCallback(
-    (payload: ComposePayload, context: SendContext) => {
-      openCompose({
-        mode: context.mode,
-        replyTo: context.replyTo,
-        initialBody: payload.body,
-        draftId: payload.draftId ?? context.draftId,
-        resumed: { to: payload.to, cc: payload.cc, bcc: payload.bcc, subject: payload.subject },
-      });
-    },
-    [openCompose],
+  const { registerComposeOpener } = useOutbox();
+  useEffect(
+    () =>
+      registerComposeOpener(({ payload, context }) =>
+        openCompose({
+          mode: context.mode,
+          replyTo: context.replyTo,
+          initialBody: payload.body,
+          draftId: payload.draftId ?? context.draftId,
+          resumed: { to: payload.to, cc: payload.cc, bcc: payload.bcc, subject: payload.subject },
+          attachments: payload.attachments,
+          from: payload.from,
+          quoteIncluded: true,
+          restored: true,
+        }),
+      ),
+    [registerComposeOpener, openCompose],
   );
-  const { setSendFailureHandler } = mailbox;
-  useEffect(() => setSendFailureHandler(reopenFailedSend), [setSendFailureHandler, reopenFailedSend]);
 
   // Leaving the inbox keeps what is being written -- it is saved to Drafts --
   // but not its attachments. Ask first, only when there are some.
@@ -420,15 +409,6 @@ export default function WebmailInboxPage() {
 
       {helpOpen && <WebmailShortcutHelp onClose={() => setHelpOpen(false)} />}
 
-      {mailbox.pendingSend && (
-        <WebmailUndoToast
-          // A second send inside the window is a new countdown, not the old one's remainder.
-          key={mailbox.pendingSend.until}
-          subject={mailbox.pendingSend.subject}
-          until={mailbox.pendingSend.until}
-          onUndo={undoSend}
-        />
-      )}
     </div>
   );
 }

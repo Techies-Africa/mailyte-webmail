@@ -35,6 +35,11 @@ export interface ComposeWindow {
   draftId?: string;
   /** Header fields restored into the window. */
   resumed?: { to: string; cc: string; bcc: string; subject: string };
+  /** Files, From and flags for a message put back by Undo or Reopen; see OpenComposeOptions. */
+  attachments?: File[];
+  from?: string;
+  quoteIncluded?: boolean;
+  restored?: boolean;
   layout: ComposeLayout;
   /** What the title bar and the minimized tab show; follows the subject. */
   label: string;
