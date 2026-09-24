@@ -234,8 +234,8 @@ export default function ComposeWindow({
       const saved = await onSaveDraft(
         {
           ...draftRef.current,
-          inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : undefined,
-          references: isReply ? (replyTo?.references ?? undefined) : undefined,
+          inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : model.threading?.inReplyTo,
+          references: isReply ? (replyTo?.references ?? undefined) : model.threading?.references,
         },
         draftIdRef.current,
       );
@@ -335,8 +335,9 @@ export default function ComposeWindow({
       const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
       const result = await onSend({
         ...draft,
-        inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : undefined,
-        references: isReply ? (replyTo?.references ?? undefined) : undefined,
+        // A resumed reply draft has no replyTo, but keeps the thread it was saved in.
+        inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : model.threading?.inReplyTo,
+        references: isReply ? (replyTo?.references ?? undefined) : model.threading?.references,
         attachments,
         sendAt: sendAt?.toISOString(),
         from: from !== selfAddress ? from : undefined,

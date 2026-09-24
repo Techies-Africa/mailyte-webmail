@@ -38,6 +38,8 @@ export interface OpenComposeOptions {
   quoteIncluded?: boolean;
   /** Put back from somewhere, not typed yet: closing it should still save it. */
   restored?: boolean;
+  /** The thread a resumed reply draft belongs to, carried when there is no replyTo. */
+  threading?: { inReplyTo?: string; references?: string };
 }
 
 /**
@@ -93,6 +95,7 @@ export function useComposeWindows() {
           from: options.from,
           quoteIncluded: options.quoteIncluded,
           restored: options.restored,
+          threading: options.threading,
           layout,
           label,
           seed: 0,

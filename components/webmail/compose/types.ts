@@ -40,6 +40,7 @@ export interface ComposeWindow {
   from?: string;
   quoteIncluded?: boolean;
   restored?: boolean;
+  threading?: { inReplyTo?: string; references?: string };
   layout: ComposeLayout;
   /** What the title bar and the minimized tab show; follows the subject. */
   label: string;

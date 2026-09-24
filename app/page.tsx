@@ -111,6 +111,11 @@ export default function WebmailInboxPage() {
             bcc: message.bcc.map((p) => p.email).join(', '),
             subject: message.subject === '(no subject)' ? '' : message.subject,
           },
+          // A reply saved as a draft stays in the conversation it answers.
+          threading: {
+            inReplyTo: message.inReplyTo ?? undefined,
+            references: message.references ?? undefined,
+          },
         });
       }
       if (isMobile) setMenuOpen(false);
