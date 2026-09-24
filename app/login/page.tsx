@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Field';
 import { listAccounts, switchAccount, type AccountSummary } from '@/lib/webmail/client';
 import { announceAccountChange, resetSessionState } from '@/lib/webmail/query/session';
-import { dropAllHeld } from '@/lib/webmail/query/opRunner';
+import { dropAllHeld, releaseAllHeld } from '@/lib/webmail/query/opRunner';
 
 export default function WebmailLoginPage() {
   const router = useRouter();
@@ -36,8 +36,10 @@ export default function WebmailLoginPage() {
   // before anyone signs in as someone else.
   const queryClient = useQueryClient();
   useEffect(() => {
-    // Anything still held belonged to a session that has ended.
-    dropAllHeld(queryClient);
+    // "Add another account" keeps this session: what was held goes now, in
+    // it. Otherwise the session has ended, and what was held goes nowhere.
+    if (new URLSearchParams(window.location.search).get('add') === '1') releaseAllHeld(queryClient);
+    else dropAllHeld(queryClient);
     queryClient.clear();
     resetSessionState();
   }, [queryClient]);

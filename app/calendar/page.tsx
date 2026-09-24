@@ -157,15 +157,21 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
 
   const invitations = useInvitations(supported === true).data ?? NO_INVITATIONS;
 
-  /** An answer takes the invitation off the list at once; a refusal puts it back. */
+  /**
+   * An answer takes the invitation off the list at once; a refusal puts that
+   * one back -- only that one, so another answered meanwhile is not revived
+   * and answered twice -- and the server's list follows.
+   */
   async function respond(invitation: Invitation, response: RsvpResponse) {
     setAnswering(invitation.id);
-    const previous = queryClient.getQueryData<Invitation[]>(calendarKeys.invitations);
     queryClient.setQueryData<Invitation[]>(calendarKeys.invitations, (list) => list?.filter((i) => i.id !== invitation.id));
     const res = await sendRsvp(invitation.id, response, onUnauthorized);
     setAnswering(null);
     if (!res.success) {
-      queryClient.setQueryData(calendarKeys.invitations, previous);
+      queryClient.setQueryData<Invitation[]>(calendarKeys.invitations, (list) =>
+        list && !list.some((i) => i.id === invitation.id) ? [...list, invitation] : list,
+      );
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.invitations });
       setBanner(res.message);
       return;
     }
@@ -218,16 +224,14 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
     const target = editing;
     const calendar = active;
     setModalOpen(false);
-    const before = queryClient.getQueriesData<CalendarEvent[]>({ queryKey: calendarKeys.events });
     queryClient.setQueriesData<CalendarEvent[]>({ queryKey: calendarKeys.events }, (list) =>
       list?.filter((e) => e.id !== target.id),
     );
     void (async () => {
       const res = await deleteEvent(calendar, target.id, target.etag, onUnauthorized);
-      if (!res.success) {
-        for (const [key, data] of before) queryClient.setQueryData(key, data);
-        setBanner(`Couldn't delete "${target.summary ?? 'that event'}": ${res.message}`);
-      }
+      // Refused or not, the server's ranges follow: a refusal brings the event
+      // back without reviving anything else deleted meanwhile.
+      if (!res.success) setBanner(`Couldn't delete "${target.summary ?? 'that event'}": ${res.message}`);
       void queryClient.invalidateQueries({ queryKey: calendarKeys.events });
     })();
   }

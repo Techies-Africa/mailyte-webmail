@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Info } from 'lucide-react';
 
 /**
@@ -56,6 +56,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const closers = useRef(new Map<number, (reason: ToastCloseReason) => void>());
 
+  // A plain message that arrives while an Undo toast is up waits for it
+  // rather than replacing it: replacing would end the Undo window early and
+  // send the action the person may still be about to take back.
+  const waiting = useRef<{ id: number; text: string; options: ToastOptions } | null>(null);
+  const showRef = useRef<(id: number, text: string, options: ToastOptions) => void>(() => {});
+
   const close = useCallback((id: number, reason: ToastCloseReason) => {
     const timer = timers.current.get(id);
     if (timer) clearTimeout(timer);
@@ -64,13 +70,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     closers.current.delete(id);
     setToasts((current) => current.filter((t) => t.id !== id));
     onClose?.(reason);
+    const next = waiting.current;
+    if (next && closers.current.size === 0) {
+      waiting.current = null;
+      showRef.current(next.id, next.text, next.options);
+    }
   }, []);
 
-  const dismiss = useCallback((id: number) => close(id, 'dismissed'), [close]);
+  const dismiss = useCallback(
+    (id: number) => {
+      if (waiting.current?.id === id) waiting.current = null;
+      else close(id, 'dismissed');
+    },
+    [close],
+  );
 
-  const toast = useCallback(
-    (text: string, options: ToastOptions = {}) => {
-      const id = nextId.current++;
+  const show = useCallback(
+    (id: number, text: string, options: ToastOptions) => {
       const tone = options.tone ?? 'success';
       // One at a time: a stack of confirmations reads as a fault. Whatever
       // was showing is closed first, so its onClose hears that it was replaced.
@@ -84,9 +100,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           setTimeout(() => close(id, 'timeout'), duration),
         );
       }
-      return id;
     },
     [close],
+  );
+  useEffect(() => {
+    showRef.current = show;
+  }, [show]);
+
+  const toast = useCallback(
+    (text: string, options: ToastOptions = {}) => {
+      const id = nextId.current++;
+      // Only another Undo replaces an Undo; anything else waits its turn (the newest wins).
+      if (!options.onClose && closers.current.size > 0) {
+        waiting.current = { id, text, options };
+        return id;
+      }
+      show(id, text, options);
+      return id;
+    },
+    [show],
   );
 
   const api = useMemo(() => ({ toast, dismiss }), [toast, dismiss]);

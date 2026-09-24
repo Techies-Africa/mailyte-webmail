@@ -64,13 +64,16 @@ export default function WebmailSecuritySection({ onUnauthorized }: { onUnauthori
   /** Signed out on the list at once; back as it was, with the reason, if the server refuses. */
   const signOutSession = async (session: ApiSession) => {
     setError(null);
-    const before = queryClient.getQueryData<ApiSession[]>(settingsKeys.sessions);
     queryClient.setQueryData<ApiSession[]>(settingsKeys.sessions, (list) =>
       list?.map((s) => (s.id === session.id ? { ...s, active: false, revoked: true } : s)),
     );
     const result = await revokeSession(session.id, onUnauthorized);
     if (!result.success) {
-      queryClient.setQueryData(settingsKeys.sessions, before);
+      // Only this session goes back as it was.
+      queryClient.setQueryData<ApiSession[]>(settingsKeys.sessions, (list) =>
+        list?.map((s) => (s.id === session.id ? session : s)),
+      );
+      void queryClient.invalidateQueries({ queryKey: settingsKeys.sessions });
       setError(result.message);
       return;
     }

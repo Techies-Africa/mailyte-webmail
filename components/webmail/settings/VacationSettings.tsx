@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { updateVacation } from '@/lib/webmail/client';
-import { settingsKeys, useSeedOnce, useVacation } from '@/lib/webmail/query/settingsQueries';
+import { settingsKeys, useSeed, useVacation } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import { Hint, Input, Label, Switch, Textarea } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
@@ -29,7 +29,8 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
   // Cached: a second visit opens with the saved responder already filled in.
   const queryClient = useQueryClient();
   const vacation = useVacation(onUnauthorized);
-  const seeded = useSeedOnce(vacation.data, (data) => {
+  const [touched, setTouched] = useState(false);
+  const seeded = useSeed(vacation, (data) => {
     // Restore ALL of it: the mail server stores every field on the Sieve
     // script and returns them from parse_vacation.
     setEnabled(data.enabled);
@@ -37,11 +38,12 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
     setMessage(data.message ?? '');
     setStartDate(data.start_date ?? '');
     setEndDate(data.end_date ?? '');
-  });
+  }, touched);
   const loading = !seeded && !vacation.isError;
   const error = actionError ?? (!seeded && vacation.isError ? vacation.error.message : null);
 
   const touch = () => {
+    setTouched(true);
     setSaved(false);
     onDirty?.();
   };
@@ -70,6 +72,7 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
       setError(result.message);
       return;
     }
+    setTouched(false);
     // What was saved is what the server now holds; the next visit opens with it.
     queryClient.setQueryData(settingsKeys.vacation, (prev: object | undefined) => ({ ...prev, ...payload, managed: true }));
     onSaved?.();

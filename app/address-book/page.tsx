@@ -153,12 +153,14 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
   function remove(contact: Contact) {
     const book = activeBook;
     const key = contactKeys.book(book);
-    const before = queryClient.getQueryData<Contact[]>(key);
     queryClient.setQueryData<Contact[]>(key, (list) => list?.filter((c) => c.id !== contact.id));
     void (async () => {
       const res = await deleteContact(contact.id, contact.etag, onUnauthorized, book);
       if (!res.success) {
-        queryClient.setQueryData(key, before);
+        // Only this card comes back; anything deleted meanwhile stays deleted.
+        queryClient.setQueryData<Contact[]>(key, (list) =>
+          list && !list.some((c) => c.id === contact.id) ? [...list, contact] : list,
+        );
         setBanner(`Couldn't delete ${displayName(contact)}: ${res.message}`);
       }
       refreshBook(book);

@@ -10,7 +10,7 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
-import { announceAccountChange, prepareSessionChange } from "./query/session";
+import { abortSessionChange, announceAccountChange, prepareSessionChange } from "./query/session";
 
 /**
  * `status` on a failure is the HTTP status, or 0 when the server was never
@@ -854,7 +854,10 @@ export async function switchAccount(email: string): Promise<string | null> {
     },
     () => {},
   );
-  if (!result.success) return result.message;
+  if (!result.success) {
+    abortSessionChange();
+    return result.message;
+  }
   forgetDisplayAddress();
   announceAccountChange();
   window.location.assign("/");

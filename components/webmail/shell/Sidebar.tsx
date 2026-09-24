@@ -50,6 +50,8 @@ type SidebarProps = {
    * the screen stayed where it was.
    */
   onHome?: () => void;
+  /** Asked before leaving for another page from the account menu; false stays. */
+  onLeave?: () => boolean;
 };
 
 /**
@@ -75,6 +77,7 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
   onHome,
+  onLeave,
 }: SidebarProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -273,6 +276,7 @@ export default function Sidebar({
                     label="Add another account"
                     onClick={() => {
                       setProfileOpen(false);
+                      if (onLeave && !onLeave()) return;
                       router.push('/login?add=1');
                     }}
                   />

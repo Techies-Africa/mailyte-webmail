@@ -24,17 +24,21 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Re-seeded only after this form's own save, never by a background refresh.
+  // Follows the server copy while untouched, and after this form's own
+  // save; never over an edit in progress.
   const reseedAfterSave = useRef(false);
+  const touched = useRef(false);
   useEffect(() => {
-    if (!reseedAfterSave.current) return;
+    if (touched.current && !reseedAfterSave.current) return;
     reseedAfterSave.current = false;
+    touched.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEnabled(settings.undoSendEnabled);
     setSeconds(settings.undoSendSeconds);
   }, [settings]);
 
   const touch = () => {
+    touched.current = true;
     setSaved(false);
     onDirty?.();
   };

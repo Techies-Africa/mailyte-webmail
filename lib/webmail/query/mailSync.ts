@@ -19,7 +19,11 @@ import { opsStoreOf } from './pendingOps';
 
 interface SyncState {
   baseline: Map<string, WebmailFolder> | null;
-  /** The next answer reflects the client's own change: take it as the new baseline and reload nothing. */
+  /**
+   * The next answer carries count changes the client made itself (a read
+   * flag, a move): take those as the new baseline. New mail is never
+   * absorbed -- a uid_next that moved always reloads that folder.
+   */
   absorbNext: boolean;
   /** Folders that changed while actions were pending, reloaded once the last one is answered. */
   deferred: Set<string>;
@@ -52,17 +56,20 @@ export function absorbNextFolders(queryClient: QueryClient): void {
   stateOf(queryClient).absorbNext = true;
 }
 
+/** The fetch meant to carry that change failed: the next answer is an ordinary one. */
+export function cancelAbsorb(queryClient: QueryClient): void {
+  stateOf(queryClient).absorbNext = false;
+}
+
 /** Called with every fresh folder list, before it is cached. */
 export function onFoldersFetched(queryClient: QueryClient, folders: WebmailFolder[]): void {
   const state = stateOf(queryClient);
   const previous = state.baseline;
   state.baseline = new Map(folders.map((f) => [f.name, f]));
 
+  const absorbing = state.absorbNext;
+  state.absorbNext = false;
   if (!previous) return;
-  if (state.absorbNext) {
-    state.absorbNext = false;
-    return;
-  }
 
   const changed = new Set<string>();
   const reissued = new Set<string>();
@@ -72,11 +79,14 @@ export function onFoldersFetched(queryClient: QueryClient, folders: WebmailFolde
       changed.add(folder.name);
     } else if (before.uidValidity !== folder.uidValidity) {
       reissued.add(folder.name);
+    } else if (before.uidNext !== folder.uidNext) {
+      // Mail arrived (or was moved in): always worth a reload.
+      changed.add(folder.name);
     } else if (
-      before.uidNext !== folder.uidNext ||
-      before.totalEmails !== folder.totalEmails ||
-      before.unreadEmails !== folder.unreadEmails
+      !absorbing &&
+      (before.totalEmails !== folder.totalEmails || before.unreadEmails !== folder.unreadEmails)
     ) {
+      // Only counts moved -- another client read or deleted something.
       changed.add(folder.name);
     }
   }

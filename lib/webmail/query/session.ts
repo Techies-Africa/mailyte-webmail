@@ -26,18 +26,49 @@ function sessionChannel(): BroadcastChannel | null {
   return channel;
 }
 
-// What has to happen before this tab hands the session to another mailbox:
-// actions still waiting out their Undo window are sent while their ids still
-// mean what they meant. Registered by QueryProvider.
-let beforeChange: (() => Promise<void>) | null = null;
+// Handing the session to another mailbox, in this tab. First, anything the
+// person already did goes while it still means what they meant: a message in
+// its undo-send window is sent (registered by the inbox). Then the action
+// queue is settled and stopped (registered by QueryProvider).
+const beforeChange = new Set<() => Promise<void>>();
+let settler: { settle: () => Promise<void>; abort: () => void } | null = null;
 
-export function setBeforeSessionChange(handler: (() => Promise<void>) | null): void {
-  beforeChange = handler;
+export function addBeforeSessionChange(handler: () => Promise<void>): () => void {
+  beforeChange.add(handler);
+  return () => {
+    beforeChange.delete(handler);
+  };
+}
+
+export function setSessionSettler(next: { settle: () => Promise<void>; abort: () => void } | null): void {
+  settler = next;
 }
 
 /** Called by switchAccount and signOut before they touch the session cookie. */
 export async function prepareSessionChange(): Promise<void> {
-  await beforeChange?.();
+  await Promise.allSettled([...beforeChange].map((handler) => handler()));
+  await settler?.settle();
+}
+
+/** The switch failed and the session is unchanged: carry on as before. */
+export function abortSessionChange(): void {
+  settler?.abort();
+}
+
+// The session changed without this tab's say (another tab, an expired
+// token): work still waiting in this tab belongs to the old one and must be
+// dropped, not sent.
+const dropHandlers = new Set<() => void>();
+
+export function addSessionDropHandler(handler: () => void): () => void {
+  dropHandlers.add(handler);
+  return () => {
+    dropHandlers.delete(handler);
+  };
+}
+
+export function runSessionDropHandlers(): void {
+  for (const handler of dropHandlers) handler();
 }
 
 /** Tell the other tabs the active mailbox changed. */

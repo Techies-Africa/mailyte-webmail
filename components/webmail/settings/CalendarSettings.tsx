@@ -52,11 +52,15 @@ export default function CalendarSettings({ onUnauthorized }: SettingsSectionProp
   async function revoke(token: string) {
     setConfirming(null);
     setError(null);
-    const before = queryClient.getQueryData<SubscriptionLink[]>(settingsKeys.subscriptions);
+    const link = queryClient.getQueryData<SubscriptionLink[]>(settingsKeys.subscriptions)?.find((l) => l.token === token);
     queryClient.setQueryData<SubscriptionLink[]>(settingsKeys.subscriptions, (list) => list?.filter((l) => l.token !== token));
     const res = await revokeSubscription(token, onUnauthorized);
     if (!res.success) {
-      queryClient.setQueryData(settingsKeys.subscriptions, before);
+      // Only this link comes back; one revoked or made meanwhile keeps its state.
+      queryClient.setQueryData<SubscriptionLink[]>(settingsKeys.subscriptions, (list) =>
+        link && list && !list.some((l) => l.token === token) ? [...list, link] : list,
+      );
+      void queryClient.invalidateQueries({ queryKey: settingsKeys.subscriptions });
       setError(`That link was NOT revoked and still works: ${res.message}`);
       return;
     }

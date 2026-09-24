@@ -96,19 +96,25 @@ export function useSubscriptions(onUnauthorized: () => void) {
 }
 
 /**
- * Fill a form from `data` the first time it is there, and never again.
+ * Fill a form from a query's data, and again from each newer answer -- until
+ * the person starts editing.
  *
  * Done during render rather than in an effect, so a section whose data is
  * already cached paints with its values on the first frame -- no "Loading",
- * no flash of defaults. Never again, because a background refresh must not
- * throw away what the person is in the middle of typing. Returns whether the
- * form has been filled.
+ * no flash of defaults. A cached copy may be minutes old, so the fresh answer
+ * that follows replaces it while the form is untouched; saving the old copy
+ * would silently undo a change made elsewhere. Once edited, nothing
+ * overwrites what is being typed. Returns whether the form has been filled.
  */
-export function useSeedOnce<T>(data: T | undefined, seed: (data: T) => void): boolean {
-  const [seeded, setSeeded] = useState(false);
-  if (data !== undefined && !seeded) {
-    setSeeded(true);
-    seed(data);
+export function useSeed<T>(
+  query: { data: T | undefined; dataUpdatedAt: number },
+  seed: (data: T) => void,
+  touched: boolean,
+): boolean {
+  const [seededAt, setSeededAt] = useState(0);
+  if (query.data !== undefined && query.dataUpdatedAt > seededAt && (seededAt === 0 || !touched)) {
+    setSeededAt(query.dataUpdatedAt);
+    seed(query.data);
   }
-  return seeded;
+  return seededAt !== 0;
 }

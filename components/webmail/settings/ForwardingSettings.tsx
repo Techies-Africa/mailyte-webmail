@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Forward, X } from 'lucide-react';
 import { updateForwarding } from '@/lib/webmail/client';
-import { settingsKeys, useForwarding, useSeedOnce } from '@/lib/webmail/query/settingsQueries';
+import { settingsKeys, useForwarding, useSeed } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import { Hint, Switch } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
@@ -33,16 +33,18 @@ export default function ForwardingSettings({ onUnauthorized, onDirty, onSaved }:
   // Cached: a second visit opens with the saved values already filled in.
   const queryClient = useQueryClient();
   const forwarding = useForwarding(onUnauthorized);
-  const seeded = useSeedOnce(forwarding.data, (data) => {
+  const [touched, setTouched] = useState(false);
+  const seeded = useSeed(forwarding, (data) => {
     setEnabled(data.enabled);
     setKeepCopy(data.keep_copy);
     setAddresses(data.addresses ?? []);
     setManaged(data.managed);
-  });
+  }, touched);
   const loading = !seeded && !forwarding.isError;
   const error = actionError ?? (!seeded && forwarding.isError ? forwarding.error.message : null);
 
   const touch = () => {
+    setTouched(true);
     setSaved(false);
     onDirty?.();
   };
@@ -82,6 +84,7 @@ export default function ForwardingSettings({ onUnauthorized, onDirty, onSaved }:
       return;
     }
     setManaged(true);
+    setTouched(false);
     if (result.data) queryClient.setQueryData(settingsKeys.forwarding, result.data);
     onSaved?.();
     setSaved(true);

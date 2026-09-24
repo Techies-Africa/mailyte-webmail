@@ -52,15 +52,24 @@ export default function BlockedSendersSettings({ onUnauthorized }: SettingsSecti
     toast(`Blocked ${address}`);
   };
 
-  /** Off the list at once; back on it, with the reason, if the server refuses. */
+  /**
+   * Off the list at once; back on it, with the reason, if the server refuses.
+   * One change at a time (the buttons wait), because each answer is the
+   * whole list and an earlier one landing late would undo a later change.
+   */
   const remove = async (address: string) => {
     setError(null);
+    setBusy(true);
     const before = queryClient.getQueryData<ApiBlockedSenders>(settingsKeys.blocked);
     if (before) setState({ ...before, addresses: before.addresses.filter((a) => a !== address) });
     toast(`Unblocked ${address}`);
     const result = await unblockSender(address, onUnauthorized);
+    setBusy(false);
     if (!result.success) {
-      if (before) setState(before);
+      const current = queryClient.getQueryData<ApiBlockedSenders>(settingsKeys.blocked);
+      if (current && !current.addresses.includes(address)) {
+        setState({ ...current, addresses: [...current.addresses, address] });
+      }
       setError(result.message);
       return;
     }

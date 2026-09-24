@@ -90,13 +90,20 @@ export interface OpsSnapshot {
    * thing was fetched.
    */
   tombstones: ReadonlySet<string>;
+  /**
+   * Old ids of messages whose move the server confirmed, with where they
+   * went. Gone from folder lists at once. A label view or an all-mail search
+   * still holds the message -- under a new id it has not fetched yet -- so
+   * there the row stays, in its new folder, until that list reloads.
+   */
+  moved: ReadonlyMap<string, string>;
 }
 
 /** How long a confirmed flag change keeps being laid over late-arriving lists. */
 const SETTLED_TTL_MS = 15_000;
 
 export class OpsStore {
-  private snapshot: OpsSnapshot = { ops: [], tombstones: new Set() };
+  private snapshot: OpsSnapshot = { ops: [], tombstones: new Set(), moved: new Map() };
   private readonly listeners = new Set<() => void>();
   private readonly idleListeners = new Set<() => void>();
   private nextId = 1;
@@ -167,17 +174,39 @@ export class OpsStore {
     this.set({ ...this.snapshot, ops: this.snapshot.ops.filter((op) => op.opId !== opId) });
   }
 
-  tombstone(ids: Iterable<string>) {
-    const tombstones = new Set(this.snapshot.tombstones);
-    for (const id of ids) tombstones.add(id);
-    this.set({ ...this.snapshot, tombstones });
+  /**
+   * The server confirmed a removal: its ids are gone for good (or, for a
+   * move, gone from where they were), and the pending action ends -- in one
+   * update, so nothing on screen sees one without the other.
+   */
+  settleRemoval(opId: number, ids: Iterable<string>, movedTo: string | null = null) {
+    const tombstones = movedTo ? this.snapshot.tombstones : new Set(this.snapshot.tombstones);
+    const moved = movedTo ? new Map(this.snapshot.moved) : this.snapshot.moved;
+    for (const id of ids) {
+      if (movedTo) (moved as Map<string, string>).set(id, movedTo);
+      else (tombstones as Set<string>).add(id);
+    }
+    this.set({ ops: this.snapshot.ops.filter((op) => op.opId !== opId), tombstones, moved });
+  }
+
+  /** A removal of this id is still ahead of the server, or its old id is dead. Acting on it again would miss. */
+  isInMotion(id: string): { held: PendingOp | null } | null {
+    if (this.snapshot.tombstones.has(id) || this.snapshot.moved.has(id)) return { held: null };
+    for (const op of this.snapshot.ops) {
+      if (op.kind !== 'remove' || !op.idSet.has(id)) continue;
+      if (op.state === 'held') return { held: op };
+      if (op.state === 'running') return { held: null };
+    }
+    return null;
   }
 
   /** A folder's ids were reissued (uid_validity changed): its old tombstones mean nothing now. */
   forgetTombstones(folders: Iterable<string>) {
     const prefixes = [...folders].map((f) => `${f}:`);
-    const tombstones = new Set([...this.snapshot.tombstones].filter((id) => !prefixes.some((p) => id.startsWith(p))));
-    this.set({ ...this.snapshot, tombstones });
+    const kept = (id: string) => !prefixes.some((p) => id.startsWith(p));
+    const tombstones = new Set([...this.snapshot.tombstones].filter(kept));
+    const moved = new Map([...this.snapshot.moved].filter(([id]) => kept(id)));
+    this.set({ ...this.snapshot, tombstones, moved });
   }
 
   /** Ops still ahead of the server, oldest first. */
@@ -241,7 +270,13 @@ function removalHides(op: RemoveOp, params: ListParams): boolean {
 }
 
 export function overlayPage(page: ListPage | undefined, params: ListParams, snapshot: OpsSnapshot): ListPage | undefined {
-  if (!page || (snapshot.ops.length === 0 && snapshot.tombstones.size === 0)) return page;
+  if (!page) return page;
+  // Starred and label views always check membership: a row unstarred here
+  // stays in the cached page after the server confirms, until the view reloads.
+  const membershipView = params.starred || params.label !== null;
+  if (snapshot.ops.length === 0 && snapshot.tombstones.size === 0 && snapshot.moved.size === 0 && !membershipView) {
+    return page;
+  }
 
   let hidden = 0;
   let changed = false;
@@ -253,6 +288,14 @@ export function overlayPage(page: ListPage | undefined, params: ListParams, snap
     }
     let row = item;
     let gone = false;
+    const movedTo = snapshot.moved.get(item.id);
+    if (movedTo !== undefined) {
+      if (params.folder !== null && params.folder !== movedTo) {
+        hidden++;
+        continue;
+      }
+      if (row.folder !== movedTo) row = { ...row, folder: movedTo };
+    }
     for (const op of snapshot.ops) {
       if (op.kind !== 'remove' || op.state === 'settled' || !op.idSet.has(row.id)) continue;
       if (removalHides(op, params)) {

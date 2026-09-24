@@ -280,6 +280,7 @@ export default function WebmailInboxPage() {
           mailbox.setFolder('INBOX');
           setMenuOpen(false);
         }}
+        onLeave={confirmLeave}
         mobileOpen={menuOpen}
         onCloseMobile={() => setMenuOpen(false)}
       >

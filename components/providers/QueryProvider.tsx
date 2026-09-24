@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
-import { dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
-import { clearUnauthorizedRedirect, onAccountChange, setBeforeSessionChange } from '@/lib/webmail/query/session';
+import { abortSessionChange, dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
+import { clearUnauthorizedRedirect, onAccountChange, setSessionSettler } from '@/lib/webmail/query/session';
 
 /**
  * The query cache for the whole app.
@@ -43,8 +43,8 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
   // Switching or signing out from this tab: send held actions first, while
   // their ids still belong to this mailbox.
   useEffect(() => {
-    setBeforeSessionChange(() => settleAllHeld(client));
-    return () => setBeforeSessionChange(null);
+    setSessionSettler({ settle: () => settleAllHeld(client), abort: () => abortSessionChange(client) });
+    return () => setSessionSettler(null);
   }, [client]);
 
   // Removals waiting out their Undo window still happen if the page goes away.

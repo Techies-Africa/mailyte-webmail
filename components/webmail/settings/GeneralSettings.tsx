@@ -46,13 +46,19 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
     setImages(remoteImagePolicy());
   }, []);
 
-  // Re-seed from the server copy after THIS form's save re-reads it -- never
-  // because the shared settings refreshed in the background, which would
-  // overwrite whatever is being typed.
+  // Follow the server copy while the form is untouched -- a fresher copy
+  // replaces a stale cached one -- and after this form's own save. Never over
+  // what is being typed.
   const reseedAfterSave = useRef(false);
+  const touched = useRef(false);
+  const markDirty = () => {
+    touched.current = true;
+    onDirty?.();
+  };
   useEffect(() => {
-    if (!reseedAfterSave.current) return;
+    if (touched.current && !reseedAfterSave.current) return;
     reseedAfterSave.current = false;
+    touched.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
@@ -99,7 +105,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
           maxLength={255}
           onChange={(e) => {
             setName(e.target.value);
-            onDirty?.();
+            markDirty();
           }}
           placeholder="Your name"
           className="max-w-sm"
@@ -123,7 +129,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
             minHeightClass="min-h-[8rem]"
             onChange={(html) => {
               setSignature(html);
-              onDirty?.();
+              markDirty();
             }}
           />
         </div>
@@ -132,7 +138,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
             checked={onReply}
             onChange={(next) => {
               setOnReply(next);
-              onDirty?.();
+              markDirty();
             }}
             label="Include the signature on replies"
           />
@@ -149,7 +155,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
               aria-pressed={density === option}
               onClick={() => {
                 setDensity(option);
-                onDirty?.();
+                markDirty();
               }}
               className={`rounded-md px-3 py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
                 density === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'

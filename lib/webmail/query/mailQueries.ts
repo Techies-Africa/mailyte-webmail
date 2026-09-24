@@ -6,7 +6,7 @@ import { ApiError, unwrap } from './errors';
 import { qk } from './keys';
 import { PAGE_SIZE, sameListOtherPage, type ListParams } from './listParams';
 import { listParamsOf, type ListPage } from './messageCache';
-import { onFoldersFetched } from './mailSync';
+import { cancelAbsorb, onFoldersFetched } from './mailSync';
 
 /**
  * The mail queries: the folder rail, list pages, message bodies and
@@ -21,7 +21,13 @@ export function foldersQuery(queryClient: QueryClient, onUnauthorized: () => voi
   return queryOptions({
     queryKey: qk.folders,
     queryFn: async (): Promise<WebmailFolder[]> => {
-      const folders = (unwrap(await listFolders(onUnauthorized)) ?? []).map(toFolder);
+      let folders: WebmailFolder[];
+      try {
+        folders = (unwrap(await listFolders(onUnauthorized)) ?? []).map(toFolder);
+      } catch (error) {
+        cancelAbsorb(queryClient);
+        throw error;
+      }
       onFoldersFetched(queryClient, folders);
       return folders;
     },

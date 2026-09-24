@@ -76,9 +76,18 @@ import {
   listParamsOf,
   patchMessages,
   removeFromLists,
+  updateListPages,
   type FolderDeltas,
 } from '@/lib/webmail/query/messageCache';
-import { commitOp, discardHeld, registerHeld, releaseHeld, type OpOutcome, type OpRequest } from '@/lib/webmail/query/opRunner';
+import {
+  commitOp,
+  discardHeld,
+  queueGeneration,
+  registerHeld,
+  releaseHeld,
+  type OpOutcome,
+  type OpRequest,
+} from '@/lib/webmail/query/opRunner';
 import {
   applyFlagPatch,
   opsStoreOf,
@@ -92,7 +101,7 @@ import {
   type RemoveOp,
   type RemoveReason,
 } from '@/lib/webmail/query/pendingOps';
-import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { addBeforeSessionChange, addSessionDropHandler, useUnauthorizedHandler } from '@/lib/webmail/query/session';
 import { settingsKeys } from '@/lib/webmail/query/settingsQueries';
 
 export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
@@ -455,26 +464,54 @@ export function useMailbox() {
    */
   const settleRemoval = useCallback(
     (op: RemoveOp, outcome: OpOutcome) => {
+      // A move leaves a label view or an all-mail search holding the message
+      // under a new id; there it stays, in its new folder, until that list
+      // reloads -- rather than vanishing and coming back.
+      const movedTo =
+        op.dest && (op.reason === 'archive' || op.reason === 'move' || op.reason === 'notSpam') ? op.dest : null;
+      const ok = new Set(outcome.ok);
+
       // One batch: the cache writes and the end of the pending action reach
       // the screen in the same render, so no count or row flickers for a frame.
       notifyManager.batch(() => {
-        if (outcome.ok.length > 0) {
-          store.tombstone(outcome.ok);
-          removeFromLists(queryClient, outcome.ok);
-          forgetMessages(queryClient, outcome.ok);
-          adjustFolderCounts(queryClient, deltasOf(op, outcome.ok));
+        if (ok.size > 0) {
+          if (movedTo) {
+            removeFromLists(queryClient, ok, (params) => params.folder !== null);
+            updateListPages(queryClient, (page, params) =>
+              params.folder === null && page.items.some((m) => ok.has(m.id))
+                ? { ...page, items: page.items.map((m) => (ok.has(m.id) ? { ...m, folder: movedTo } : m)) }
+                : page,
+            );
+          } else {
+            removeFromLists(queryClient, ok);
+          }
+          forgetMessages(queryClient, ok);
+          adjustFolderCounts(queryClient, deltasOf(op, ok));
         }
-        notifyManager.schedule(() => store.drop(op.opId));
+        notifyManager.schedule(() => store.settleRemoval(op.opId, ok, movedTo));
       });
 
       void refreshFolders();
-      const touched = [...deltasOf(op, outcome.ok).keys()];
+      const touched = [...deltasOf(op, ok).keys()];
       // The source list backfills its page; the destination gains the
       // message under its new id; label views and searches pick that id up.
       if (touched.length > 0) void invalidateFolderLists(queryClient, touched);
       if (op.reason === 'cancelScheduled' || op.reason === 'discardDraft') void loadScheduled();
 
-      if (outcome.failed.length > 0 && op.reason !== 'discardDraft' && !isSessionStatus(outcome.firstStatus)) {
+      if (op.reason === 'cancelScheduled') {
+        // Said only once the server agrees: a send that already went cannot be cancelled.
+        if (ok.size > 0) toast('Send cancelled — the message is in your drafts');
+        else if (outcome.firstStatus === 404) {
+          toast('That message is no longer scheduled — it may already have been sent', { tone: 'warning' });
+          void invalidateFolderLists(queryClient, 'all');
+        }
+      }
+      if (
+        outcome.failed.length > 0 &&
+        op.reason !== 'discardDraft' &&
+        !(op.reason === 'cancelScheduled' && outcome.firstStatus === 404) &&
+        !isSessionStatus(outcome.firstStatus)
+      ) {
         toast(failureText(REMOVAL_VERB[op.reason], outcome.failed.length, op.ids.length, outcome.firstError), {
           tone: 'error',
         });
@@ -490,6 +527,13 @@ export function useMailbox() {
         if (outcome.ok.length > 0) {
           patchMessages(queryClient, outcome.ok, (m) => applyFlagPatch(m, op.patch));
           adjustFolderCounts(queryClient, deltasOf(op, outcome.ok));
+          // Out of the cached views it no longer belongs in, so the cache
+          // itself agrees with the server once the pending action is gone.
+          if (op.patch.isStarred === false) removeFromLists(queryClient, outcome.ok, (p) => p.starred);
+          const removedLabels = new Set(op.patch.removeLabels ?? []);
+          if (removedLabels.size > 0) {
+            removeFromLists(queryClient, outcome.ok, (p) => p.label !== null && removedLabels.has(p.label));
+          }
         }
         notifyManager.schedule(() => {
           if (outcome.ok.length === 0) {
@@ -503,7 +547,10 @@ export function useMailbox() {
         });
       });
 
-      if (op.patch.isRead !== undefined) void refreshFolders();
+      // A quiet one -- the read mark made by opening a message -- leaves the
+      // folders to the next poll, which then reloads the list as it should
+      // if new mail arrived meanwhile.
+      if (op.patch.isRead !== undefined && !quiet) void refreshFolders();
       // Lists whose membership this changes -- Starred, Unread, the label
       // views -- reload when next shown.
       const touchedLabels = new Set([...(op.patch.addLabels ?? []), ...(op.patch.removeLabels ?? [])]);
@@ -739,24 +786,48 @@ export function useMailbox() {
    */
   const runRemoval = useCallback(
     (
-      ids: string[],
+      requested: string[],
       reason: RemoveReason,
       dest: string | null,
       request: OpRequest,
       confirmation: string | null,
       undo: boolean,
     ) => {
-      if (ids.length === 0) return;
+      // A message already on its way somewhere: if that move is still held,
+      // this one replaces it (one move, from where the message really is); if
+      // it is being sent, or has gone, its id is dead and this would miss.
+      const accepted: string[] = [];
+      let stillMoving = 0;
+      for (const id of requested) {
+        const motion = store.isInMotion(id);
+        if (!motion) {
+          accepted.push(id);
+        } else if (motion.held) {
+          const remaining = motion.held.ids.filter((other) => other !== id);
+          if (remaining.length > 0) store.narrow(motion.held.opId, remaining);
+          else discardHeld(queryClient, motion.held.opId);
+          accepted.push(id);
+        } else {
+          stillMoving += 1;
+        }
+      }
+      if (stillMoving > 0) toast('Still being moved — try again in a moment', { tone: 'info' });
+      if (accepted.length === 0) return;
+      const ids = accepted;
+
       const removed = new Set(ids);
       const deltasById = new Map<string, FolderDeltas>();
       for (const id of ids) {
         const row = currentRow(id);
+        if (!row) continue;
+        // Where the message really is: the cached copy, not a row a pending move relabelled.
+        const folder = findMessage(queryClient, id)?.folder ?? row.folder;
         // Moving a message to the folder it is already in changes no count.
-        if (!row || row.folder === dest) continue;
+        if (folder === dest) continue;
         const deltas: FolderDeltas = new Map();
         const unread = row.isRead ? 0 : 1;
-        addDelta(deltas, row.folder, -unread, -1);
-        if (dest && dest !== row.folder) addDelta(deltas, dest, unread, 1);
+        addDelta(deltas, folder, -unread, -1);
+        if (dest) addDelta(deltas, dest, unread, 1);
         deltasById.set(id, deltas);
       }
 
@@ -904,10 +975,15 @@ export function useMailbox() {
     );
     setMarkingAllRead(true);
     const marked: string[] = [];
+    // Stops, part-way if need be, if the session changes hands: the next page
+    // of ids would be marked in someone else's mailbox.
+    const generation = queueGeneration(queryClient);
+    const stillOurs = () => queueGeneration(queryClient) === generation;
     try {
       const ids: string[] = [];
       let from = 0;
       while (ids.length < MARK_ALL_CAP) {
+        if (!stillOurs()) return;
         const result = await listMessages({ folder, unread: true, limit: 200, offset: from }, handleUnauthorized);
         if (!result.success) {
           if (!isSessionStatus(result.status ?? null)) toast(result.message, { tone: 'error' });
@@ -922,6 +998,7 @@ export function useMailbox() {
         return;
       }
       for (let i = 0; i < ids.length; i += 25) {
+        if (!stillOurs()) return;
         const chunk = ids.slice(i, i + 25);
         const results = await Promise.all(chunk.map((id) => apiMarkRead(id, handleUnauthorized)));
         results.forEach((r, j) => {
@@ -939,7 +1016,19 @@ export function useMailbox() {
       notifyManager.batch(() => {
         patchMessages(queryClient, marked, (m) => (m.isRead ? m : { ...m, isRead: true }));
         adjustFolderCounts(queryClient, new Map([[folder, { unread: -marked.length, total: 0 }]]));
-        notifyManager.schedule(() => store.drop(op.opId));
+        notifyManager.schedule(() => {
+          // An earlier "mark unread" still laid over these rows must not
+          // paint them unread again: this is the newer word on them.
+          const markedSet = new Set(marked);
+          for (const other of store.getSnapshot().ops) {
+            if (other.kind !== 'flags' || other.state !== 'settled' || other.patch.isRead !== false) continue;
+            const keep = other.ids.filter((id) => !markedSet.has(id));
+            if (keep.length === other.ids.length) continue;
+            if (keep.length === 0) store.drop(other.opId);
+            else store.narrow(other.opId, keep);
+          }
+          store.drop(op.opId);
+        });
       });
       void refreshFolders();
       void invalidateFolderLists(queryClient, [folder], 'none');
@@ -1221,6 +1310,39 @@ export function useMailbox() {
     return held;
   }, [pendingSend]);
 
+  // The held send belongs to this session. Switching or signing out here
+  // sends it first, while it is still this mailbox's to send; a session
+  // changed elsewhere drops it (its draft stays in Drafts); leaving the inbox
+  // sends it at once, since its Undo does not come along.
+  const deliverRef = useRef(deliver);
+  useEffect(() => {
+    deliverRef.current = deliver;
+  }, [deliver]);
+  const takeHeldSend = useCallback(() => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    const held = heldSendRef.current;
+    heldSendRef.current = null;
+    setPendingSend(null);
+    return held;
+  }, []);
+  useEffect(
+    () =>
+      addBeforeSessionChange(async () => {
+        const held = takeHeldSend();
+        if (held) await deliverRef.current(held.payload, held.context);
+      }),
+    [takeHeldSend],
+  );
+  useEffect(() => addSessionDropHandler(() => void takeHeldSend()), [takeHeldSend]);
+  useEffect(
+    () => () => {
+      const held = takeHeldSend();
+      if (held) void deliverRef.current(held.payload, held.context);
+    },
+    [takeHeldSend],
+  );
+
   // Closing the tab inside the undo window would lose the message: ask first.
   useEffect(() => {
     if (!pendingSend) return;
@@ -1253,7 +1375,7 @@ export function useMailbox() {
         'cancelScheduled',
         draftsFolder,
         (target) => apiCancelScheduled(target, handleUnauthorized),
-        'Send cancelled — the message is in your drafts',
+        null,
         false,
       );
     },
@@ -1281,6 +1403,15 @@ export function useMailbox() {
   );
 
   // --- Derived ---------------------------------------------------------------------
+
+  // The selection, limited to rows on screen. A row can leave while ticked --
+  // unstarred in Starred, taken by the poll, hidden by the attachments pill --
+  // and a bulk action must never reach a message the person cannot see.
+  const shownSelectedIds = useMemo(() => {
+    const shown = new Set(visibleMessages.map((m) => m.id));
+    const kept = selectedIds.filter((id) => shown.has(id));
+    return kept.length === selectedIds.length ? selectedIds : kept;
+  }, [selectedIds, visibleMessages]);
 
   /** Unread across the whole mailbox, from the folder counts. */
   const unreadCount = useMemo(
@@ -1339,7 +1470,7 @@ export function useMailbox() {
     refreshAll,
     goToPage,
     prefetchNextPage,
-    selectedIds,
+    selectedIds: shownSelectedIds,
     setSelectedIds,
     search,
     setSearch,
