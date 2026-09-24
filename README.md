@@ -42,8 +42,13 @@ control that would fail.
 ```bash
 cp .env.example .env      # point MAILBOX_API_BASE_URL at your mail server
 npm install
-npm run dev               # http://localhost:3000/webmail
+npm run dev               # http://localhost:3000
 ```
+
+No mail server to hand? `npm run mock` starts a stand-in for the mailbox API
+on port 8089, and `npm run dev:mock` runs the app against it. Sign in with any
+address; the passwords `2fa`, `temp` and `wrong` exercise the second-factor,
+forced-password-change and rejected paths. Nothing it shows is real.
 
 With Docker:
 
