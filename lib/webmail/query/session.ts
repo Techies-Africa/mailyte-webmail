@@ -26,6 +26,20 @@ function sessionChannel(): BroadcastChannel | null {
   return channel;
 }
 
+// What has to happen before this tab hands the session to another mailbox:
+// actions still waiting out their Undo window are sent while their ids still
+// mean what they meant. Registered by QueryProvider.
+let beforeChange: (() => Promise<void>) | null = null;
+
+export function setBeforeSessionChange(handler: (() => Promise<void>) | null): void {
+  beforeChange = handler;
+}
+
+/** Called by switchAccount and signOut before they touch the session cookie. */
+export async function prepareSessionChange(): Promise<void> {
+  await beforeChange?.();
+}
+
 /** Tell the other tabs the active mailbox changed. */
 export function announceAccountChange(): void {
   sessionChannel()?.postMessage('account-changed');

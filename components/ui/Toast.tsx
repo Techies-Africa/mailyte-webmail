@@ -15,11 +15,19 @@ import { AlertTriangle, Check, Info } from 'lucide-react';
 
 export type ToastTone = 'success' | 'info' | 'warning' | 'error';
 
+export type ToastCloseReason = 'timeout' | 'dismissed' | 'action' | 'replaced';
+
 export interface ToastOptions {
   tone?: ToastTone;
   /** Milliseconds. Defaults per tone; 0 keeps it until dismissed. */
   duration?: number;
   action?: { label: string; onClick: () => void };
+  /**
+   * Called once when the toast goes, with why. An Undo toast uses it to know
+   * its window is over: a timeout, a dismissal or being replaced by the next
+   * toast all mean "go ahead"; only 'action' means the person took it back.
+   */
+  onClose?: (reason: ToastCloseReason) => void;
 }
 
 interface ToastEntry extends Required<Pick<ToastOptions, 'tone'>> {
@@ -46,30 +54,39 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const closers = useRef(new Map<number, (reason: ToastCloseReason) => void>());
 
-  const dismiss = useCallback((id: number) => {
+  const close = useCallback((id: number, reason: ToastCloseReason) => {
     const timer = timers.current.get(id);
     if (timer) clearTimeout(timer);
     timers.current.delete(id);
+    const onClose = closers.current.get(id);
+    closers.current.delete(id);
     setToasts((current) => current.filter((t) => t.id !== id));
+    onClose?.(reason);
   }, []);
+
+  const dismiss = useCallback((id: number) => close(id, 'dismissed'), [close]);
 
   const toast = useCallback(
     (text: string, options: ToastOptions = {}) => {
       const id = nextId.current++;
       const tone = options.tone ?? 'success';
-      // One at a time: a stack of confirmations reads as a fault.
+      // One at a time: a stack of confirmations reads as a fault. Whatever
+      // was showing is closed first, so its onClose hears that it was replaced.
+      for (const previous of [...closers.current.keys()]) close(previous, 'replaced');
+      if (options.onClose) closers.current.set(id, options.onClose);
       setToasts([{ id, text, tone, action: options.action }]);
       const duration = options.duration ?? DEFAULT_DURATION[tone];
       if (duration > 0) {
         timers.current.set(
           id,
-          setTimeout(() => dismiss(id), duration),
+          setTimeout(() => close(id, 'timeout'), duration),
         );
       }
       return id;
     },
-    [dismiss],
+    [close],
   );
 
   const api = useMemo(() => ({ toast, dismiss }), [toast, dismiss]);
@@ -91,7 +108,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => {
                   entry.action?.onClick();
-                  dismiss(entry.id);
+                  close(entry.id, 'action');
                 }}
                 className="ml-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/20"
               >

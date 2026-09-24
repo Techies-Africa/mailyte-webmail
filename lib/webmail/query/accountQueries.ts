@@ -16,6 +16,7 @@ import { displayName as contactName, listAllContacts } from '@/lib/webmail/conta
 import { ApiError, unwrap } from './errors';
 import { qk } from './keys';
 import { accountChanged, useUnauthorizedHandler } from './session';
+import { dropAllHeld } from './opRunner';
 
 /**
  * Data that belongs to the mailbox as a whole rather than to one screen.
@@ -38,6 +39,7 @@ export function useCapabilities() {
       const data = unwrap(await getCapabilities(onUnauthorized));
       // Someone else's mailbox now answers: nothing cached here is theirs.
       if (data?.email_address && accountChanged(data.email_address)) {
+        dropAllHeld(queryClient);
         queryClient.clear();
         window.location.assign('/');
       }

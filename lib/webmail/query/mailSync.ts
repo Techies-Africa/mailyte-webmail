@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { WebmailFolder } from '@/components/webmail/types';
 import { qk } from './keys';
 import { invalidateFolderLists, listParamsOf } from './messageCache';
+import { opsStoreOf } from './pendingOps';
 
 /**
  * Delta sync (PRD P4).
@@ -20,6 +21,8 @@ interface SyncState {
   baseline: Map<string, WebmailFolder> | null;
   /** The next answer reflects the client's own change: take it as the new baseline and reload nothing. */
   absorbNext: boolean;
+  /** Folders that changed while actions were pending, reloaded once the last one is answered. */
+  deferred: Set<string>;
 }
 
 const states = new WeakMap<QueryClient, SyncState>();
@@ -27,8 +30,16 @@ const states = new WeakMap<QueryClient, SyncState>();
 function stateOf(queryClient: QueryClient): SyncState {
   let state = states.get(queryClient);
   if (!state) {
-    state = { baseline: null, absorbNext: false };
-    states.set(queryClient, state);
+    const created: SyncState = { baseline: null, absorbNext: false, deferred: new Set() };
+    opsStoreOf(queryClient).onIdle(() => {
+      if (created.deferred.size === 0) return;
+      const folders = [...created.deferred];
+      created.deferred.clear();
+      void invalidateFolderLists(queryClient, folders);
+      void queryClient.invalidateQueries({ queryKey: qk.scheduled });
+    });
+    states.set(queryClient, created);
+    state = created;
   }
   return state;
 }
@@ -71,6 +82,7 @@ export function onFoldersFetched(queryClient: QueryClient, folders: WebmailFolde
   }
 
   if (reissued.size > 0) {
+    opsStoreOf(queryClient).forgetTombstones(reissued);
     const prefixes = [...reissued].map((name) => `${name}:`);
     const inReissued = (id: unknown) => typeof id === 'string' && prefixes.some((p) => id.startsWith(p));
     queryClient.removeQueries({ queryKey: qk.messages, predicate: (q) => inReissued(q.queryKey[2]) });
@@ -85,6 +97,12 @@ export function onFoldersFetched(queryClient: QueryClient, folders: WebmailFolde
   }
 
   if (changed.size === 0 && reissued.size === 0) return;
+  // While an action is still ahead of the server, a reload could briefly
+  // show the message where it was. Hold the reload until the queue is quiet.
+  if (opsStoreOf(queryClient).busy) {
+    for (const name of [...changed, ...reissued]) state.deferred.add(name);
+    return;
+  }
   void invalidateFolderLists(queryClient, [...changed, ...reissued]);
   void queryClient.invalidateQueries({ queryKey: qk.scheduled });
 }

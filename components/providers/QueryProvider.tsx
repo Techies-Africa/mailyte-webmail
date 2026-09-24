@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
-import { onAccountChange } from '@/lib/webmail/query/session';
+import { dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
+import { onAccountChange, setBeforeSessionChange } from '@/lib/webmail/query/session';
 
 /**
  * The query cache for the whole app.
@@ -22,6 +23,8 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
   useEffect(
     () =>
       onAccountChange(() => {
+        // The cookie is already someone else's: held actions must not go to their mailbox.
+        dropAllHeld(client);
         client.clear();
         // The sign-in screens hold no mail, and are mid-way through a session change of their own.
         if (window.location.pathname === '/login' || window.location.pathname === '/change-password') return;
@@ -29,6 +32,20 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
       }),
     [client],
   );
+
+  // Switching or signing out from this tab: send held actions first, while
+  // their ids still belong to this mailbox.
+  useEffect(() => {
+    setBeforeSessionChange(() => settleAllHeld(client));
+    return () => setBeforeSessionChange(null);
+  }, [client]);
+
+  // Removals waiting out their Undo window still happen if the page goes away.
+  useEffect(() => {
+    const onPageHide = () => flushHeldOnExit(client);
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [client]);
 
   return (
     <QueryClientProvider client={client}>

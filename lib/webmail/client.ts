@@ -10,7 +10,7 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
-import { announceAccountChange } from "./query/session";
+import { announceAccountChange, prepareSessionChange } from "./query/session";
 
 /**
  * `status` on a failure is the HTTP status, or 0 when the server was never
@@ -844,6 +844,7 @@ export function listAccounts() {
  * unload guard gets its say before anything is lost.
  */
 export async function switchAccount(email: string): Promise<string | null> {
+  await prepareSessionChange();
   const result = await call<{ accounts: AccountSummary[] }>(
     "/api/webmail-auth/accounts",
     {
@@ -865,6 +866,7 @@ export async function switchAccount(email: string): Promise<string | null> {
  * Lands on the next account's inbox when one remains, else on the login page.
  */
 export async function signOut(all = false): Promise<void> {
+  await prepareSessionChange();
   const res = await fetch("/api/webmail-auth/logout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

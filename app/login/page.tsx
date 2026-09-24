@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Field';
 import { listAccounts, switchAccount, type AccountSummary } from '@/lib/webmail/client';
 import { announceAccountChange, resetSessionState } from '@/lib/webmail/query/session';
+import { dropAllHeld } from '@/lib/webmail/query/opRunner';
 
 export default function WebmailLoginPage() {
   const router = useRouter();
@@ -35,6 +36,8 @@ export default function WebmailLoginPage() {
   // before anyone signs in as someone else.
   const queryClient = useQueryClient();
   useEffect(() => {
+    // Anything still held belonged to a session that has ended.
+    dropAllHeld(queryClient);
     queryClient.clear();
     resetSessionState();
   }, [queryClient]);

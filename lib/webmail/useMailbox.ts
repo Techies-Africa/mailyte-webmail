@@ -13,10 +13,15 @@
  * this hook: every folder, view and page visited stays cached, so going back
  * to one paints at once and refreshes quietly. What the person is doing --
  * which folder, which message, what is selected -- is this hook's own state.
+ *
+ * Actions on messages are optimistic. They change the screen in the same
+ * frame as the click and are sent behind it (query/pendingOps.ts); moves and
+ * deletions to Trash wait out a few seconds of Undo first. A refusal puts
+ * things back and says so.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { notifyManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
 import type { ComposeMode, WebmailListItem, WebmailMessage } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
@@ -50,6 +55,7 @@ import {
   useSettings,
   useSuggestions,
 } from '@/lib/webmail/query/accountQueries';
+import { isAuthError } from '@/lib/webmail/query/errors';
 import { qk } from '@/lib/webmail/query/keys';
 import {
   PAGE_SIZE,
@@ -62,6 +68,7 @@ import {
 import { POLL_MS, foldersQuery, listQuery, messageQuery, summaryQuery, threadQuery } from '@/lib/webmail/query/mailQueries';
 import { absorbNextFolders } from '@/lib/webmail/query/mailSync';
 import {
+  addDelta,
   adjustFolderCounts,
   findMessage,
   forgetMessages,
@@ -69,9 +76,23 @@ import {
   listParamsOf,
   patchMessages,
   removeFromLists,
+  type FolderDeltas,
 } from '@/lib/webmail/query/messageCache';
+import { commitOp, discardHeld, registerHeld, releaseHeld, type OpOutcome, type OpRequest } from '@/lib/webmail/query/opRunner';
+import {
+  applyFlagPatch,
+  opsStoreOf,
+  overlayFolders,
+  overlayMessage,
+  overlayPage,
+  usePendingOps,
+  type FlagPatch,
+  type FlagsOp,
+  type PendingOp,
+  type RemoveOp,
+  type RemoveReason,
+} from '@/lib/webmail/query/pendingOps';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
-import { isAuthError } from '@/lib/webmail/query/errors';
 
 export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
 export type { ListFilter, SearchScope } from '@/lib/webmail/query/listParams';
@@ -81,6 +102,9 @@ const MARK_ALL_CAP = 1000;
 
 /** Fallback window when the preference has not loaded yet. */
 const DEFAULT_UNDO_SECONDS = 5;
+
+/** How long a move or a delete to Trash can be taken back before it is sent. */
+const UNDO_MS = 6000;
 
 export function splitAddresses(value: string): string[] {
   return value
@@ -135,10 +159,40 @@ const NO_MESSAGES: WebmailListItem[] = [];
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** What these messages of an action move in the rail's counts. */
+function deltasOf(op: PendingOp, ids: Iterable<string>): FolderDeltas {
+  const sum: FolderDeltas = new Map();
+  for (const id of ids) {
+    for (const [folder, delta] of op.deltasById.get(id) ?? []) addDelta(sum, folder, delta.unread, delta.total);
+  }
+  return sum;
+}
+
+/** 401 and 403 already send the person to sign in; a toast on top says nothing more. */
+const isSessionStatus = (status: number | null) => status === 401 || status === 403;
+
+const REMOVAL_VERB: Record<RemoveReason, string> = {
+  archive: 'archive',
+  trash: 'move to Trash',
+  move: 'move',
+  spam: 'move to Junk',
+  notSpam: 'move to Inbox',
+  deleteForever: 'delete',
+  cancelScheduled: 'cancel',
+  discardDraft: 'discard',
+};
+
+function failureText(verb: string, failed: number, total: number, error: string | null): string {
+  const what = failed === total ? (total === 1 ? 'that message' : `${total} messages`) : `${failed} of ${total} messages`;
+  return `Couldn't ${verb} ${what}${error ? `: ${error}` : ''}`;
+}
+
 export function useMailbox() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const handleUnauthorized = useUnauthorizedHandler();
+  const store = opsStoreOf(queryClient);
+  const pendingOps = usePendingOps();
 
   // --- Mailbox-wide data, shared with every other screen ----------------------------
 
@@ -180,6 +234,13 @@ export function useMailbox() {
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
+  // The open message, readable from callbacks that outlive the render they
+  // were made in (an Undo pressed six seconds later).
+  const openIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    openIdRef.current = openId;
+  }, [openId]);
+
   // --- Folders: the rail, and the change signal ----------------------------------------
 
   // Polled while the tab is visible and checked again when it comes back
@@ -191,7 +252,12 @@ export function useMailbox() {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
-  const folders = foldersResult.data ?? FALLBACK_FOLDERS;
+  // The counts include every action not yet confirmed, so the badges and the
+  // tab title move with the click.
+  const folders = useMemo(
+    () => overlayFolders(foldersResult.data ?? FALLBACK_FOLDERS, pendingOps),
+    [foldersResult.data, pendingOps],
+  );
 
   const activeFolderMeta = folders.find((f) => f.name === activeFolder) ?? null;
   const inTrash = activeFolderMeta?.role === 'trash';
@@ -200,6 +266,10 @@ export function useMailbox() {
     (role: string, fallback: string) => folders.find((f) => f.role === role)?.name ?? fallback,
     [folders],
   );
+  const inboxFolder = folderByRole('inbox', 'INBOX');
+  const archiveFolder = folderByRole('archive', 'Archive');
+  const junkFolder = folderByRole('junk', 'Junk');
+  const trashFolder = folderByRole('trash', 'Trash');
   const draftsFolder = folderByRole('drafts', 'Drafts');
   const sentFolder = folderByRole('sent', 'Sent');
 
@@ -220,7 +290,10 @@ export function useMailbox() {
     [activeFolder, activeSearch, searchScope, filter, offset],
   );
   const listResult = useQuery(listQuery(listParams, handleUnauthorized));
-  const page = listResult.data;
+  const page = useMemo(
+    () => overlayPage(listResult.data, listParams, pendingOps),
+    [listResult.data, listParams, pendingOps],
+  );
   const messages = page?.items ?? NO_MESSAGES;
   const total = page?.total ?? 0;
   // A page standing in for the next one keeps its own range on screen.
@@ -232,6 +305,12 @@ export function useMailbox() {
   const isPlaceholderPage = listResult.isPlaceholderData;
   const listError = listResult.isError ? listResult.error.message : null;
   const error = openError ?? listError;
+
+  /** The page, minus what the page-local attachments pill hides. */
+  const visibleMessages = useMemo(
+    () => (filter === 'attachments' ? messages.filter((m) => m.hasAttachment) : messages),
+    [messages, filter],
+  );
 
   // Until the first authenticated request comes back, we do not know whether
   // there is a session at all. Rendering the mailbox before then meant a
@@ -335,12 +414,131 @@ export function useMailbox() {
     setOffset(nextOffset);
   }, []);
 
+  // --- Optimistic actions: the plumbing ------------------------------------------------
+
+  /** A message as the person sees it now: its cached row with pending actions laid over. */
+  const currentRow = useCallback(
+    (id: string) => {
+      const row = findMessage(queryClient, id);
+      return row ? overlayMessage(row, store.getSnapshot()) : undefined;
+    },
+    [queryClient, store],
+  );
+
+  /**
+   * A removal was answered. What the server confirmed is written into the
+   * cache for good; what it refused simply reappears, because the pending
+   * action is dropped. Then the folders it touched are asked for the truth.
+   */
+  const settleRemoval = useCallback(
+    (op: RemoveOp, outcome: OpOutcome) => {
+      // One batch: the cache writes and the end of the pending action reach
+      // the screen in the same render, so no count or row flickers for a frame.
+      notifyManager.batch(() => {
+        if (outcome.ok.length > 0) {
+          store.tombstone(outcome.ok);
+          removeFromLists(queryClient, outcome.ok);
+          forgetMessages(queryClient, outcome.ok);
+          adjustFolderCounts(queryClient, deltasOf(op, outcome.ok));
+        }
+        notifyManager.schedule(() => store.drop(op.opId));
+      });
+
+      void refreshFolders();
+      const touched = [...deltasOf(op, outcome.ok).keys()];
+      // The source list backfills its page; the destination gains the
+      // message under its new id; label views and searches pick that id up.
+      if (touched.length > 0) void invalidateFolderLists(queryClient, touched);
+      if (op.reason === 'cancelScheduled' || op.reason === 'discardDraft') void loadScheduled();
+
+      if (outcome.failed.length > 0 && op.reason !== 'discardDraft' && !isSessionStatus(outcome.firstStatus)) {
+        toast(failureText(REMOVAL_VERB[op.reason], outcome.failed.length, op.ids.length, outcome.firstError), {
+          tone: 'error',
+        });
+      }
+    },
+    [store, queryClient, refreshFolders, loadScheduled, toast],
+  );
+
+  /** A flag change was answered: the same, for read, starred and labels. */
+  const settleFlags = useCallback(
+    (op: FlagsOp, outcome: OpOutcome, quiet: boolean) => {
+      notifyManager.batch(() => {
+        if (outcome.ok.length > 0) {
+          patchMessages(queryClient, outcome.ok, (m) => applyFlagPatch(m, op.patch));
+          adjustFolderCounts(queryClient, deltasOf(op, outcome.ok));
+        }
+        notifyManager.schedule(() => {
+          if (outcome.ok.length === 0) {
+            store.drop(op.opId);
+            return;
+          }
+          // Kept a little longer, confirmed, so a list that left before this
+          // answer cannot paint the old flag back.
+          store.narrow(op.opId, outcome.ok);
+          store.setState(op.opId, 'settled');
+        });
+      });
+
+      if (op.patch.isRead !== undefined) void refreshFolders();
+      // Lists whose membership this changes -- Starred, Unread, the label
+      // views -- reload when next shown.
+      const touchedLabels = new Set([...(op.patch.addLabels ?? []), ...(op.patch.removeLabels ?? [])]);
+      void queryClient.invalidateQueries({
+        queryKey: qk.lists,
+        refetchType: 'none',
+        predicate: (q) => {
+          const params = listParamsOf(q.queryKey);
+          return (
+            (op.patch.isStarred !== undefined && params.starred) ||
+            (op.patch.isRead !== undefined && params.unread) ||
+            (params.label !== null && touchedLabels.has(params.label))
+          );
+        },
+      });
+      if (touchedLabels.size > 0) void loadLabels();
+
+      if (outcome.failed.length > 0 && !quiet && !isSessionStatus(outcome.firstStatus)) {
+        toast(failureText('update', outcome.failed.length, op.ids.length, outcome.firstError), { tone: 'error' });
+      }
+    },
+    [queryClient, store, refreshFolders, loadLabels, toast],
+  );
+
+  /** Change flags now, send behind. */
+  const runFlags = useCallback(
+    (ids: string[], patch: FlagPatch, request: OpRequest, options: { quiet?: boolean } = {}) => {
+      if (ids.length === 0) return;
+      const deltasById = new Map<string, FolderDeltas>();
+      if (patch.isRead !== undefined) {
+        for (const id of ids) {
+          const row = currentRow(id);
+          if (!row || row.isRead === patch.isRead) continue;
+          const deltas: FolderDeltas = new Map();
+          addDelta(deltas, row.folder, patch.isRead ? -1 : 1, 0);
+          deltasById.set(id, deltas);
+        }
+      }
+      const op = store.add({ kind: 'flags', ids, patch, deltasById }, 'running');
+      commitOp(queryClient, op.opId, request, (settled, outcome) =>
+        settleFlags(settled as FlagsOp, outcome, options.quiet ?? false),
+      );
+    },
+    [currentRow, store, queryClient, settleFlags],
+  );
+
   // --- Reading -----------------------------------------------------------------
 
   const messageResult = useQuery({ ...messageQuery(openId ?? '', handleUnauthorized), enabled: openId !== null });
   const threadResult = useQuery({ ...threadQuery(openId ?? '', handleUnauthorized), enabled: openId !== null });
-  const openMessage = openId ? (messageResult.data ?? null) : null;
-  const thread = openId ? (threadResult.data ?? NO_MESSAGES) : NO_MESSAGES;
+  const openMessage = useMemo(
+    () => (openId && messageResult.data ? overlayMessage(messageResult.data, pendingOps) : null),
+    [openId, messageResult.data, pendingOps],
+  );
+  const thread = useMemo(
+    () => (openId && threadResult.data ? threadResult.data.map((m) => overlayMessage(m, pendingOps)) : NO_MESSAGES),
+    [openId, threadResult.data, pendingOps],
+  );
   const loadingMessage = openingId !== null;
 
   /** A message body, fetched ahead of a click. Drafts are skipped: they open in compose, fresh. */
@@ -377,19 +575,16 @@ export function useMailbox() {
         if (ticket !== openTicket.current) return { kind: 'error' };
         if (isDraft) return { kind: 'draft', message };
 
-        const folder = item.folder || activeFolder;
         setOpenId(item.id);
-        pushUrlState(folder, item.id);
-        if (!message.isRead) {
-          void apiMarkRead(item.id, handleUnauthorized);
-          patchMessages(queryClient, [item.id], (m) => ({ ...m, isRead: true }));
-          adjustFolderCounts(queryClient, new Map([[folder, { unread: -1, total: 0 }]]));
+        pushUrlState(item.folder || activeFolder, item.id);
+        if (!currentRow(item.id)?.isRead && !message.isRead) {
+          runFlags([item.id], { isRead: true }, (id) => apiMarkRead(id, handleUnauthorized), { quiet: true });
         }
 
         // The next message down is the likeliest to be read next (j, or after
         // an archive), so it is fetched while this one is being read.
-        const index = messages.findIndex((m) => m.id === item.id);
-        const next = index >= 0 ? messages[index + 1] : undefined;
+        const index = visibleMessages.findIndex((m) => m.id === item.id);
+        const next = index >= 0 ? visibleMessages[index + 1] : undefined;
         if (next) prefetchMessage(next);
         return { kind: 'message' };
       } catch (err) {
@@ -401,7 +596,7 @@ export function useMailbox() {
         if (ticket === openTicket.current) setOpeningId(null);
       }
     },
-    [queryClient, handleUnauthorized, activeFolder, messages, prefetchMessage],
+    [queryClient, handleUnauthorized, activeFolder, currentRow, runFlags, visibleMessages, prefetchMessage],
   );
 
   const close = useCallback(() => {
@@ -447,135 +642,184 @@ export function useMailbox() {
     void open(item);
   }, [messages, openId, open]);
 
-  // --- Actions on messages -----------------------------------------------------
+  /**
+   * The open message is being taken away. On a desktop the next message in
+   * the list opens in its place -- already fetched, so at once; on a phone
+   * the list comes back. Reports where it went, so Undo can come back.
+   */
+  const stepAwayFrom = useCallback(
+    (removed: ReadonlySet<string>): { from: string; to: string | null } | null => {
+      const current = openIdRef.current;
+      if (!current || !removed.has(current)) return null;
+      const desktop = window.matchMedia('(min-width: 768px)').matches;
+      const index = visibleMessages.findIndex((m) => m.id === current);
+      const candidates =
+        index < 0 ? [] : [...visibleMessages.slice(index + 1), ...visibleMessages.slice(0, index).reverse()];
+      // A draft would open in compose, which is not "the next message".
+      const next = desktop ? candidates.find((m) => !removed.has(m.id) && !m.isDraft) : undefined;
+      if (next) {
+        void open(next);
+      } else {
+        setOpenId(null);
+        pushUrlState(activeFolder, null, true);
+      }
+      return { from: current, to: next?.id ?? null };
+    },
+    [visibleMessages, open, activeFolder],
+  );
 
   /**
-   * These messages are gone from where they were: out of every cached list,
-   * the selection and the reading pane. Their old ids are dead -- a moved
-   * message gets a new one in its new folder -- so their bodies go too.
+   * Take messages out of view now and send the change behind. With `undo`,
+   * nothing is sent until the Undo toast has gone: taking it back then costs
+   * no request at all, which matters because a moved message gets an id the
+   * client never learns -- there would be nothing to move back.
    */
-  const dropMessages = useCallback(
-    (ids: string[]) => {
-      const set = new Set(ids);
-      removeFromLists(queryClient, ids);
-      setSelectedIds((prev) => prev.filter((id) => !set.has(id)));
-      setOpenId((prev) => (prev && set.has(prev) ? null : prev));
-      forgetMessages(queryClient, ids);
-      // Every list could be holding them or be missing them now. Nothing is
-      // refetched under the pointer; each list reloads when next shown.
-      void invalidateFolderLists(queryClient, 'all', 'none');
+  const runRemoval = useCallback(
+    (
+      ids: string[],
+      reason: RemoveReason,
+      dest: string | null,
+      request: OpRequest,
+      confirmation: string | null,
+      undo: boolean,
+    ) => {
+      if (ids.length === 0) return;
+      const removed = new Set(ids);
+      const deltasById = new Map<string, FolderDeltas>();
+      for (const id of ids) {
+        const row = currentRow(id);
+        // Moving a message to the folder it is already in changes no count.
+        if (!row || row.folder === dest) continue;
+        const deltas: FolderDeltas = new Map();
+        const unread = row.isRead ? 0 : 1;
+        addDelta(deltas, row.folder, -unread, -1);
+        if (dest && dest !== row.folder) addDelta(deltas, dest, unread, 1);
+        deltasById.set(id, deltas);
+      }
+
+      const op = store.add({ kind: 'remove', reason, dest, ids, deltasById }, undo ? 'held' : 'running');
+      setSelectedIds((prev) => prev.filter((id) => !removed.has(id)));
+      const away = stepAwayFrom(removed);
+      const folderAtAction = activeFolder;
+      const commit = () =>
+        commitOp(queryClient, op.opId, request, (settled, outcome) => settleRemoval(settled as RemoveOp, outcome));
+
+      if (!undo) {
+        commit();
+        if (confirmation) toast(confirmation);
+        return;
+      }
+
+      registerHeld(queryClient, op.opId, commit);
+      toast(confirmation ?? 'Done', {
+        duration: UNDO_MS,
+        action: { label: 'Undo', onClick: () => {} },
+        onClose: (why) => {
+          if (why !== 'action') {
+            releaseHeld(queryClient, op.opId);
+            return;
+          }
+          discardHeld(queryClient, op.opId);
+          // Back to the message that was open, unless another has been opened since.
+          if (away && openIdRef.current === away.to) {
+            setOpenId(away.from);
+            pushUrlState(folderAtAction, away.from, true);
+          }
+        },
+      });
     },
-    [queryClient],
+    [currentRow, store, stepAwayFrom, activeFolder, queryClient, settleRemoval, toast],
   );
+
+  // --- Actions on messages -----------------------------------------------------
 
   const toggleStar = useCallback(
     async (id: string) => {
-      const currentlyStarred = findMessage(queryClient, id)?.isStarred ?? false;
-      const result = await (currentlyStarred ? apiUnstar : apiStar)(id, handleUnauthorized);
-      if (!result.success) {
-        toast(result.message, { tone: 'error' });
-        return;
-      }
-      patchMessages(queryClient, [id], (m) => ({ ...m, isStarred: !currentlyStarred }));
-      void queryClient.invalidateQueries({
-        queryKey: qk.lists,
-        refetchType: 'none',
-        predicate: (q) => listParamsOf(q.queryKey).starred,
-      });
+      const starred = currentRow(id)?.isStarred ?? (openMessage?.id === id ? openMessage.isStarred : false);
+      runFlags([id], { isStarred: !starred }, (target) => (starred ? apiUnstar : apiStar)(target, handleUnauthorized));
     },
-    [queryClient, handleUnauthorized, toast],
-  );
-
-  const runOnIds = useCallback(
-    async (
-      ids: string[],
-      action: (id: string) => Promise<{ success: boolean; message?: string }>,
-      onDone: (ids: string[]) => void,
-    ): Promise<number> => {
-      const results = await Promise.all(ids.map(action));
-      const failed = results.find((r) => !r.success);
-      if (failed) toast(failed.message ?? 'Some messages could not be updated', { tone: 'error' });
-      const succeeded = ids.filter((_, i) => results[i].success);
-      onDone(succeeded);
-      return succeeded.length;
-    },
-    [toast],
-  );
-
-  const afterMove = useCallback(
-    (ids: string[]) => {
-      dropMessages(ids);
-      void refreshFolders();
-    },
-    [dropMessages, refreshFolders],
+    [currentRow, openMessage, runFlags, handleUnauthorized],
   );
 
   const archive = useCallback(
     async (ids: string[]) => {
-      const n = await runOnIds(ids, (id) => apiMove(id, 'Archive', handleUnauthorized), afterMove);
-      if (n > 0) toast(n === 1 ? 'Archived' : `Archived ${plural(n, 'message')}`);
+      runRemoval(
+        ids,
+        'archive',
+        archiveFolder,
+        (id) => apiMove(id, archiveFolder, handleUnauthorized),
+        ids.length === 1 ? 'Archived' : `Archived ${plural(ids.length, 'message')}`,
+        true,
+      );
     },
-    [runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, archiveFolder, handleUnauthorized],
   );
 
   const trash = useCallback(
     async (ids: string[]) => {
-      const n = await runOnIds(ids, (id) => apiTrash(id, handleUnauthorized), afterMove);
-      if (n > 0) toast(n === 1 ? 'Moved to Trash' : `Moved ${plural(n, 'message')} to Trash`);
+      runRemoval(
+        ids,
+        'trash',
+        trashFolder,
+        (id) => apiTrash(id, handleUnauthorized),
+        ids.length === 1 ? 'Moved to Trash' : `Moved ${plural(ids.length, 'message')} to Trash`,
+        true,
+      );
     },
-    [runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, trashFolder, handleUnauthorized],
   );
 
+  /** Never held: it follows a typed confirmation, and there is nothing to undo it into. */
   const deleteForever = useCallback(
     async (ids: string[]) => {
-      const n = await runOnIds(ids, (id) => apiDeleteForever(id, handleUnauthorized), afterMove);
-      if (n > 0) toast(n === 1 ? 'Deleted forever' : `Deleted ${plural(n, 'message')} forever`);
+      runRemoval(
+        ids,
+        'deleteForever',
+        null,
+        (id) => apiDeleteForever(id, handleUnauthorized),
+        ids.length === 1 ? 'Deleted forever' : `Deleted ${plural(ids.length, 'message')} forever`,
+        false,
+      );
     },
-    [runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, handleUnauthorized],
   );
 
   const move = useCallback(
     async (ids: string[], folder: string) => {
-      const n = await runOnIds(ids, (id) => apiMove(id, folder, handleUnauthorized), afterMove);
-      if (n > 0) toast(`Moved to ${folder === 'INBOX' ? 'Inbox' : folder}`);
+      runRemoval(
+        ids,
+        'move',
+        folder,
+        (id) => apiMove(id, folder, handleUnauthorized),
+        `Moved to ${folder === 'INBOX' ? 'Inbox' : folder}`,
+        true,
+      );
     },
-    [runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, handleUnauthorized],
   );
 
   /** Mark as spam = file into Junk. Per-mailbox filing; nothing is trained. */
   const markSpam = useCallback(
     async (ids: string[]) => {
-      const n = await runOnIds(ids, (id) => apiMove(id, 'Junk', handleUnauthorized), afterMove);
-      if (n > 0) toast('Moved to Junk');
+      runRemoval(ids, 'spam', junkFolder, (id) => apiMove(id, junkFolder, handleUnauthorized), 'Moved to Junk', true);
     },
-    [runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, junkFolder, handleUnauthorized],
   );
 
   /** Not spam = back to the Inbox, resolved from the folder ROLE. */
   const markNotSpam = useCallback(
     async (ids: string[]) => {
-      const inbox = folderByRole('inbox', 'INBOX');
-      const n = await runOnIds(ids, (id) => apiMove(id, inbox, handleUnauthorized), afterMove);
-      if (n > 0) toast('Moved to Inbox');
+      runRemoval(ids, 'notSpam', inboxFolder, (id) => apiMove(id, inboxFolder, handleUnauthorized), 'Moved to Inbox', true);
     },
-    [folderByRole, runOnIds, handleUnauthorized, afterMove, toast],
+    [runRemoval, inboxFolder, handleUnauthorized],
   );
 
   const setRead = useCallback(
     async (ids: string[], read: boolean) => {
-      const action = read ? apiMarkRead : apiMarkUnread;
-      await runOnIds(ids, (id) => action(id, handleUnauthorized), (done) => {
-        patchMessages(queryClient, done, (m) => ({ ...m, isRead: read }));
-        setSelectedIds([]);
-        void refreshFolders();
-        void queryClient.invalidateQueries({
-          queryKey: qk.lists,
-          refetchType: 'none',
-          predicate: (q) => listParamsOf(q.queryKey).unread,
-        });
-      });
+      runFlags(ids, { isRead: read }, (id) => (read ? apiMarkRead : apiMarkUnread)(id, handleUnauthorized));
+      setSelectedIds([]);
     },
-    [runOnIds, handleUnauthorized, queryClient, refreshFolders],
+    [runFlags, handleUnauthorized],
   );
 
   /**
@@ -584,21 +828,26 @@ export function useMailbox() {
    * There is no server call for it, so this pages through the folder's
    * unread ids (SEARCH UNSEEN, 200 a page) and marks each one. Capped so a
    * mailbox with ten thousand unread newsletters does not fire ten thousand
-   * requests from one click -- the toast says how many it did.
+   * requests from one click -- the toast says how many it did. On screen,
+   * the folder reads as read from the click; the work runs behind.
    */
   const markAllRead = useCallback(async () => {
     if (activeFolder === STARRED_VIEW || labelOfView(activeFolder) !== null || markingAllRead) return;
+    const folder = activeFolder;
+    const unread = folders.find((f) => f.name === folder)?.unreadEmails ?? 0;
+    const op = store.add(
+      { kind: 'folderRead', folder, ids: [], deltasById: new Map([['*', new Map([[folder, { unread: -unread, total: 0 }]])]]) },
+      'running',
+    );
     setMarkingAllRead(true);
+    const marked: string[] = [];
     try {
       const ids: string[] = [];
       let from = 0;
       while (ids.length < MARK_ALL_CAP) {
-        const result = await listMessages(
-          { folder: activeFolder, unread: true, limit: 200, offset: from },
-          handleUnauthorized,
-        );
+        const result = await listMessages({ folder, unread: true, limit: 200, offset: from }, handleUnauthorized);
         if (!result.success) {
-          toast(result.message, { tone: 'error' });
+          if (!isSessionStatus(result.status ?? null)) toast(result.message, { tone: 'error' });
           return;
         }
         ids.push(...result.data.messages.map((m) => m.id));
@@ -609,28 +858,31 @@ export function useMailbox() {
         toast('Nothing unread here', { tone: 'info' });
         return;
       }
-      let done = 0;
-      const marked: string[] = [];
       for (let i = 0; i < ids.length; i += 25) {
         const chunk = ids.slice(i, i + 25);
         const results = await Promise.all(chunk.map((id) => apiMarkRead(id, handleUnauthorized)));
         results.forEach((r, j) => {
           if (r.success) marked.push(chunk[j]);
         });
-        done += results.filter((r) => r.success).length;
       }
-      patchMessages(queryClient, marked, (m) => ({ ...m, isRead: true }));
-      void refreshFolders();
-      void invalidateFolderLists(queryClient, [activeFolder], 'none');
       toast(
-        done >= MARK_ALL_CAP
-          ? `Marked ${done} as read — run it again for the rest`
-          : `Marked ${plural(done, 'message')} as read`,
+        marked.length >= MARK_ALL_CAP
+          ? `Marked ${marked.length} as read — run it again for the rest`
+          : `Marked ${plural(marked.length, 'message')} as read`,
       );
     } finally {
+      // What was actually marked goes into the cache; anything else reverts
+      // to how the server has it when the pending action is dropped.
+      notifyManager.batch(() => {
+        patchMessages(queryClient, marked, (m) => (m.isRead ? m : { ...m, isRead: true }));
+        adjustFolderCounts(queryClient, new Map([[folder, { unread: -marked.length, total: 0 }]]));
+        notifyManager.schedule(() => store.drop(op.opId));
+      });
+      void refreshFolders();
+      void invalidateFolderLists(queryClient, [folder], 'none');
       setMarkingAllRead(false);
     }
-  }, [activeFolder, markingAllRead, handleUnauthorized, queryClient, refreshFolders, toast]);
+  }, [activeFolder, markingAllRead, folders, store, handleUnauthorized, queryClient, refreshFolders, toast]);
 
   /** Block a sender: future mail files to Junk at delivery. */
   const blockSender = useCallback(
@@ -646,48 +898,27 @@ export function useMailbox() {
     [handleUnauthorized, toast],
   );
 
-  /**
-   * Add and remove labels on some messages, then re-read the label list in
-   * case a new name was introduced.
-   */
+  /** Add and remove labels on some messages. */
   const applyLabels = useCallback(
     async (ids: string[], add: string[], remove: string[]) => {
       if (ids.length === 0 || (add.length === 0 && remove.length === 0)) return;
-      const results = await Promise.all(ids.map((id) => apiSetLabels(id, add, remove, handleUnauthorized)));
-      const failed = results.find((r) => !r.success);
-      if (failed) toast(failed.message ?? 'Some labels could not be changed', { tone: 'error' });
-      const done = new Set(ids.filter((_, i) => results[i].success));
-      if (done.size === 0) return;
+      // The server stores labels as slugs ("Action needed" -> "action_needed").
       const slug = (raw: string) =>
         raw.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '').replace(/_{2,}/g, '_').replace(/^[_-]+|[_-]+$/g, '');
       const adds = add.map(slug).filter(Boolean);
-      const removes = new Set(remove.map(slug));
-      patchMessages(queryClient, done, (m) => ({
-        ...m,
-        labels: [...new Set([...m.labels.filter((l) => !removes.has(l)), ...adds])].sort(),
-      }));
+      const removes = remove.map(slug).filter(Boolean);
+      runFlags(ids, { addLabels: adds, removeLabels: removes }, (id) => apiSetLabels(id, add, remove, handleUnauthorized));
       setSelectedIds([]);
-      // A message that just lost a label leaves that label's view.
-      removeFromLists(queryClient, done, (params) => params.label !== null && removes.has(params.label));
+      // A message that loses the label this view shows leaves the view.
       const viewLabel = labelOfView(activeFolder);
-      if (viewLabel && removes.has(viewLabel)) setOpenId((prev) => (prev && done.has(prev) ? null : prev));
-      // And the views of the labels it gained are missing it until they reload.
-      void queryClient.invalidateQueries({
-        queryKey: qk.lists,
-        refetchType: 'none',
-        predicate: (q) => {
-          const label = listParamsOf(q.queryKey).label;
-          return label !== null && adds.includes(label);
-        },
-      });
+      if (viewLabel && removes.includes(viewLabel)) stepAwayFrom(new Set(ids));
       toast(
         adds.length > 0
-          ? `Labelled ${done.size === 1 ? 'message' : `${done.size} messages`}`
+          ? `Labelled ${ids.length === 1 ? 'message' : `${ids.length} messages`}`
           : `Removed ${remove.length === 1 ? 'label' : 'labels'}`,
       );
-      void loadLabels();
     },
-    [handleUnauthorized, toast, queryClient, activeFolder, loadLabels],
+    [runFlags, handleUnauthorized, activeFolder, stepAwayFrom, toast],
   );
 
   // --- Folders -------------------------------------------------------------------
@@ -756,13 +987,9 @@ export function useMailbox() {
 
   const discardDraft = useCallback(
     async (id: string) => {
-      await apiDiscardDraft(id, handleUnauthorized);
-      removeFromLists(queryClient, [id]);
-      forgetMessages(queryClient, [id]);
-      void refreshFolders();
-      void invalidateFolderLists(queryClient, [draftsFolder]);
+      runRemoval([id], 'discardDraft', null, (target) => apiDiscardDraft(target, handleUnauthorized), null, false);
     },
-    [handleUnauthorized, queryClient, refreshFolders, draftsFolder],
+    [runRemoval, handleUnauthorized],
   );
 
   // --- Sending -------------------------------------------------------------------
@@ -876,23 +1103,19 @@ export function useMailbox() {
     return map;
   }, [scheduled]);
 
+  /** Back to Drafts, under a new id. Not held: the scheduler could send it during an Undo window. */
   const cancelScheduledSend = useCallback(
     async (id: string) => {
-      const result = await apiCancelScheduled(id, handleUnauthorized);
-      if (!result.success) {
-        toast(`Could not cancel that scheduled message: ${result.message}`, { tone: 'error' });
-        return;
-      }
-      // Back in Drafts, under a new id.
-      removeFromLists(queryClient, [id]);
-      setOpenId((prev) => (prev === id ? null : prev));
-      forgetMessages(queryClient, [id]);
-      toast('Send cancelled — the message is in your drafts');
-      void loadScheduled();
-      void refreshFolders();
-      void queryClient.invalidateQueries({ queryKey: qk.lists });
+      runRemoval(
+        [id],
+        'cancelScheduled',
+        draftsFolder,
+        (target) => apiCancelScheduled(target, handleUnauthorized),
+        'Send cancelled — the message is in your drafts',
+        false,
+      );
     },
-    [handleUnauthorized, toast, queryClient, loadScheduled, refreshFolders],
+    [runRemoval, draftsFolder, handleUnauthorized],
   );
 
   // --- AI --------------------------------------------------------------------------
@@ -916,12 +1139,6 @@ export function useMailbox() {
   );
 
   // --- Derived ---------------------------------------------------------------------
-
-  /** The page, minus what the page-local attachments pill hides. */
-  const visibleMessages = useMemo(
-    () => (filter === 'attachments' ? messages.filter((m) => m.hasAttachment) : messages),
-    [messages, filter],
-  );
 
   /** Unread across the whole mailbox, from the folder counts. */
   const unreadCount = useMemo(
