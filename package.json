@@ -15,9 +15,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "check:brand": "node scripts/check-brand-tokens.mjs",
-    "mock": "node scripts/mock-mail-server.mjs",
-    "dev:mock": "MAILBOX_API_BASE_URL=http://localhost:8180/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001",
-    "dev:prod": "MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001"
+    "dev:prod": "cross-env MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.30.5",
@@ -39,6 +37,7 @@
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^7.0.3",
     "postcss": "^8.5.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3"
