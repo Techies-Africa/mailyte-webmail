@@ -93,6 +93,7 @@ import {
   type RemoveReason,
 } from '@/lib/webmail/query/pendingOps';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { settingsKeys } from '@/lib/webmail/query/settingsQueries';
 
 export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
 export type { ListFilter, SearchScope } from '@/lib/webmail/query/listParams';
@@ -892,10 +893,12 @@ export function useMailbox() {
         toast(result.message, { tone: 'error' });
         return false;
       }
+      // Settings › Blocked senders shows the same list, already updated.
+      if (result.data) queryClient.setQueryData(settingsKeys.blocked, result.data);
       toast(`Blocked ${address} — new mail from them goes to Junk`);
       return true;
     },
-    [handleUnauthorized, toast],
+    [handleUnauthorized, queryClient, toast],
   );
 
   /** Add and remove labels on some messages. */

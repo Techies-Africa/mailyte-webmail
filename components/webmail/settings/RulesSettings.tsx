@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDown, ArrowUp, ListFilter, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { getRules, listFolders, listLabels, updateRules, type ApiRule } from '@/lib/webmail/client';
-import type { ApiFolder } from '@/lib/webmail/adapters';
+import { updateRules, type ApiRule } from '@/lib/webmail/client';
+import type { WebmailFolder } from '@/components/webmail/types';
+import { useLabels } from '@/lib/webmail/query/accountQueries';
+import { foldersQuery } from '@/lib/webmail/query/mailQueries';
+import { settingsKeys, useRules } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import { Hint, Input, Label, Select, Switch } from '@/components/ui/Field';
@@ -138,34 +142,25 @@ function actionText(a: { type: string; value?: string }): string {
   return meta.label;
 }
 
+const NO_FOLDERS: WebmailFolder[] = [];
+
 export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) {
   const { toast } = useToast();
-  const [rules, setRules] = useState<ApiRule[] | null>(null);
-  const [managed, setManaged] = useState(true);
-  const [folders, setFolders] = useState<ApiFolder[]>([]);
-  const [labels, setLabels] = useState<string[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // The rules are cached; the folders and labels are the same cached copies
+  // the mailbox uses, so none of the three loads again on a second visit.
+  const rulesResult = useRules(onUnauthorized);
+  const rules = rulesResult.data ? (rulesResult.data.rules ?? []) : null;
+  const managed = rulesResult.data?.managed !== false;
+  const loadError = !rulesResult.data && rulesResult.isError ? rulesResult.error.message : null;
+  const folders: WebmailFolder[] = useQuery(foldersQuery(queryClient, onUnauthorized)).data ?? NO_FOLDERS;
+  const labels = useLabels();
+
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<{ index: number | null; draft: Draft } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
-
-  useEffect(() => {
-    void getRules(onUnauthorized).then((result) => {
-      if (result.success && result.data) {
-        setRules(result.data.rules ?? []);
-        setManaged(result.data.managed !== false);
-      } else if (!result.success) {
-        setLoadError(result.message);
-      }
-    });
-    void listFolders(onUnauthorized).then((result) => {
-      if (result.success && Array.isArray(result.data)) setFolders(result.data);
-    });
-    void listLabels(onUnauthorized).then((result) => {
-      if (result.success && Array.isArray(result.data?.labels)) setLabels(result.data.labels);
-    });
-  }, [onUnauthorized]);
 
   /** Folders a rule may file into: yours, not a shared mailbox's. */
   const fileableFolders = useMemo(
@@ -180,18 +175,34 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
     [folders],
   );
 
-  /** Write the whole list; the server replaces the script in one go. */
+  // Only the newest write's answer may land: two quick toggles send two whole
+  // lists, and the first answer must not paint over the second.
+  const writeTicket = useRef(0);
+
+  /**
+   * Write the whole list; the server replaces the script in one go. The list
+   * on screen changes at once, and goes back, with the reason, if the server
+   * refuses.
+   */
   const persist = async (next: ApiRule[], done: string): Promise<boolean> => {
+    const ticket = ++writeTicket.current;
+    const before = queryClient.getQueryData(settingsKeys.rules);
+    queryClient.setQueryData(settingsKeys.rules, (prev: { rules: ApiRule[]; active: boolean; managed: boolean } | undefined) =>
+      prev ? { ...prev, rules: next } : prev,
+    );
     setBusy(true);
     setError(null);
     const result = await updateRules(next, onUnauthorized);
+    if (ticket !== writeTicket.current) return result.success;
     setBusy(false);
     if (!result.success) {
+      queryClient.setQueryData(settingsKeys.rules, before);
       setError(result.message);
       return false;
     }
-    setRules(result.data?.rules ?? next);
-    setManaged(true);
+    queryClient.setQueryData(settingsKeys.rules, (prev: { rules: ApiRule[]; active: boolean; managed: boolean } | undefined) =>
+      prev ? { ...prev, rules: result.data?.rules ?? next, managed: true } : prev,
+    );
     toast(done);
     return true;
   };
@@ -427,7 +438,7 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
 type RuleEditorProps = {
   draft: Draft;
   isNew: boolean;
-  folders: ApiFolder[];
+  folders: WebmailFolder[];
   labels: string[];
   busy: boolean;
   onCancel: () => void;

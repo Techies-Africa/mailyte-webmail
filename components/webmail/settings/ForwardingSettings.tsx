@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Forward, X } from 'lucide-react';
-import { getForwarding, updateForwarding } from '@/lib/webmail/client';
+import { updateForwarding } from '@/lib/webmail/client';
+import { settingsKeys, useForwarding, useSeedOnce } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import { Hint, Switch } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
@@ -24,24 +26,21 @@ export default function ForwardingSettings({ onUnauthorized, onDirty, onSaved }:
   const [addresses, setAddresses] = useState<string[]>([]);
   const [pending, setPending] = useState('');
   const [managed, setManaged] = useState(true);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    void getForwarding(onUnauthorized).then((result) => {
-      if (result.success && result.data) {
-        setEnabled(result.data.enabled);
-        setKeepCopy(result.data.keep_copy);
-        setAddresses(result.data.addresses ?? []);
-        setManaged(result.data.managed);
-      } else if (!result.success) {
-        setError(result.message);
-      }
-      setLoading(false);
-    });
-  }, [onUnauthorized]);
+  // Cached: a second visit opens with the saved values already filled in.
+  const queryClient = useQueryClient();
+  const forwarding = useForwarding(onUnauthorized);
+  const seeded = useSeedOnce(forwarding.data, (data) => {
+    setEnabled(data.enabled);
+    setKeepCopy(data.keep_copy);
+    setAddresses(data.addresses ?? []);
+    setManaged(data.managed);
+  });
+  const loading = !seeded && !forwarding.isError;
+  const error = actionError ?? (!seeded && forwarding.isError ? forwarding.error.message : null);
 
   const touch = () => {
     setSaved(false);
@@ -83,6 +82,7 @@ export default function ForwardingSettings({ onUnauthorized, onDirty, onSaved }:
       return;
     }
     setManaged(true);
+    if (result.data) queryClient.setQueryData(settingsKeys.forwarding, result.data);
     onSaved?.();
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);

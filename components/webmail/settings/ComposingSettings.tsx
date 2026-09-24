@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Undo2 } from 'lucide-react';
 import { updateSettings } from '@/lib/webmail/client';
 import Button from '@/components/ui/Button';
@@ -24,7 +24,11 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-seeded only after this form's own save, never by a background refresh.
+  const reseedAfterSave = useRef(false);
   useEffect(() => {
+    if (!reseedAfterSave.current) return;
+    reseedAfterSave.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEnabled(settings.undoSendEnabled);
     setSeconds(settings.undoSendSeconds);
@@ -44,6 +48,7 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
       setError(result.message);
       return;
     }
+    reseedAfterSave.current = true;
     onSettingsChanged?.();
     onSaved?.();
     setSaved(true);

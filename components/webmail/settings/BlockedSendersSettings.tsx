@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Ban, X } from 'lucide-react';
-import { blockSender, getBlockedSenders, unblockSender, type ApiBlockedSenders } from '@/lib/webmail/client';
+import { blockSender, unblockSender, type ApiBlockedSenders } from '@/lib/webmail/client';
+import { settingsKeys, useBlockedSenders } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import { Input } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
@@ -20,18 +22,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export default function BlockedSendersSettings({ onUnauthorized }: SettingsSectionProps) {
   const { toast } = useToast();
-  const [state, setState] = useState<ApiBlockedSenders | null>(null);
+  const queryClient = useQueryClient();
+  // Cached, and shared with "Block sender" in the reading pane: an address
+  // blocked there is already listed here.
+  const blocked = useBlockedSenders(onUnauthorized);
+  const state = blocked.data ?? null;
+  const loadError = !state && blocked.isError ? blocked.error.message : null;
+  const setState = (next: ApiBlockedSenders) => queryClient.setQueryData(settingsKeys.blocked, next);
   const [pending, setPending] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void getBlockedSenders(onUnauthorized).then((result) => {
-      if (result.success && result.data) setState(result.data);
-      else if (!result.success) setLoadError(result.message);
-    });
-  }, [onUnauthorized]);
 
   const add = async () => {
     const address = pending.trim().toLowerCase();
@@ -52,17 +52,19 @@ export default function BlockedSendersSettings({ onUnauthorized }: SettingsSecti
     toast(`Blocked ${address}`);
   };
 
+  /** Off the list at once; back on it, with the reason, if the server refuses. */
   const remove = async (address: string) => {
-    setBusy(true);
     setError(null);
+    const before = queryClient.getQueryData<ApiBlockedSenders>(settingsKeys.blocked);
+    if (before) setState({ ...before, addresses: before.addresses.filter((a) => a !== address) });
+    toast(`Unblocked ${address}`);
     const result = await unblockSender(address, onUnauthorized);
-    setBusy(false);
     if (!result.success) {
+      if (before) setState(before);
       setError(result.message);
       return;
     }
     if (result.data) setState(result.data);
-    toast(`Unblocked ${address}`);
   };
 
   if (loadError) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HardDrive, PenLine, Check, AtSign, Rows3, ImageIcon } from 'lucide-react';
 import WebmailEditor from '../WebmailEditor';
 import { updateSettings } from '@/lib/webmail/client';
@@ -46,8 +46,13 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
     setImages(remoteImagePolicy());
   }, []);
 
+  // Re-seed from the server copy after THIS form's save re-reads it -- never
+  // because the shared settings refreshed in the background, which would
+  // overwrite whatever is being typed.
+  const reseedAfterSave = useRef(false);
   useEffect(() => {
-    // Re-seed from the server copy after a save re-reads it.
+    if (!reseedAfterSave.current) return;
+    reseedAfterSave.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
@@ -74,6 +79,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
       setError(result.message);
       return;
     }
+    reseedAfterSave.current = true;
     onSettingsChanged?.();
     onSaved?.();
     setSaved(true);

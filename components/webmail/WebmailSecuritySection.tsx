@@ -1,15 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldOff, Monitor, Info } from 'lucide-react';
 import {
   beginTwoFactor,
   confirmTwoFactor,
   disableTwoFactor,
-  getSecurity,
-  listSessions,
   revokeSession,
-  type ApiSecurity,
   type ApiSession,
   type ApiTwoFactorEnrolment,
 } from '@/lib/webmail/client';
@@ -17,6 +15,9 @@ import { formatDateTime } from '@/lib/webmail/dates';
 import Button from '@/components/ui/Button';
 import { Input } from '@/components/ui/Field';
 import { StatusBadge } from '@/components/ui/Pill';
+import { settingsKeys, useSecurity, useSessions } from '@/lib/webmail/query/settingsQueries';
+
+const NO_SESSIONS: ApiSession[] = [];
 
 /**
  * Two-factor and sign-in history for the mailbox holder (PRD S3).
@@ -26,32 +27,55 @@ import { StatusBadge } from '@/components/ui/Pill';
  * no TOTP path in this stack.
  */
 export default function WebmailSecuritySection({ onUnauthorized }: { onUnauthorized: () => void }) {
-  const [security, setSecurity] = useState<ApiSecurity | null>(null);
-  const [sessions, setSessions] = useState<ApiSession[]>([]);
+  // Cached: a second visit shows the status and the sign-ins at once.
+  const queryClient = useQueryClient();
+  const securityResult = useSecurity(onUnauthorized);
+  const security = securityResult.data ?? null;
+  const sessions = useSessions(onUnauthorized).data ?? NO_SESSIONS;
   const [enrolment, setEnrolment] = useState<ApiTwoFactorEnrolment | null>(null);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [disarming, setDisarming] = useState(false);
 
-  const refresh = async () => {
-    const [status, history] = await Promise.all([getSecurity(onUnauthorized), listSessions(onUnauthorized)]);
-    // `success` does not promise a payload: an endpoint declared without a
-    // response_model answers `type: 'success'` with no data at all.
-    if (status.success) setSecurity(status.data ?? null);
-    if (history.success) {
-      setSessions(Array.isArray(history.data?.sessions) ? history.data.sessions : []);
-    }
-  };
-
-  useEffect(() => {
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: settingsKeys.security }),
+      queryClient.invalidateQueries({ queryKey: settingsKeys.sessions }),
+    ]);
 
   if (!security) {
+    // It used to say "Loading" for ever when the request failed.
+    if (securityResult.isError) {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive" role="alert">
+            {securityResult.error.message}
+          </p>
+          <Button size="xs" onClick={() => void securityResult.refetch()}>
+            Try again
+          </Button>
+        </div>
+      );
+    }
     return <p className="text-sm text-muted-foreground">Loading security settings…</p>;
   }
+
+  /** Signed out on the list at once; back as it was, with the reason, if the server refuses. */
+  const signOutSession = async (session: ApiSession) => {
+    setError(null);
+    const before = queryClient.getQueryData<ApiSession[]>(settingsKeys.sessions);
+    queryClient.setQueryData<ApiSession[]>(settingsKeys.sessions, (list) =>
+      list?.map((s) => (s.id === session.id ? { ...s, active: false, revoked: true } : s)),
+    );
+    const result = await revokeSession(session.id, onUnauthorized);
+    if (!result.success) {
+      queryClient.setQueryData(settingsKeys.sessions, before);
+      setError(result.message);
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: settingsKeys.sessions });
+  };
 
   const start = async () => {
     setError(null);
@@ -247,10 +271,7 @@ export default function WebmailSecuritySection({ onUnauthorized }: { onUnauthori
               {session.active && !session.current && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    await revokeSession(session.id, onUnauthorized);
-                    await refresh();
-                  }}
+                  onClick={() => void signOutSession(session)}
                   className="shrink-0 text-xs font-semibold text-destructive hover:underline"
                 >
                   Sign out
