@@ -11,6 +11,7 @@
  * from message headers; these are the people you chose to keep.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
@@ -168,9 +169,9 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         <p className="max-w-sm text-sm text-muted-foreground">
           This mail server does not run a contacts service, so there is nothing to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm font-semibold text-primary underline">
+        <Link href="/" className="text-sm font-semibold text-primary underline">
           Back to mail
-        </a>
+        </Link>
       </div>
     );
   }
@@ -281,13 +282,13 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
 
                 <div className="flex shrink-0 items-center gap-0.5">
                   {primaryEmail(contact) && (
-                    <a
+                    <Link
                       href={`/?compose=${encodeURIComponent(primaryEmail(contact) as string)}`}
                       title={`Write to ${displayName(contact)}`}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground"
                     >
                       <Mail size={14} />
-                    </a>
+                    </Link>
                   )}
                   {!readOnly && (
                     <>

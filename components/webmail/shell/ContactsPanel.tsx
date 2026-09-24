@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Search } from 'lucide-react';
 import type { WebmailContact } from '../types';
@@ -91,13 +92,13 @@ export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: Co
         )}
       </div>
 
-      <a
+      <Link
         href="/address-book"
         className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[12.5px] font-semibold text-primary hover:bg-muted"
       >
         Open address book
         <ExternalLink size={13} />
-      </a>
+      </Link>
     </FloatingPanel>
   );
 }

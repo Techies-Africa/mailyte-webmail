@@ -8,9 +8,10 @@
  * rather than a screen whose every action fails.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addDays, addMonths, endOfMonth, endOfWeek, format, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
+import { addDays, addMonths, endOfMonth, endOfWeek, format, isSameDay, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
@@ -38,12 +39,16 @@ import {
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
 /** `/calendar?date=2026-09-24` opens on that day (the inbox's mini calendar links here). */
-function initialAnchor(): Date {
-  if (typeof window === 'undefined') return new Date();
+function anchorFromUrl(): Date | null {
+  if (typeof window === 'undefined') return null;
   const raw = new URLSearchParams(window.location.search).get('date');
-  if (!raw) return new Date();
+  if (!raw) return null;
   const parsed = parseISO(raw);
-  return isValid(parsed) ? parsed : new Date();
+  return isValid(parsed) ? parsed : null;
+}
+
+function initialAnchor(): Date {
+  return anchorFromUrl() ?? new Date();
 }
 
 export default function CalendarPage() {
@@ -64,6 +69,15 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
   const [active, setActive] = useState('default');
   const [view, setView] = useState<ViewMode>('month');
   const [anchor, setAnchor] = useState(initialAnchor);
+
+  // Arriving by a client-side link, the page renders before the address bar
+  // changes, so the initializer above can miss `?date=`. Read it again once
+  // mounted; a hard load already has it and keeps the same day.
+  useEffect(() => {
+    const fromUrl = anchorFromUrl();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (fromUrl) setAnchor((prev) => (isSameDay(prev, fromUrl) ? prev : fromUrl));
+  }, []);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
@@ -222,9 +236,9 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
         <p className="max-w-sm text-sm text-muted-foreground">
           This mail server does not run a calendar service, so there is nothing to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm font-semibold text-primary underline">
+        <Link href="/" className="text-sm font-semibold text-primary underline">
           Back to mail
-        </a>
+        </Link>
       </div>
     );
   }

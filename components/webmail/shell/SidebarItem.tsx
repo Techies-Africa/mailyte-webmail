@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 type SidebarItemProps = {
   icon?: React.ReactNode;
   /** A coloured dot in place of an icon (the category rows). */
@@ -78,11 +80,13 @@ export default function SidebarItem({
     </>
   );
 
+  // A client-side navigation, not a page load: the app's cache survives the
+  // trip between mail, calendar, contacts and settings.
   const row =
     as === 'a' && href ? (
-      <a href={href} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
+      <Link href={href} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
         {content}
-      </a>
+      </Link>
     ) : (
       <button type="button" onClick={onClick} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
         {content}

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -126,9 +127,9 @@ export default function Sidebar({
       >
         <div className={`flex shrink-0 items-center px-3 pb-2.5 pt-3.5 ${rail ? 'justify-center' : 'justify-between'}`}>
           {!rail && (
-            <a href="/" aria-label="Inbox" className="flex min-w-0 items-center">
+            <Link href="/" aria-label="Inbox" className="flex min-w-0 items-center">
               <BrandLockup height={24} tone="dark" />
-            </a>
+            </Link>
           )}
           {mobileOpen ? (
             <IconButton label="Close menu" tone="onDark" size="md" onClick={onCloseMobile}>

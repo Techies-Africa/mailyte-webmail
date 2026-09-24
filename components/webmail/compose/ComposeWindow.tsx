@@ -254,6 +254,15 @@ export default function ComposeWindow({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
+  // Moving to Calendar, Contacts or Settings is a client-side navigation: it
+  // unmounts this window without a beforeunload, so the guard above never
+  // asks. Save what was written instead, so it is waiting in Drafts.
+  const persistDraftRef = useRef(persistDraft);
+  useEffect(() => {
+    persistDraftRef.current = persistDraft;
+  }, [persistDraft]);
+  useEffect(() => () => void persistDraftRef.current(), []);
+
   const closeWithSave = async () => {
     await persistDraft();
     onClose();

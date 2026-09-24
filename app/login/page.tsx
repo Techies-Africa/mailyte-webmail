@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
 import AuthLayout from '@/components/auth/AuthLayout';
 import Avatar from '@/components/ui/Avatar';
@@ -27,6 +28,14 @@ export default function WebmailLoginPage() {
   const [adding, setAdding] = useState(false);
   const [existing, setExisting] = useState<AccountSummary[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
+
+  // A 401 reaches this page by a client-side redirect, which keeps the page's
+  // memory -- and with it the previous session's cached mail. Drop it here,
+  // before anyone signs in as someone else.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    queryClient.clear();
+  }, [queryClient]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
