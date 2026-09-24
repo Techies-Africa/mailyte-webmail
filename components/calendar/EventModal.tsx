@@ -41,6 +41,21 @@ const REPEATS: { label: string; value: string | null }[] = [
 ];
 
 /**
+ * The preset an event's repeat rule is, or starts as: the rule itself, or
+ * the longest preset followed by `;` (an UNTIL or a COUNT on the end).
+ * Longest, not first: 'FREQ=WEEKLY' is also the start of the weekday rule,
+ * and matching presets in order with startsWith opened every "Every weekday"
+ * event as "Every week" -- and saving it made it weekly.
+ */
+function presetFor(rule: string): (typeof REPEATS)[number] | null {
+  return (
+    REPEATS.filter((r) => r.value !== null && (rule === r.value || rule.startsWith(`${r.value};`))).sort(
+      (a, b) => (b.value?.length ?? 0) - (a.value?.length ?? 0),
+    )[0] ?? null
+  );
+}
+
+/**
  * Matches the server's cap. Each reminder becomes a VALARM that every synced
  * device turns into its own alert, so the ceiling is a kindness rather than
  * a restriction.
@@ -111,17 +126,23 @@ export default function EventModal({
   const [end, setEnd] = useState(seedEnd);
   const [location, setLocation] = useState(event?.location ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
-  const [rrule, setRrule] = useState<string | null>(
-    // Skip the "Does not repeat" entry explicitly. Its value is null, and
-    // any fallback that is a real string (notably '') makes startsWith()
-    // match it first, so every repeating event would come back showing
-    // "Does not repeat". This used to be written as a sentinel that could
-    // never prefix-match -- a literal NUL byte, which worked but made the
-    // whole file register as binary, so grep silently skipped it.
-    event?.rrule
-      ? (REPEATS.find((r) => r.value !== null && event.rrule?.startsWith(r.value))?.value ?? null)
-      : null,
-  );
+  /*
+   * The event's own rule, kept verbatim. Only a preset the person picks
+   * replaces it.
+   *
+   * This used to be snapped to the nearest preset on open, so saving any
+   * change -- a new title -- rewrote the rule: an UNTIL or a COUNT was
+   * dropped (a series that should end ran forever), and "Every weekday"
+   * came back as "Every week". A rule that is not exactly a preset is shown
+   * as its own first option, "<closest> (as set)", so an untouched save
+   * sends it back as it came.
+   */
+  const [rrule, setRrule] = useState<string | null>(event?.rrule || null);
+  const repeatOptions = useMemo(() => {
+    const own = event?.rrule;
+    if (!own || REPEATS.some((r) => r.value === own)) return REPEATS;
+    return [{ label: `${presetFor(own)?.label ?? 'Custom'} (as set)`, value: own }, ...REPEATS];
+  }, [event]);
   /*
    * The event's OWN reminders, not a guess.
    *
@@ -298,7 +319,7 @@ export default function EventModal({
               onChange={(e) => setRrule(e.target.value || null)}
               className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
             >
-              {REPEATS.map((option) => (
+              {repeatOptions.map((option) => (
                 <option key={option.label} value={option.value ?? ''}>
                   {option.label}
                 </option>
