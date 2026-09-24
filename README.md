@@ -48,13 +48,6 @@ npm install
 npm run dev               # http://localhost:3000
 ```
 
-No mail server to hand? `npm run mock` starts a stand-in for the mailbox API
-on port 8180, and `npm run dev:mock` runs the app against it on
-http://localhost:3001 (3000 is usually taken by the mail server stack's
-Grafana). Sign in with any address; the passwords `2fa`, `temp` and `wrong`
-exercise the second-factor, forced-password-change and rejected paths.
-Nothing it shows is real.
-
 With Docker:
 
 ```bash
