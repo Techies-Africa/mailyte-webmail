@@ -44,9 +44,22 @@ export function setSessionSettler(next: { settle: () => Promise<void>; abort: ()
   settler = next;
 }
 
+// Work already set going that has to finish in this session -- a message
+// being handed to the server -- before a switch or sign-out may proceed.
+const inFlight = new Set<Promise<unknown>>();
+
+export function trackSessionWork<T>(work: Promise<T>): Promise<T> {
+  inFlight.add(work);
+  void work.finally(() => inFlight.delete(work)).catch(() => undefined);
+  return work;
+}
+
 /** Called by switchAccount and signOut before they touch the session cookie. */
 export async function prepareSessionChange(): Promise<void> {
   await Promise.allSettled([...beforeChange].map((handler) => handler()));
+  // A send already under way finishes first, however long its upload takes:
+  // cutting it off would lose the message.
+  await Promise.allSettled([...inFlight]);
   await settler?.settle();
 }
 
@@ -87,6 +100,27 @@ export function onAccountChange(handler: () => void): () => void {
 
 // The address this tab's cache belongs to, from the first capabilities answer.
 let knownAccount: string | null = null;
+
+/** The header naming the mailbox a request is for. proxy.ts refuses a mismatch with the cookie. */
+export const ACCOUNT_HEADER = 'x-mailbox-account';
+
+/**
+ * `init` with this tab's mailbox named on it, once the tab knows which that
+ * is. Capabilities is left alone: it is how a tab finds out the account
+ * changed under it, so it must always answer.
+ */
+export function withAccountHeader(input: string, init: RequestInit | undefined): RequestInit | undefined {
+  if (!knownAccount || input.startsWith('/api/webmail/capabilities')) return init;
+  return {
+    ...init,
+    headers: { ...(init?.headers as Record<string, string> | undefined), [ACCOUNT_HEADER]: knownAccount },
+  };
+}
+
+/** The same, for a request built by hand (a keepalive beacon). */
+export function accountHeaders(): Record<string, string> {
+  return knownAccount ? { [ACCOUNT_HEADER]: knownAccount } : {};
+}
 
 /**
  * Note whose mailbox the server says this is, and report a change.

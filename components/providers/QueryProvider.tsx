@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
+import { ACCOUNT_MISMATCH_EVENT } from '@/lib/webmail/client';
+import { qk } from '@/lib/webmail/query/keys';
 import { abortSessionChange, dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
 import { clearUnauthorizedRedirect, onAccountChange, setSessionSettler } from '@/lib/webmail/query/session';
 
@@ -45,6 +47,14 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     setSessionSettler({ settle: () => settleAllHeld(client), abort: () => abortSessionChange(client) });
     return () => setSessionSettler(null);
+  }, [client]);
+
+  // A request was refused as meant for another mailbox: ask the server whose
+  // this is now. The capabilities query notices the change and starts over.
+  useEffect(() => {
+    const onMismatch = () => void client.refetchQueries({ queryKey: qk.capabilities, type: 'all' });
+    window.addEventListener(ACCOUNT_MISMATCH_EVENT, onMismatch);
+    return () => window.removeEventListener(ACCOUNT_MISMATCH_EVENT, onMismatch);
   }, [client]);
 
   // Removals waiting out their Undo window still happen if the page goes away.

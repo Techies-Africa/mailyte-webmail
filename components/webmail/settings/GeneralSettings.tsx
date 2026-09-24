@@ -51,6 +51,9 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
   // what is being typed.
   const reseedAfterSave = useRef(false);
   const touched = useRef(false);
+  // The editor reads its HTML only when it is created, so a signature
+  // re-read from the server gets a fresh editor to show it.
+  const [signatureEditor, setSignatureEditor] = useState({ key: 0, html: settings.signatureHtml });
   const markDirty = () => {
     touched.current = true;
     onDirty?.();
@@ -62,6 +65,9 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
+    setSignatureEditor((prev) =>
+      prev.html === settings.signatureHtml ? prev : { key: prev.key + 1, html: settings.signatureHtml },
+    );
     setOnReply(settings.signatureOnReply);
     setDensity(settings.displayDensity);
   }, [settings]);
@@ -123,7 +129,8 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
         <SectionTitle icon={<PenLine size={15} />}>Signature</SectionTitle>
         <div className="overflow-hidden rounded-lg border border-border">
           <WebmailEditor
-            initialHtml={settings.signatureHtml}
+            key={signatureEditor.key}
+            initialHtml={signatureEditor.html}
             placeholder="Your name, role, a link…"
             autoFocus={false}
             minHeightClass="min-h-[8rem]"

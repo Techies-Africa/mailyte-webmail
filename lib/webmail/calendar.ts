@@ -10,6 +10,7 @@
 // the wall-clock intent that recurring events depend on.
 
 import type { ApiResult } from './client';
+import { withAccountHeader } from './query/session';
 
 export type CalendarSummary = {
   uri: string;
@@ -107,7 +108,7 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
     return { success: false, message: 'Could not reach the mail server. Check your connection.', status: 0 };
   }

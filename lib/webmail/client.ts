@@ -10,13 +10,21 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
-import { abortSessionChange, announceAccountChange, prepareSessionChange } from "./query/session";
+import {
+  abortSessionChange,
+  announceAccountChange,
+  prepareSessionChange,
+  withAccountHeader,
+} from "./query/session";
 
 /**
  * `status` on a failure is the HTTP status, or 0 when the server was never
  * reached. The query layer uses it to decide what is worth retrying: a 4xx
  * will say the same thing again, a dropped connection may not.
  */
+/** Fired on the window when the proxy refuses a request made for another mailbox. */
+export const ACCOUNT_MISMATCH_EVENT = "mailyte:account-mismatch";
+
 export type ApiResult<T> =
   | { success: true; data: T }
   | { success: false; message: string; status?: number };
@@ -28,7 +36,7 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
     return {
       success: false,
@@ -65,6 +73,18 @@ async function call<T>(
       }
       return { success: false, message: "Set a new password to continue", status: 403 };
     }
+  }
+
+  // The proxy refused this request: it named a mailbox the session no longer
+  // has active (another tab switched, or a token expired and the next account
+  // took over). Tell the page, which checks whose mailbox this is and starts
+  // over on the right one.
+  if (
+    res.status === 409 &&
+    (data as { error_code?: string })?.error_code === "account_mismatch" &&
+    typeof window !== "undefined"
+  ) {
+    window.dispatchEvent(new Event(ACCOUNT_MISMATCH_EVENT));
   }
 
   // Two envelopes are accepted on purpose.

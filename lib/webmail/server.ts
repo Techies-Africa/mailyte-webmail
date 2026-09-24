@@ -74,6 +74,15 @@ function decode(raw: string | undefined): AccountStore {
   }
 }
 
+/**
+ * The address the accounts cookie makes active, or null when it names none
+ * (no cookie, or only the pre-multi-account one). Pure, so the request proxy
+ * (proxy.ts) can use it without the request-scoped cookie helpers.
+ */
+export function activeAccountOf(raw: string | undefined): string | null {
+  return decode(raw).active;
+}
+
 function encode(store: AccountStore): string {
   return Buffer.from(JSON.stringify(store)).toString('base64url');
 }

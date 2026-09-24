@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { abortSessionChange } from '@/lib/webmail/query/session';
 import { Eye, EyeOff, KeyRound, ShieldCheck, Smartphone } from 'lucide-react';
 import AuthLayout from '@/components/auth/AuthLayout';
 import Button from '@/components/ui/Button';
@@ -75,6 +76,9 @@ function ChangePasswordForm() {
       if (res.ok && (data?.success === true || data?.type === 'success')) {
         // A new password signs out every other session; start the inbox from nothing.
         queryClient.clear();
+        // The sign-in that led here is complete and the page is not reloading:
+        // actions may be sent again, in this session.
+        abortSessionChange();
         router.push('/');
         return;
       }

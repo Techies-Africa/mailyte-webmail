@@ -70,8 +70,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     closers.current.delete(id);
     setToasts((current) => current.filter((t) => t.id !== id));
     onClose?.(reason);
+    // Being replaced means another Undo is taking the slot: the waiting
+    // toast keeps waiting, behind that one.
     const next = waiting.current;
-    if (next && closers.current.size === 0) {
+    if (next && reason !== 'replaced' && closers.current.size === 0) {
       waiting.current = null;
       showRef.current(next.id, next.text, next.options);
     }

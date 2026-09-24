@@ -101,7 +101,12 @@ import {
   type RemoveOp,
   type RemoveReason,
 } from '@/lib/webmail/query/pendingOps';
-import { addBeforeSessionChange, addSessionDropHandler, useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import {
+  addBeforeSessionChange,
+  addSessionDropHandler,
+  trackSessionWork,
+  useUnauthorizedHandler,
+} from '@/lib/webmail/query/session';
 import { settingsKeys } from '@/lib/webmail/query/settingsQueries';
 
 export { PAGE_SIZE, STARRED_VIEW, LABEL_VIEW_PREFIX, labelOfView } from '@/lib/webmail/query/listParams';
@@ -529,10 +534,19 @@ export function useMailbox() {
           adjustFolderCounts(queryClient, deltasOf(op, outcome.ok));
           // Out of the cached views it no longer belongs in, so the cache
           // itself agrees with the server once the pending action is gone.
-          if (op.patch.isStarred === false) removeFromLists(queryClient, outcome.ok, (p) => p.starred);
-          const removedLabels = new Set(op.patch.removeLabels ?? []);
-          if (removedLabels.size > 0) {
-            removeFromLists(queryClient, outcome.ok, (p) => p.label !== null && removedLabels.has(p.label));
+          // Unless a later action, still pending, puts it straight back.
+          const later = store.getSnapshot().ops.filter((o) => o.opId > op.opId && o.kind === 'flags');
+          if (op.patch.isStarred === false) {
+            const out = outcome.ok.filter(
+              (id) => !later.some((o) => o.kind === 'flags' && o.idSet.has(id) && o.patch.isStarred === true),
+            );
+            removeFromLists(queryClient, out, (p) => p.starred);
+          }
+          for (const label of op.patch.removeLabels ?? []) {
+            const out = outcome.ok.filter(
+              (id) => !later.some((o) => o.kind === 'flags' && o.idSet.has(id) && o.patch.addLabels?.includes(label)),
+            );
+            removeFromLists(queryClient, out, (p) => p.label === label);
           }
         }
         notifyManager.schedule(() => {
@@ -547,16 +561,18 @@ export function useMailbox() {
         });
       });
 
-      // A quiet one -- the read mark made by opening a message -- leaves the
-      // folders to the next poll, which then reloads the list as it should
-      // if new mail arrived meanwhile.
-      if (op.patch.isRead !== undefined && !quiet) void refreshFolders();
+      // The folders are asked again, and the unread count this changed is
+      // taken as the new baseline -- so a message just read stays in the
+      // Unread filter until the next visit. New mail is never absorbed.
+      if (op.patch.isRead !== undefined) void refreshFolders();
       // Lists whose membership this changes -- Starred, Unread, the label
-      // views -- reload when next shown.
+      // views -- reload when next shown; one it adds a message to, at once if
+      // it is on screen (the row cannot be added by hand, it is not in the page).
       const touchedLabels = new Set([...(op.patch.addLabels ?? []), ...(op.patch.removeLabels ?? [])]);
+      const adds = op.patch.isStarred === true || (op.patch.addLabels?.length ?? 0) > 0;
       void queryClient.invalidateQueries({
         queryKey: qk.lists,
-        refetchType: 'none',
+        refetchType: adds ? 'active' : 'none',
         predicate: (q) => {
           const params = listParamsOf(q.queryKey);
           return (
@@ -851,6 +867,13 @@ export function useMailbox() {
         onClose: (why) => {
           if (why !== 'action') {
             releaseHeld(queryClient, op.opId);
+            return;
+          }
+          // Too late if it has already been sent (released early, by a
+          // switch or by adding an account): taking the rows back then would
+          // show them where the server no longer has them.
+          if (store.get(op.opId)?.state !== 'held') {
+            toast('Too late to undo — it has already been done', { tone: 'info' });
             return;
           }
           discardHeld(queryClient, op.opId);
@@ -1202,7 +1225,8 @@ export function useMailbox() {
 
   const deliver = useCallback(
     async (payload: ComposePayload, context: SendContext) => {
-      const result = await apiSend(
+      // Tracked: a switch or sign-out waits for it rather than cutting it off.
+      const result = await trackSessionWork(apiSend(
         {
           to: splitAddresses(payload.to),
           cc: payload.cc ? splitAddresses(payload.cc) : undefined,
@@ -1216,7 +1240,7 @@ export function useMailbox() {
         },
         payload.attachments ?? [],
         handleUnauthorized,
-      );
+      ));
 
       if (!result.success) {
         const verb = payload.sendAt ? 'was not scheduled' : 'was not sent';

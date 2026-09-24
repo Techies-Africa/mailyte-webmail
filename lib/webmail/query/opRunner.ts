@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { ApiResult } from '@/lib/webmail/client';
 import { opsStoreOf, type PendingOp, type RemoveOp } from './pendingOps';
-import { runSessionDropHandlers } from './session';
+import { accountHeaders, runSessionDropHandlers } from './session';
 
 /**
  * Sending pending actions to the server.
@@ -12,11 +12,12 @@ import { runSessionDropHandlers } from './session';
  * an action taken on the inbox still completes after moving to Calendar.
  *
  * A message id is FOLDER:UID and says nothing about whose mailbox it is in;
- * the server takes that from the session cookie on every request. So the
- * queue must never send across a change of session: INBOX:4521 names a
- * different message -- or nothing -- in the next account. Every request is
- * checked against the queue's generation just before it goes, and a change of
- * session moves the generation on.
+ * the server takes that from the session cookie on every request, so
+ * INBOX:4521 names a different message -- or nothing -- in the next account.
+ * The final guard is the proxy (proxy.ts), which refuses any request named
+ * for a mailbox the cookie no longer makes active. Here, the queue also stops
+ * itself when it learns the session changed elsewhere, and sends nothing new
+ * once a switch or sign-out from this tab is under way.
  */
 
 interface Cursor {
@@ -40,6 +41,8 @@ interface Runner {
   held: Map<number, () => void>;
   /** How far each removal being sent has got, so a closing page can send the rest. */
   cursors: Map<number, Cursor>;
+  /** The generation each op was committed in; a closing page sends nothing from an older one. */
+  committedIn: Map<number, number>;
 }
 
 const runners = new WeakMap<QueryClient, Runner>();
@@ -47,7 +50,14 @@ const runners = new WeakMap<QueryClient, Runner>();
 function runnerOf(queryClient: QueryClient): Runner {
   let runner = runners.get(queryClient);
   if (!runner) {
-    runner = { tail: Promise.resolve(), generation: 0, closing: false, held: new Map(), cursors: new Map() };
+    runner = {
+      tail: Promise.resolve(),
+      generation: 0,
+      closing: false,
+      held: new Map(),
+      cursors: new Map(),
+      committedIn: new Map(),
+    };
     runners.set(queryClient, runner);
   }
   return runner;
@@ -111,6 +121,7 @@ export function commitOp(
   if (op.state === 'held') store.setState(opId, 'running');
 
   const generation = runner.generation;
+  runner.committedIn.set(opId, generation);
   enqueue(queryClient, async () => {
     const current = store.get(opId);
     if (!current) return;
@@ -128,6 +139,7 @@ export function commitOp(
     };
     await Promise.all(Array.from({ length: Math.min(6, current.ids.length) }, worker));
     runner.cursors.delete(opId);
+    runner.committedIn.delete(opId);
     // Taken over by a closing page, which sent the rest itself.
     if (!store.get(opId)) return;
 
@@ -179,15 +191,16 @@ export function releaseAllHeld(queryClient: QueryClient): void {
 /**
  * This tab is about to hand the session to another mailbox (a switch, a
  * sign-out). Send every held action and give the queue a few seconds to
- * finish, while the ids still mean what they meant; then stop it. Whatever
- * had not gone by then does not go at all -- never to the wrong mailbox.
+ * finish while the ids still mean what they meant; after that, nothing new
+ * is sent. The queue is not stopped: should the switch fail, it carries on
+ * in the same session, and should it succeed, whatever is still going is
+ * refused by the proxy rather than reaching the next mailbox.
  */
 export async function settleAllHeld(queryClient: QueryClient, timeoutMs = 4000): Promise<void> {
   const runner = runnerOf(queryClient);
   releaseAllHeld(queryClient);
   await Promise.race([runner.tail, new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
   runner.closing = true;
-  haltQueue(queryClient);
 }
 
 /** The switch or sign-out did not happen after all: this session carries on. */
@@ -241,7 +254,10 @@ export function flushHeldOnExit(queryClient: QueryClient): void {
   const store = opsStoreOf(queryClient);
   for (const op of store.getSnapshot().ops) {
     if (op.kind !== 'remove' || (op.state !== 'held' && op.state !== 'running')) continue;
-    if (!runner.closing) {
+    // Committed before the session changed elsewhere: stopped, and not ours to send now.
+    const committed = runner.committedIn.get(op.opId);
+    const current = committed === undefined || committed === runner.generation;
+    if (!runner.closing && current) {
       const cursor = runner.cursors.get(op.opId);
       let unsent: string[] = op.ids;
       if (cursor) {
@@ -254,7 +270,8 @@ export function flushHeldOnExit(queryClient: QueryClient): void {
         if (!beacon) continue;
         void fetch(beacon.url, {
           method: beacon.method,
-          headers: beacon.body ? { 'Content-Type': 'application/json' } : undefined,
+          // Named for this mailbox: if the session has moved on, the proxy refuses it.
+          headers: { ...(beacon.body ? { 'Content-Type': 'application/json' } : {}), ...accountHeaders() },
           body: beacon.body,
           keepalive: true,
         }).catch(() => undefined);
@@ -262,6 +279,7 @@ export function flushHeldOnExit(queryClient: QueryClient): void {
     }
     // Should the page come back from the back-forward cache, nothing is sent twice.
     runner.held.delete(op.opId);
+    runner.committedIn.delete(op.opId);
     store.settleRemoval(op.opId, op.ids);
   }
 }

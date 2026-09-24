@@ -9,7 +9,12 @@ import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Field';
 import { listAccounts, switchAccount, type AccountSummary } from '@/lib/webmail/client';
-import { announceAccountChange, resetSessionState } from '@/lib/webmail/query/session';
+import {
+  abortSessionChange,
+  announceAccountChange,
+  prepareSessionChange,
+  resetSessionState,
+} from '@/lib/webmail/query/session';
 import { dropAllHeld, releaseAllHeld } from '@/lib/webmail/query/opRunner';
 
 export default function WebmailLoginPage() {
@@ -56,6 +61,11 @@ export default function WebmailLoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    // Signing in makes the new mailbox the active one for this browser. What
+    // the previous one still had going (adding an account keeps it live)
+    // finishes first, while its ids still mean what they meant.
+    await prepareSessionChange();
+    let signedIn = false;
 
     try {
       const res = await fetch('/api/webmail-auth/login', {
@@ -88,6 +98,7 @@ export default function WebmailLoginPage() {
       // This mailbox is now the active one for every tab on this browser.
       announceAccountChange();
 
+      signedIn = true;
       // A temporary or admin-reset password buys a session that can do
       // exactly two things: set a real password, and sign out.
       if (data.must_change_password) {
@@ -105,6 +116,9 @@ export default function WebmailLoginPage() {
     } catch {
       setError('Could not reach the server. Please try again.');
     } finally {
+      // Not signed in (refused, a second factor asked for, unreachable): the
+      // session is what it was, and carries on.
+      if (!signedIn) abortSessionChange();
       setLoading(false);
     }
   };
