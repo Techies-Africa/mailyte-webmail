@@ -24,6 +24,9 @@ export type ComposeLayout = 'open' | 'minimized' | 'fullscreen';
  * message is started -- so the compose state is a list of these rather than
  * one `{ open, mode }` object. Each carries everything the window needs to
  * rebuild itself, which is also what lets an undone send reopen exactly.
+ *
+ * The list's order is the dock's slot order: index 0 nearest the right edge,
+ * a new window appended at the left end (see dockLayout).
  */
 export interface ComposeWindow {
   id: string;
@@ -41,17 +44,30 @@ export interface ComposeWindow {
   quoteIncluded?: boolean;
   restored?: boolean;
   threading?: { inReplyTo?: string; references?: string };
+  /**
+   * Its shape only, never its place: a minimized window keeps its slot in the
+   * dock, drawn there as a tab, and stays mounted, so nothing typed or
+   * attached in it is lost.
+   */
   layout: ComposeLayout;
   /** What the title bar and the minimized tab show; follows the subject. */
   label: string;
   /** Bumped to remount the window when its content is replaced from outside. */
   seed: number;
   /**
-   * When the window was last opened or brought forward. On a phone only one
-   * window fits, and it is the one touched last; ordering by this rather than
-   * by array position means no window is ever moved -- and so never remounted.
+   * When the window was last opened, restored, focused or pressed (a running
+   * count, not a clock). On a phone only one window fits, and it is the one
+   * touched last. On a desktop it decides which window draws on top and which
+   * collapses first when the row runs out of room -- never where one sits.
    */
   activatedAt: number;
+  /**
+   * When it was opened, on the same count. The dock renders windows in this
+   * order, which never changes: a drag reorders the slots (the array), never
+   * the DOM. A re-inserted node would replay its rise animation and drop the
+   * focus of whatever was being typed in it.
+   */
+  created: number;
 }
 
 /** A sender this window may write as. */

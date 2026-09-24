@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Paperclip, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
@@ -14,6 +14,7 @@ import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
 import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
+import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 
 /** Matches SendMailboxMessageRequest's own limits. */
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -21,10 +22,6 @@ const MAX_ATTACHMENTS = 20;
 
 /** PRD F6: autosave every 30s + on close. */
 const AUTOSAVE_MS = 30_000;
-
-export const COMPOSE_WIDTH = 560;
-export const COMPOSE_GAP = 12;
-export const COMPOSE_RIGHT = 32;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -65,12 +62,24 @@ function initialDraft(
 
 type ComposeWindowProps = {
   window: ComposeWindowModel;
-  /** Minimized windows are drawn by the dock, not here. */
+  /** A minimized window's tab is drawn by the dock, in this window's slot; this window is then `hidden`. */
   layout: 'open' | 'fullscreen';
   /** Minimized, or on a phone not the window in front: kept mounted, not shown. */
   hidden?: boolean;
-  /** Position among the open windows, rightmost first. */
-  stackIndex: number;
+  /** Its slot's distance from the right edge of the screen, px (dockLayout). Ignored in full screen. */
+  right: number;
+  /** Its slot's width, px. */
+  width: number;
+  /** Above the windows used less recently than this one. */
+  zIndex: number;
+  /** Whether the title bar drags the window along the row, and Alt+Shift+Arrow moves it. */
+  canReorder: boolean;
+  /** Focused or pressed: raise it to the top of the stack, without moving it. */
+  onActivate: () => void;
+  /** A drag of the title bar, reported to the dock, which reorders the row. */
+  drag: DockDragCallbacks;
+  /** Alt+Shift+Arrow: one slot further from the right edge (+1) or nearer it (-1). */
+  onMoveBy: (delta: 1 | -1) => void;
   isMobile: boolean;
   selfAddress: string;
   selfName: string | null;
@@ -96,12 +105,26 @@ type ComposeWindowProps = {
  * One compose window, in the redesign's two shapes: a 560px sheet rising
  * from the bottom edge with a dark title bar, or a full-screen page with a
  * dark top bar and an 800px column. Both wrap the same form.
+ *
+ * Docked, it sits in one slot of the dock's single ordered row, at the
+ * `right` the dock hands down, and glides when a neighbour's slot changes.
+ * It never picks its own place: minimizing hides it and the dock draws a tab
+ * in the same slot, and a new window opens at the left end of the row, so
+ * this one stays put. Its title bar drags it along the row, and
+ * Alt+Shift+Arrow on a title-bar control moves it one slot. Focusing or
+ * pressing anywhere in it raises it above its neighbours without moving it.
  */
 export default function ComposeWindow({
   window: model,
   layout,
   hidden = false,
-  stackIndex,
+  right,
+  width,
+  zIndex,
+  canReorder,
+  onActivate,
+  drag: dragCallbacks,
+  onMoveBy,
   isMobile,
   selfAddress,
   selfName,
@@ -138,6 +161,31 @@ export default function ComposeWindow({
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The whole window moves with a drag of its title bar. Never in full
+  // screen: it covers the row, and its slot waits for it underneath.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const drag = useDockDrag({
+    enabled: canReorder && !fullscreen,
+    rootRef,
+    right,
+    callbacks: dragCallbacks,
+  });
+
+  // Leaving full screen lands the window in its slot at once. Full screen
+  // sits at right: 0, so the slot's `right` transition would otherwise slide
+  // it in from the corner. The style is flushed with the transition off,
+  // then the transition is handed back for the neighbours' next move.
+  const wasFullscreenRef = useRef(fullscreen);
+  useLayoutEffect(() => {
+    const was = wasFullscreenRef.current;
+    wasFullscreenRef.current = fullscreen;
+    const el = rootRef.current;
+    if (!was || fullscreen || !el) return;
+    el.style.transition = 'none';
+    el.getBoundingClientRect();
+    el.style.transition = '';
+  }, [fullscreen]);
 
   const [draftId, setDraftId] = useState<string | undefined>(existingDraftId);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
@@ -371,12 +419,31 @@ export default function ComposeWindow({
 
   const title = draft.subject.trim() || MODE_TITLE[mode];
 
+  // The keyboard's way to reorder: from any control in the title bar. The
+  // row's slots count from the right edge, so ArrowLeft is +1.
+  const onTitleKeyDown = (event: React.KeyboardEvent) => {
+    if (!canReorder || fullscreen || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    onMoveBy(event.key === 'ArrowLeft' ? 1 : -1);
+  };
+
   const titleBar = (
     <div
-      className={`flex shrink-0 items-center justify-between bg-sidebar text-white ${
-        fullscreen ? 'px-4 py-3 sm:px-6' : 'cursor-default rounded-t-2xl px-4 pb-2.5 pt-3'
-      }`}
-      onDoubleClick={fullscreen ? onRestore : onFullscreen}
+      className={[
+        'flex shrink-0 select-none items-center justify-between bg-sidebar text-white',
+        fullscreen
+          ? 'px-4 py-3 sm:px-6'
+          : `rounded-t-2xl px-4 pb-2.5 pt-3 ${canReorder ? 'cursor-grab touch-none active:cursor-grabbing' : 'cursor-default'}`,
+      ].join(' ')}
+      {...(fullscreen ? {} : drag.handleProps)}
+      onKeyDown={onTitleKeyDown}
+      onDoubleClick={() => {
+        // The two clicks of a drop are not a request for full screen.
+        if (drag.justDropped()) return;
+        if (fullscreen) onRestore();
+        else onFullscreen();
+      }}
     >
       <div className="flex min-w-0 items-center gap-2.5">
         <Avatar name={selfName ?? selfAddress} email={selfAddress} size={fullscreen ? 34 : 30} onDark className="!bg-primary !text-primary-foreground" />
@@ -490,7 +557,7 @@ export default function ComposeWindow({
         initialHtml={editorInitialHtml}
         toolbarPosition="bottom"
         autoFocus={mode !== 'compose' || !!resumed?.to}
-        minHeightClass={fullscreen ? 'min-h-[40vh]' : 'min-h-[180px]'}
+        minHeightClass={fullscreen ? 'min-h-[40dvh]' : 'min-h-[180px]'}
         onChange={(html) => touch({ body: html })}
         toolbarExtra={
           onAiWrite ? (
@@ -608,30 +675,28 @@ export default function ComposeWindow({
     </>
   );
 
-  // ONE tree for both shapes. The fullscreen and windowed containers differ
-  // only in classes and inline style, never in nesting: a different nesting
-  // would make React remount the form -- and the editor inside it -- on every
-  // switch between the two, throwing away whatever was being typed.
+  // ONE tree for every shape. The fullscreen, windowed and hidden containers
+  // differ only in classes and inline style, never in nesting: a different
+  // nesting would make React remount the form -- and the editor inside it --
+  // on every switch between them, throwing away whatever was being typed.
+  // Minimized is `hidden` here (the dock draws the tab), not unmounted.
   return (
     <div
+      ref={rootRef}
       data-shortcuts="off"
+      // The dock finds the editor through this to hand focus back on restore.
+      data-compose-id={model.id}
       role="dialog"
       aria-label={title}
-      style={
-        fullscreen
-          ? undefined
-          : {
-              right: COMPOSE_RIGHT + stackIndex * (COMPOSE_WIDTH + COMPOSE_GAP),
-              width: `min(${COMPOSE_WIDTH}px, calc(100vw - 4rem))`,
-              zIndex: 150 - stackIndex,
-            }
-      }
+      onFocusCapture={onActivate}
+      onPointerDownCapture={onActivate}
+      style={fullscreen ? undefined : { right, width, zIndex }}
       className={
         hidden
           ? 'hidden'
           : fullscreen
             ? 'fixed inset-0 z-[200] flex animate-fade-in flex-col bg-card'
-            : 'fixed bottom-0 flex max-h-[82vh] animate-rise flex-col overflow-hidden rounded-t-2xl bg-card shadow-window'
+            : 'fixed bottom-0 flex max-h-[82dvh] animate-rise flex-col overflow-hidden rounded-t-2xl bg-card shadow-window transition-[right] duration-200 ease-out'
       }
     >
       {titleBar}
