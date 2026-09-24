@@ -20,6 +20,9 @@ function nextId(): string {
   return `c${Date.now().toString(36)}${counter}`;
 }
 
+let activations = 0;
+const nextActivation = () => ++activations;
+
 export interface OpenComposeOptions {
   mode?: ComposeMode;
   replyTo?: WebmailMessage;
@@ -35,6 +38,8 @@ export interface OpenComposeOptions {
  * Only one window can be fullscreen at a time (it covers everything), and at
  * most MAX_OPEN can be windowed -- opening a fourth minimizes the oldest
  * rather than stacking a fourth 560px window off the edge of the screen.
+ * Minimizing only hides a window (ComposeDock keeps it mounted), so nothing
+ * written in it is lost.
  */
 export function useComposeWindows() {
   const [windows, setWindows] = useState<ComposeWindow[]>([]);
@@ -50,7 +55,9 @@ export function useComposeWindows() {
       if (options.draftId) {
         const existing = current.find((w) => w.draftId === options.draftId);
         if (existing) {
-          return current.map((w) => (w.id === existing.id ? { ...w, layout: 'open' } : w));
+          return current.map((w) =>
+            w.id === existing.id ? { ...w, layout: 'open', activatedAt: nextActivation() } : w,
+          );
         }
       }
 
@@ -77,6 +84,7 @@ export function useComposeWindows() {
           layout,
           label,
           seed: 0,
+          activatedAt: nextActivation(),
         },
       ];
     });
@@ -114,7 +122,9 @@ export function useComposeWindows() {
           );
         }
       }
-      return next.map((w) => (w.id === id ? { ...w, layout } : w));
+      return next.map((w) =>
+        w.id === id ? { ...w, layout, activatedAt: layout === 'minimized' ? w.activatedAt : nextActivation() } : w,
+      );
     });
   }, []);
 

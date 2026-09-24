@@ -22,10 +22,13 @@ type ComposeDockProps = {
 };
 
 /**
- * Every compose window on screen, plus the row of minimized tabs.
+ * Every compose window, plus a row of tabs for the ones not on screen.
  *
- * Open windows stack from the right edge leftwards; the minimized tabs sit
- * beyond the last open window so nothing overlaps.
+ * Open windows stack from the right edge leftwards; the tabs sit beyond the
+ * last open window so nothing overlaps. A window off screen -- minimized, or
+ * on a phone simply not the one in front -- stays mounted and hidden: its
+ * text, attachments, cursor and undo history are all still there when it
+ * comes back. Unmounting it would throw them away.
  */
 export default function ComposeDock({
   compose,
@@ -43,20 +46,28 @@ export default function ComposeDock({
   const { windows, closeCompose, setLayout, setLabel, setDraftId, reportAttachments } = compose;
   const open = windows.filter((w) => w.layout === 'open');
   const fullscreen = windows.find((w) => w.layout === 'fullscreen');
-  const minimized = windows.filter((w) => w.layout === 'minimized');
 
-  // On a phone there is room for exactly one window, full screen.
-  const shown = isMobile ? (fullscreen ? [fullscreen] : open.slice(-1)) : [...open, ...(fullscreen ? [fullscreen] : [])];
+  // On a phone there is room for exactly one window, full screen: the one
+  // opened or brought forward last. Every other window gets a tab.
+  const frontOnPhone =
+    fullscreen ?? open.reduce<(typeof open)[number] | undefined>((a, w) => (!a || w.activatedAt > a.activatedAt ? w : a), undefined);
+  const shownIds = new Set(
+    isMobile ? (frontOnPhone ? [frontOnPhone.id] : []) : [...open, ...(fullscreen ? [fullscreen] : [])].map((w) => w.id),
+  );
+  const visibleOpen = open.filter((w) => shownIds.has(w.id));
+  const tabs = windows.filter((w) => !shownIds.has(w.id));
 
   return (
     <>
-      {shown.map((w) => {
-        const stackIndex = w.layout === 'open' ? open.length - 1 - open.indexOf(w) : 0;
+      {windows.map((w) => {
+        const hidden = !shownIds.has(w.id);
+        const stackIndex = w.layout === 'open' && !hidden ? visibleOpen.length - 1 - visibleOpen.indexOf(w) : 0;
         return (
           <ComposeWindow
             key={`${w.id}-${w.seed}`}
             window={w}
             layout={w.layout === 'fullscreen' ? 'fullscreen' : 'open'}
+            hidden={hidden}
             stackIndex={stackIndex}
             isMobile={isMobile}
             selfAddress={selfAddress}
@@ -79,16 +90,16 @@ export default function ComposeDock({
         );
       })}
 
-      {minimized.length > 0 && (
+      {tabs.length > 0 && (
         <div
           style={
             isMobile
               ? { left: 12, right: 12 }
-              : { right: COMPOSE_RIGHT + open.length * (COMPOSE_WIDTH + COMPOSE_GAP) }
+              : { right: COMPOSE_RIGHT + visibleOpen.length * (COMPOSE_WIDTH + COMPOSE_GAP) }
           }
           className="fixed bottom-0 z-[140] flex items-end gap-1.5 overflow-x-auto"
         >
-          {minimized.map((w) => (
+          {tabs.map((w) => (
             <div
               key={w.id}
               role="button"

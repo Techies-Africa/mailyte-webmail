@@ -40,6 +40,12 @@ export interface ComposeWindow {
   label: string;
   /** Bumped to remount the window when its content is replaced from outside. */
   seed: number;
+  /**
+   * When the window was last opened or brought forward. On a phone only one
+   * window fits, and it is the one touched last; ordering by this rather than
+   * by array position means no window is ever moved -- and so never remounted.
+   */
+  activatedAt: number;
 }
 
 /** A sender this window may write as. */

@@ -67,6 +67,8 @@ type ComposeWindowProps = {
   window: ComposeWindowModel;
   /** Minimized windows are drawn by the dock, not here. */
   layout: 'open' | 'fullscreen';
+  /** Minimized, or on a phone not the window in front: kept mounted, not shown. */
+  hidden?: boolean;
   /** Position among the open windows, rightmost first. */
   stackIndex: number;
   isMobile: boolean;
@@ -98,6 +100,7 @@ type ComposeWindowProps = {
 export default function ComposeWindow({
   window: model,
   layout,
+  hidden = false,
   stackIndex,
   isMobile,
   selfAddress,
@@ -275,6 +278,11 @@ export default function ComposeWindow({
     persistDraftRef.current = persistDraft;
   }, [persistDraft]);
   useEffect(() => () => void persistDraftRef.current(), []);
+  // Minimizing saves too, as it did when a minimized window was unmounted:
+  // what is in Drafts matches what was on screen when it went away.
+  useEffect(() => {
+    if (hidden) void persistDraftRef.current();
+  }, [hidden]);
 
   const closeWithSave = async () => {
     await persistDraft();
@@ -609,9 +617,11 @@ export default function ComposeWindow({
             }
       }
       className={
-        fullscreen
-          ? 'fixed inset-0 z-[200] flex animate-fade-in flex-col bg-card'
-          : 'fixed bottom-0 flex max-h-[82vh] animate-rise flex-col overflow-hidden rounded-t-2xl bg-card shadow-window'
+        hidden
+          ? 'hidden'
+          : fullscreen
+            ? 'fixed inset-0 z-[200] flex animate-fade-in flex-col bg-card'
+            : 'fixed bottom-0 flex max-h-[82vh] animate-rise flex-col overflow-hidden rounded-t-2xl bg-card shadow-window'
       }
     >
       {titleBar}
