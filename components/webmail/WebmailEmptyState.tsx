@@ -10,6 +10,7 @@ import {
   Search,
   Paperclip,
   MailOpen,
+  Tag,
 } from 'lucide-react';
 
 type WebmailEmptyStateProps = {
@@ -18,6 +19,8 @@ type WebmailEmptyStateProps = {
   role: string | null;
   searchQuery?: string;
   filter?: 'all' | 'unread' | 'starred' | 'attachments';
+  /** The label's title when the list is a label view. */
+  labelView?: string;
 };
 
 // Per-folder wording rather than one generic "No emails found in this
@@ -66,10 +69,16 @@ const FILTER_COPY: Record<string, { icon: React.ReactNode; title: string; body: 
   },
 };
 
-export default function WebmailEmptyState({ folder, role, searchQuery, filter = 'all' }: WebmailEmptyStateProps) {
+export default function WebmailEmptyState({ folder, role, searchQuery, filter = 'all', labelView }: WebmailEmptyStateProps) {
   let content = role ? COPY[role] : undefined;
 
-  if (searchQuery) {
+  if (labelView && !searchQuery && filter === 'all') {
+    content = {
+      icon: <Tag />,
+      title: `Nothing labelled ${labelView}`,
+      body: 'Label a message from its menu, or let a filter rule label mail as it arrives.',
+    };
+  } else if (searchQuery) {
     content = {
       icon: <Search />,
       title: 'No results',

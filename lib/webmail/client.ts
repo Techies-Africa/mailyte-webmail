@@ -103,6 +103,8 @@ export interface ListOptions {
   /** Server-side filters: IMAP SEARCH UNSEEN / FLAGGED. */
   unread?: boolean;
   starred?: boolean;
+  /** A label (IMAP keyword). With no folder, searched across every folder. */
+  label?: string;
 }
 
 /**
@@ -121,6 +123,7 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.limit) qs.set("limit", String(options.limit));
   if (options.unread) qs.set("unread", "true");
   if (options.starred) qs.set("starred", "true");
+  if (options.label) qs.set("label", options.label);
 
   const query = qs.toString();
   return call<MessagePage>(
@@ -279,6 +282,16 @@ export function rawMessageUrl(messageId: string): string {
   return `/api/webmail/messages/${encodeURIComponent(messageId)}/raw`;
 }
 
+/** The same bytes as plain text, for the "Show original" page. */
+export function rawMessageTextUrl(messageId: string): string {
+  return `${rawMessageUrl(messageId)}?format=text`;
+}
+
+/** The "Show original" page for a message. Opens in its own tab. */
+export function originalPageUrl(messageId: string): string {
+  return `/original?id=${encodeURIComponent(messageId)}`;
+}
+
 /** The rest of a message's conversation, oldest first; empty if it stands alone. */
 export function getThread(id: string, onUnauthorized: () => void) {
   return call<ApiMessageSummary[]>(
@@ -294,6 +307,28 @@ export function getThread(id: string, onUnauthorized: () => void) {
  */
 export function attachmentUrl(messageId: string, index: number): string {
   return `/api/webmail/messages/${encodeURIComponent(messageId)}/attachments/${index}`;
+}
+
+/**
+ * The same bytes, asked to render in the browser rather than download. The
+ * proxy honours it only for types a browser shows without executing anything
+ * (images, PDF, plain text, audio, video); anything else downloads regardless.
+ */
+export function attachmentPreviewUrl(messageId: string, index: number): string {
+  return `${attachmentUrl(messageId, index)}?disposition=inline`;
+}
+
+/** Whether the browser can show this type on its own, matching the proxy's allowlist. */
+export function isPreviewableAttachment(type: string): boolean {
+  const t = type.split(";")[0].trim().toLowerCase();
+  return (
+    /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(t) ||
+    t === "application/pdf" ||
+    t === "text/plain" ||
+    t === "text/csv" ||
+    /^audio\/(mpeg|mp4|ogg|wav|webm)$/.test(t) ||
+    /^video\/(mp4|webm|ogg)$/.test(t)
+  );
 }
 
 export function getMessage(id: string, onUnauthorized: () => void) {
@@ -334,6 +369,24 @@ export const moveMessage = (
   folder: string,
   onUnauthorized: () => void,
 ) => messageAction(id, "move", { folder }, onUnauthorized);
+
+/**
+ * Add and remove labels on one message. Labels are IMAP keywords: the server
+ * stores them beside \Seen and \Flagged, every client sees them, and a
+ * filter rule can set them at delivery. Names are normalised to lowercase
+ * slugs on the server ("Action needed" -> "action_needed").
+ */
+export const setLabels = (
+  id: string,
+  add: string[],
+  remove: string[],
+  onUnauthorized: () => void,
+) => messageAction(id, "labels", { add, remove }, onUnauthorized);
+
+/** Every label in use in the mailbox, as slugs. */
+export function listLabels(onUnauthorized: () => void) {
+  return call<{ labels: string[] }>("/api/webmail/labels", undefined, onUnauthorized);
+}
 
 /**
  * Move to Trash -- recoverable, and what the delete button does everywhere

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   // `unread` and `starred` are the server's own filters (IMAP SEARCH UNSEEN /
   // FLAGGED). They were always accepted upstream and dropped here, which is
   // why the list could not be narrowed to unread without a search term.
-  for (const key of ['folder', 'search', 'limit', 'offset', 'unread', 'starred'] as const) {
+  for (const key of ['folder', 'search', 'limit', 'offset', 'unread', 'starred', 'label'] as const) {
     const value = params.get(key);
     if (value !== null && value !== '') {
       url.searchParams.set(key, value);

@@ -5,6 +5,7 @@ import { differenceInCalendarDays, format, isThisYear, isToday, isValid } from '
 import type { WebmailListItem } from '../types';
 import Avatar from '@/components/ui/Avatar';
 import { Tag } from '@/components/ui/Pill';
+import { rowTags } from '@/lib/webmail/tags';
 
 /**
  * What a mail client shows: the time if it arrived today, the weekday if it
@@ -29,6 +30,8 @@ type MessageRowProps = {
   scheduled?: { label: string; failed: boolean; error: string | null };
   /** The folder name is shown as a tag when results span folders. */
   showFolder: boolean;
+  /** Work out an automatic tag from the sender and subject (off in Sent and Drafts). */
+  autoTags: boolean;
   onOpen: () => void;
   onSelect: (selected: boolean) => void;
   onStar: () => void;
@@ -47,6 +50,7 @@ export default function MessageRow({
   density,
   scheduled,
   showFolder,
+  autoTags,
   onOpen,
   onSelect,
   onStar,
@@ -57,7 +61,7 @@ export default function MessageRow({
   const unread = !email.isRead;
   const compact = density === 'compact';
 
-  const tags: { key: string; label: string; tone: 'neutral' | 'primary' | 'warning' | 'danger' }[] = [];
+  const tags: { key: string; label: string; tone: 'neutral' | 'primary' | 'warning' | 'danger' | 'success' }[] = [];
   if (email.isDraft) tags.push({ key: 'draft', label: 'Draft', tone: 'warning' });
   if (scheduled) {
     tags.push(
@@ -73,6 +77,8 @@ export default function MessageRow({
       tone: 'neutral',
     });
   }
+  // The person's labels, then one automatic tag read off the message itself.
+  for (const tag of rowTags(email, { auto: autoTags && !email.isDraft })) tags.push(tag);
 
   const stop = (e: React.MouseEvent, fn?: () => void) => {
     e.stopPropagation();
@@ -131,7 +137,7 @@ export default function MessageRow({
           {tags.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {tags.map((tag) => (
-                <Tag key={tag.key} tone={tag.tone}>
+                <Tag key={tag.key} tone={tag.tone} className={tag.key.startsWith('auto:') ? 'opacity-80' : ''}>
                   {tag.label}
                 </Tag>
               ))}
