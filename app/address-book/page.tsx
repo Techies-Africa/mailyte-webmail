@@ -22,6 +22,7 @@ import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import IconButton from '@/components/ui/IconButton';
 import { Input, Label, Select, Textarea } from '@/components/ui/Field';
+import SelectMenu, { type SelectMenuOption } from '@/components/ui/SelectMenu';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import {
   createContact,
@@ -36,9 +37,26 @@ import {
 import { contactKeys, useAddressBooks, useBookContacts } from '@/lib/webmail/query/contactQueries';
 import { qk } from '@/lib/webmail/query/keys';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { ADDRESS_BOOK_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
 
 const NO_BOOKS: AddressBook[] = [];
 const NO_CONTACTS: Contact[] = [];
+
+/** The mailbox's own book. Every server has it, so it is the fallback for everything. */
+const PERSONAL_BOOK = 'default';
+
+/**
+ * The book to open: the one last picked in this mailbox if the server still
+ * lists it, else the personal book. Null while that is unknowable -- storage
+ * not read yet, or a remembered shared book with the list still loading -- so
+ * the screen waits rather than showing the personal book and then swapping.
+ */
+function bookToOpen(remembered: string | null | undefined, books: AddressBook[] | undefined, failed: boolean): string | null {
+  if (remembered === undefined) return null;
+  if (!remembered || remembered === PERSONAL_BOOK) return PERSONAL_BOOK;
+  if (!books) return failed ? PERSONAL_BOOK : null;
+  return books.some((b) => b.uri === remembered) ? remembered : PERSONAL_BOOK;
+}
 
 const EMPTY_DRAFT: ContactDraft = {
   first_name: '',
@@ -72,19 +90,23 @@ export default function AddressBookPage() {
   const supported = capabilities ? capabilities.capabilities?.contacts === true : null;
   return (
     <PageShell current="contacts">
-      <AddressBookScreen supported={supported} />
+      <AddressBookScreen supported={supported} email={capabilities?.email_address ?? null} />
     </PageShell>
   );
 }
 
-function AddressBookScreen({ supported }: { supported: boolean | null }) {
+function AddressBookScreen({ supported, email }: { supported: boolean | null; email: string | null }) {
   const [menuOpen, openMenu] = usePageMenu();
   const queryClient = useQueryClient();
   const onUnauthorized = useUnauthorizedHandler();
 
-  const books = useAddressBooks(supported === true).data ?? NO_BOOKS;
-  const [activeBook, setActiveBook] = useState('default');
-  const contactsResult = useBookContacts(activeBook, supported === true);
+  const booksResult = useAddressBooks(supported === true);
+  const books = booksResult.data ?? NO_BOOKS;
+  const [remembered, remember] = useRememberedChoice(ADDRESS_BOOK_CHOICE_KEY, email);
+  const resolved = bookToOpen(remembered, booksResult.data, booksResult.isError);
+  const activeBook = resolved ?? PERSONAL_BOOK;
+  // Held until the book is known, so only that book's contacts are asked for.
+  const contactsResult = useBookContacts(activeBook, supported === true && resolved !== null);
   const contacts = contactsResult.data ?? NO_CONTACTS;
   // Only a book never opened before shows "Loading".
   const loading = contactsResult.isPending;
@@ -101,6 +123,17 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
 
   const currentBook = books.find((b) => b.uri === activeBook);
   const readOnly = currentBook?.read_only ?? false;
+  const bookOptions = useMemo<SelectMenuOption[]>(
+    () =>
+      books.map((b) => ({
+        value: b.uri,
+        label: b.name || b.uri,
+        description: b.description,
+        readOnly: b.read_only,
+        leading: b.read_only ? <Users size={14} /> : <BookUser size={14} />,
+      })),
+    [books],
+  );
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -192,20 +225,27 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
           <MenuIcon size={15} />
         </IconButton>
-        <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
-        {books.length > 1 && (
-          <Select
-            value={activeBook}
-            onChange={(e) => setActiveBook(e.target.value)}
-            aria-label="Address book"
-            className="ml-1 h-8 !w-auto py-0 text-[12.5px]"
-          >
-            {books.map((book) => (
-              <option key={book.uri} value={book.uri}>
-                {book.name}
-              </option>
-            ))}
-          </Select>
+        {/* With more than one book the title is the picker: "Contacts" next
+            to a picker that also said "Contacts" read twice. The page keeps
+            its level-1 heading for heading navigation. */}
+        {books.length > 1 ? (
+          <>
+            <h1 className="sr-only">Contacts</h1>
+            <SelectMenu
+              appearance="heading"
+              label="Address book"
+              heading="Address books"
+              placeholder="Contacts"
+              options={bookOptions}
+              value={activeBook}
+              onChange={(uri) => {
+                remember(uri);
+                setBanner(null);
+              }}
+            />
+          </>
+        ) : (
+          <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
         )}
 
         <div className="ml-auto flex items-center gap-2">

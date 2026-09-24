@@ -29,9 +29,15 @@ export const calendarKeys = {
   rooms: ['mb', 'cal', 'rooms'] as const,
 };
 
-/** The calendar to show first: the server's default, else the first it lists. */
-export function pickDefaultCalendar(calendars: CalendarSummary[] | undefined): string | null {
+/**
+ * The calendar to show first: the one this person last picked, if the server
+ * still lists it; else the server's default, else the first it lists. A
+ * remembered calendar that has since gone (unshared, deleted) falls back
+ * rather than asking for events from nowhere.
+ */
+export function pickDefaultCalendar(calendars: CalendarSummary[] | undefined, preferred?: string | null): string | null {
   if (!calendars) return null;
+  if (preferred && calendars.some((c) => c.uri === preferred)) return preferred;
   return (calendars.find((c) => c.is_default) ?? calendars[0])?.uri ?? 'default';
 }
 

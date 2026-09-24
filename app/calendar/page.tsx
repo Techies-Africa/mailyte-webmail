@@ -22,8 +22,9 @@ import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
 import { FilterPill } from '@/components/ui/Pill';
-import { Select } from '@/components/ui/Field';
+import SelectMenu, { Swatch, type SelectMenuOption } from '@/components/ui/SelectMenu';
 import {
+  calendarColour,
   createEvent,
   deleteEvent,
   rsvp as sendRsvp,
@@ -43,6 +44,7 @@ import {
   useInvitations,
 } from '@/lib/webmail/query/calendarQueries';
 import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { CALENDAR_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
 
 const WEEK_OPTS = { weekStartsOn: 1 as const };
 
@@ -89,25 +91,27 @@ export default function CalendarPage() {
     <PageShell current="calendar">
       {/* useSearchParams below needs a boundary to render statically. */}
       <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Loading…</div>}>
-        <CalendarScreen supported={supported} />
+        <CalendarScreen supported={supported} email={capabilities?.email_address ?? null} />
       </Suspense>
     </PageShell>
   );
 }
 
-function CalendarScreen({ supported }: { supported: boolean | null }) {
+function CalendarScreen({ supported, email }: { supported: boolean | null; email: string | null }) {
   const router = useRouter();
   const [menuOpen, openMenu] = usePageMenu();
   const queryClient = useQueryClient();
   const onUnauthorized = useUnauthorizedHandler();
 
-  // The calendars, cached and shared with the inbox's calendar panel. Until
-  // one is picked, the server's default is shown -- known before any events
-  // are asked for, so entering the screen fetches events once, not twice.
+  // The calendars, cached and shared with the inbox's calendar panel. The one
+  // shown is the one last picked in this mailbox, else the server's default --
+  // both known before any events are asked for (the remembered pick is
+  // undefined until storage has been read), so entering the screen fetches
+  // events once, not twice.
   const calendarsResult = useCalendars(supported === true);
   const calendars = calendarsResult.data ?? NO_CALENDARS;
-  const [picked, setActive] = useState<string | null>(null);
-  const active = picked ?? pickDefaultCalendar(calendarsResult.data);
+  const [remembered, remember] = useRememberedChoice(CALENDAR_CHOICE_KEY, email);
+  const active = remembered === undefined ? null : pickDefaultCalendar(calendarsResult.data, remembered);
 
   const [view, setView] = useState<ViewMode>('month');
   // The day comes from the address. Read through the router, not
@@ -180,6 +184,17 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
   }
 
   const readOnly = useMemo(() => calendars.find((c) => c.uri === active)?.read_only ?? false, [calendars, active]);
+  const calendarOptions = useMemo<SelectMenuOption[]>(
+    () =>
+      calendars.map((c) => ({
+        value: c.uri,
+        label: c.name || c.uri,
+        description: c.description,
+        readOnly: c.read_only,
+        leading: <Swatch colour={calendarColour(c)} />,
+      })),
+    [calendars],
+  );
 
   function openNew(start: Date, allDay: boolean) {
     if (readOnly) return;
@@ -282,14 +297,8 @@ function CalendarScreen({ supported }: { supported: boolean | null }) {
         <h1 className="min-w-0 truncate px-1 font-display text-[15px] font-bold tracking-tight">{title}</h1>
 
         <div className="ml-auto flex items-center gap-2">
-          {calendars.length > 1 && (
-            <Select id="calendar-picker" value={active ?? ''} onChange={(e) => setActive(e.target.value)} className="h-8 !w-auto py-0 text-[12.5px]">
-              {calendars.map((calendar) => (
-                <option key={calendar.uri} value={calendar.uri}>
-                  {calendar.name}
-                </option>
-              ))}
-            </Select>
+          {calendars.length > 1 && active && (
+            <SelectMenu label="Calendar" heading="Calendars" options={calendarOptions} value={active} onChange={remember} compact />
           )}
 
           <div className="flex items-center gap-0.5 rounded-full border border-border p-0.5">
