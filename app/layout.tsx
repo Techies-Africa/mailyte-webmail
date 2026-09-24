@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import AccentTheme from '@/components/providers/AccentTheme';
+import QueryProvider from '@/components/providers/QueryProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { brand } from '@/lib/webmail/brand';
 
@@ -62,7 +63,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body suppressHydrationWarning>
         <ThemeProvider>
           <AccentTheme />
-          <ToastProvider>{children}</ToastProvider>
+          {/* Inside the toasts: mutations report through useToast. */}
+          <ToastProvider>
+            <QueryProvider>{children}</QueryProvider>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

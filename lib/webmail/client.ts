@@ -11,8 +11,14 @@ import type {
   ApiSettings,
 } from "./adapters";
 
+/**
+ * `status` on a failure is the HTTP status, or 0 when the server was never
+ * reached. The query layer uses it to decide what is worth retrying: a 4xx
+ * will say the same thing again, a dropped connection may not.
+ */
 export type ApiResult<T> =
-  { success: true; data: T } | { success: false; message: string };
+  | { success: true; data: T }
+  | { success: false; message: string; status?: number };
 
 async function call<T>(
   input: string,
@@ -26,12 +32,13 @@ async function call<T>(
     return {
       success: false,
       message: "Could not reach the mail server. Check your connection.",
+      status: 0,
     };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: "Not logged in" };
+    return { success: false, message: "Not logged in", status: 401 };
   }
 
   const data = await res.json().catch(() => ({}) as Record<string, unknown>);
@@ -55,7 +62,7 @@ async function call<T>(
       if (window.location.pathname !== "/change-password") {
         window.location.assign("/change-password");
       }
-      return { success: false, message: "Set a new password to continue" };
+      return { success: false, message: "Set a new password to continue", status: 403 };
     }
   }
 
@@ -80,6 +87,7 @@ async function call<T>(
     return {
       success: false,
       message: body.message ?? body.msg ?? "Request failed",
+      status: res.status,
     };
   }
 
