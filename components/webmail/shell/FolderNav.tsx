@@ -236,7 +236,7 @@ export default function FolderNav({
             type="button"
             onClick={toggle}
             aria-label={`${folder.name} actions`}
-            className="rounded p-0.5 text-white/60 hover:bg-white/10 hover:text-white"
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-white/60 hover:bg-white/10 hover:text-white"
           >
             <MoreHorizontal size={13} />
           </button>

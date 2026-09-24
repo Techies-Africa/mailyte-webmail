@@ -92,7 +92,7 @@ function OriginalView() {
   const auth = message?.provenance.authentication;
 
   return (
-    <div className="min-h-screen bg-pane text-foreground">
+    <div className="min-h-dvh bg-pane text-foreground">
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
         <a href="/" className="flex items-center" aria-label="Inbox">
           <BrandLockup height={22} tone="light" className="dark:hidden" />
@@ -103,9 +103,12 @@ function OriginalView() {
           <FileCode2 size={16} className="shrink-0 text-muted-foreground" />
           <span className="truncate">Original message</span>
         </h1>
-        <div className="ml-auto flex items-center gap-2">
+        {/* Icons alone on a phone: with both labels the header was wider
+            than the screen and the whole page scrolled sideways. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button
             icon={copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+            collapseLabel
             onClick={() => void copy()}
             disabled={raw === null}
           >
@@ -114,9 +117,11 @@ function OriginalView() {
           <a
             href={id ? rawMessageUrl(id) : '#'}
             download
+            aria-label="Download original"
             className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12.5px] font-semibold text-primary-foreground hover:brightness-95"
           >
-            <Download size={13} /> Download original
+            <Download size={13} />
+            <span className="hidden sm:inline">Download original</span>
           </a>
         </div>
       </header>
@@ -198,7 +203,7 @@ function OriginalView() {
           {raw === null && !error ? (
             <p className="px-5 py-8 text-sm text-muted-foreground">Loading the original…</p>
           ) : (
-            <pre className="thin-scroll max-h-[70vh] overflow-auto whitespace-pre-wrap break-all px-5 py-4 font-mono text-[12px] leading-[1.6]">
+            <pre className="thin-scroll max-h-[70dvh] overflow-auto whitespace-pre-wrap break-all px-5 py-4 font-mono text-[12px] leading-[1.6]">
               {raw ?? ''}
             </pre>
           )}

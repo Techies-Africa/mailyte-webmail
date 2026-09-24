@@ -107,11 +107,12 @@ export default function WebmailSettingsPage() {
           </IconButton>
           <div className="min-w-0">
             <h1 className="font-display text-[17px] font-bold tracking-tight">{active.label}</h1>
-            <p className="truncate text-[12.5px] text-muted-foreground">{active.description}</p>
+            {/* Two lines on a phone, where one cut the description off mid-sentence. */}
+            <p className="line-clamp-2 text-[12.5px] text-muted-foreground sm:truncate">{active.description}</p>
           </div>
         </div>
 
-        <div className="px-4 py-6 sm:px-8">
+        <div className="px-3 py-4 sm:px-8 sm:py-6">
           {error && (
             <p className="mb-4 text-sm text-destructive" role="alert">
               {error}
@@ -119,7 +120,7 @@ export default function WebmailSettingsPage() {
           )}
 
           {settings ? (
-            <div className="max-w-3xl rounded-xl border border-border bg-card p-5 sm:p-6">
+            <div className="max-w-3xl rounded-xl border border-border bg-card p-4 sm:p-6">
               <ActiveComponent
                 key={active.id}
                 settings={settings}

@@ -272,8 +272,6 @@ export default function WebmailInboxPage() {
     return <WebmailSkeleton />;
   }
 
-  const showList = !isMobile || !openMessage;
-
   return (
     // h-dvh: 100vh on iOS is taller than what is visible, which hid the
     // list's pager and the rail's account chip behind the browser's toolbar.
@@ -338,24 +336,26 @@ export default function WebmailInboxPage() {
       </Sidebar>
 
       <div className="relative flex min-w-0 flex-1">
-        {showList && (
-          <MessageListPane
-            mailbox={mailbox}
-            menuOpen={menuOpen}
-            onOpen={(item) => void handleOpen(item)}
-            onTrashRow={trashRow}
-            onBulkMove={() => setShowBulkMove(true)}
-            onBulkLabel={() => setShowBulkLabel(true)}
-            onBulkDeleteForever={() =>
-              setPendingDeleteForever({
-                ids: selectedIds,
-                label: `${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`,
-              })
-            }
-            onOpenMenu={() => setMenuOpen(true)}
-            searchSignal={searchSignal}
-          />
-        )}
+        {/* Always mounted. On a phone an open message covers it (the reading
+            pane is absolute over it) and it is only hidden, so Back returns to
+            the same place in the list rather than to the top. */}
+        <MessageListPane
+          mailbox={mailbox}
+          menuOpen={menuOpen}
+          covered={isMobile && (!!openMessage || mailbox.loadingMessage)}
+          onOpen={(item) => void handleOpen(item)}
+          onTrashRow={trashRow}
+          onBulkMove={() => setShowBulkMove(true)}
+          onBulkLabel={() => setShowBulkLabel(true)}
+          onBulkDeleteForever={() =>
+            setPendingDeleteForever({
+              ids: selectedIds,
+              label: `${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`,
+            })
+          }
+          onOpenMenu={() => setMenuOpen(true)}
+          searchSignal={searchSignal}
+        />
 
         {!isMobile && (
           // No width of its own; the handle hangs off it over the list's border.

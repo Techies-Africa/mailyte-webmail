@@ -98,7 +98,9 @@ export default function SidebarItem({
   return (
     <div className="group/row relative">
       {row}
-      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
+      {/* Revealed on hover with a mouse; always there on touch, where a
+          hover never comes and folder rename and delete had no way in. */}
+      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 transition-opacity can-hover:opacity-0 can-hover:focus-within:opacity-100 can-hover:group-hover/row:opacity-100">
         {trailing}
       </span>
     </div>

@@ -390,6 +390,19 @@
   }
 }
 
+/* iOS zooms the page in when a field smaller than 16px takes focus, and
+   leaves it zoomed and panned sideways afterwards. Every field here is
+   12.5-14px by design, so every field did it. Gated to iOS and iPadOS WebKit
+   (the only engines that match -webkit-touch-callout), so everywhere else
+   keeps the design. :where() keeps the specificity at zero, so a deliberate
+   `!text-lg` still wins; !important because every field sets its size with
+   a utility class, which a plain element rule could never beat. */
+@supports (-webkit-touch-callout: none) {
+  :where(input, select, textarea, [contenteditable='true']) {
+    font-size: 16px !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

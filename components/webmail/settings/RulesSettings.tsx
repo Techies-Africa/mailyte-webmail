@@ -327,7 +327,9 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
               const enabled = rule.enabled !== false;
               return (
                 <li key={rule.id ?? index} className={`px-3.5 py-3 ${enabled ? '' : 'bg-muted/40'}`}>
-                  <div className="flex items-start gap-3">
+                  {/* On a phone the switch and buttons drop below the rule,
+                      which beside them had about 120px to say what it does. */}
+                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2 sm:flex-nowrap">
                     <div className="flex shrink-0 flex-col pt-0.5">
                       <button
                         type="button"
@@ -361,7 +363,7 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
                       </p>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
                       <Switch checked={enabled} onChange={(next) => toggle(index, next)} label={enabled ? 'On' : 'Off'} disabled={busy} />
                       <button
                         type="button"

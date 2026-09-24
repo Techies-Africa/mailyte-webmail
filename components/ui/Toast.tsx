@@ -133,10 +133,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={entry.id}
             role="status"
-            className="pointer-events-auto absolute bottom-0 left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-toast-in items-center gap-2.5 whitespace-nowrap rounded-full bg-toast px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-toast"
+            // Wraps on a phone rather than cutting a long error off mid-word;
+            // one line, as a pill, from sm up. w-max so the auto width is not
+            // capped at half the screen by left-1/2.
+            className="pointer-events-auto absolute bottom-0 left-1/2 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-toast-in items-center gap-2.5 rounded-2xl bg-toast px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-toast sm:whitespace-nowrap sm:rounded-full"
           >
-            <ToastIcon tone={entry.tone} />
-            <span className="truncate">{entry.text}</span>
+            <span className="shrink-0">
+              <ToastIcon tone={entry.tone} />
+            </span>
+            <span className="min-w-0 sm:truncate">{entry.text}</span>
             {entry.action && (
               <button
                 type="button"
@@ -144,7 +149,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   entry.action?.onClick();
                   close(entry.id, 'action');
                 }}
-                className="ml-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/20"
+                className="ml-1 shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/20"
               >
                 {entry.action.label}
               </button>
@@ -154,7 +159,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => dismiss(entry.id)}
                 aria-label="Dismiss"
-                className="ml-1 text-white/60 hover:text-white"
+                className="-mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:text-white"
               >
                 ×
               </button>

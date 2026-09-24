@@ -120,7 +120,8 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Stacked on a phone: side by side, each date field was too narrow to read. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="vac-start">Start (optional)</Label>
             <Input

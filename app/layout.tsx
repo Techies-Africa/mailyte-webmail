@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
@@ -52,6 +52,22 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
 };
+
+/**
+ * Only what differs from Next's default (width=device-width, initial-scale=1),
+ * which it merges this over.
+ *
+ * resizes-content: Android Chrome shrinks the layout for its keyboard, so a
+ * full-screen compose window and the bottom sheets keep their buttons above
+ * it instead of under it. iOS ignores it (compose handles iOS itself).
+ *
+ * Not here, on purpose: maximumScale / userScalable -- they stop people
+ * pinch-zooming, an accessibility failure; iOS zooming into a small field is
+ * fixed in globals.css instead. viewportFit 'cover' -- it needs safe-area
+ * padding everywhere, and this is not an installed app. themeColor -- a media
+ * query follows the device's theme, not the one chosen in the app.
+ */
+export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

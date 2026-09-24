@@ -66,6 +66,11 @@ type MessageListPaneProps = {
   onOpenMenu: () => void;
   /** Whether the phone drawer is out, for the Menu button's aria-expanded. */
   menuOpen: boolean;
+  /**
+   * On a phone, under an open message: kept mounted -- and so scrolled where
+   * it was -- but hidden from sight, the Tab order and screen readers.
+   */
+  covered?: boolean;
   /** Bumped by the `/` shortcut: opens the search field and focuses it. */
   searchSignal?: number;
 };
@@ -83,6 +88,7 @@ export default function MessageListPane({
   onBulkDeleteForever,
   onOpenMenu,
   menuOpen,
+  covered = false,
   searchSignal = 0,
 }: MessageListPaneProps) {
   const {
@@ -197,7 +203,7 @@ export default function MessageListPane({
     <section
       id={LIST_PANE_ID}
       aria-label={`${title} messages`}
-      className="pane-list flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card"
+      className={`pane-list flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card ${covered ? 'invisible' : ''}`}
     >
       {/* Header */}
       <div className="shrink-0 border-b border-border px-3.5 pb-2 pt-3">
@@ -252,6 +258,7 @@ export default function MessageListPane({
               <input
                 ref={searchRef}
                 type="search"
+                enterKeyHint="search"
                 data-webmail-search
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -285,7 +292,8 @@ export default function MessageListPane({
               <FilterPill active={scope === 'all'} onClick={() => setScope('all')}>
                 All mail
               </FilterPill>
-              <span className="ml-auto text-[10.5px] text-muted-foreground">Enter to search</span>
+              {/* A keyboard hint, for where there is a keyboard. */}
+              <span className="ml-auto hidden text-[10.5px] text-muted-foreground can-hover:inline">Enter to search</span>
             </div>
           </div>
         )}
@@ -334,20 +342,22 @@ export default function MessageListPane({
           <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-primary">
             {selectedIds.length} selected
           </span>
-          <Button size="xs" onClick={() => void setRead(selectedIds, true)}>
+          {/* Icons alone on a phone (collapseLabel): with their words the
+              buttons pushed "N selected" down to a couple of letters. */}
+          <Button size="xs" icon={<MailOpen size={12} />} collapseLabel onClick={() => void setRead(selectedIds, true)}>
             Mark read
           </Button>
           {!inTrash && (
-            <Button size="xs" icon={<Archive size={12} />} onClick={() => void archive(selectedIds)}>
+            <Button size="xs" icon={<Archive size={12} />} collapseLabel onClick={() => void archive(selectedIds)}>
               Archive
             </Button>
           )}
           {inTrash ? (
-            <Button size="xs" variant="danger" onClick={onBulkDeleteForever}>
+            <Button size="xs" variant="danger" icon={<Trash2 size={12} />} collapseLabel onClick={onBulkDeleteForever}>
               Delete forever
             </Button>
           ) : (
-            <Button size="xs" variant="danger" onClick={() => void trash(selectedIds)}>
+            <Button size="xs" variant="danger" icon={<Trash2 size={12} />} collapseLabel onClick={() => void trash(selectedIds)}>
               Delete
             </Button>
           )}

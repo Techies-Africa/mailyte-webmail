@@ -36,9 +36,12 @@ export default function ContactsPanel({ open, onClose, onLeave, contacts, onWrit
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Straight into the search with a mouse. Not on touch: focusing a field
+  // throws the keyboard up over the sheet before anyone asked to type.
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-    else setQuery('');
+    if (open) {
+      if (window.matchMedia('(pointer: fine)').matches) inputRef.current?.focus();
+    } else setQuery('');
   }, [open]);
 
   const book = useMemo(() => contacts.filter((c) => c.source), [contacts]);

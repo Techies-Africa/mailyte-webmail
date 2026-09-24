@@ -20,6 +20,13 @@ type FloatingPanelProps = {
  * the top right; the profile menu floats above its own button. Both need the
  * same two behaviours, so they share this rather than two copies of the same
  * event wiring.
+ *
+ * On a phone a top-right panel is a sheet rising from the bottom edge over a
+ * dimmed page instead: a 300px card pinned to the right of a 360px screen
+ * sat on top of the open menu drawer, with its left edge floating in the
+ * middle of nothing. The sheet sits above the minimized compose tabs (z-140)
+ * and below a full-screen compose window (z-200). The width is a CSS
+ * variable rather than an inline width, which would beat the sheet's.
  */
 export default function FloatingPanel({
   open,
@@ -43,16 +50,28 @@ export default function FloatingPanel({
 
   if (!open) return null;
 
+  const sheet = placement === 'top-right';
+
   return (
     <>
-      <div aria-hidden onClick={onClose} className="fixed inset-0 z-40" />
+      <div
+        aria-hidden
+        onClick={onClose}
+        className={sheet ? 'fixed inset-0 z-40 max-md:z-[150] max-md:bg-black/50' : 'fixed inset-0 z-40'}
+      />
       <div
         role="dialog"
         aria-label={label}
-        style={{ width }}
+        style={{ '--panel-w': `${width}px` } as React.CSSProperties}
         className={[
-          'z-50 max-w-[calc(100vw-2rem)] animate-fade-in overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-panel',
-          placement === 'top-right' ? 'fixed right-4 top-[58px]' : 'absolute',
+          'overflow-hidden border border-border bg-popover text-popover-foreground shadow-panel',
+          sheet
+            ? [
+                'fixed z-50',
+                'max-md:inset-x-0 max-md:bottom-0 max-md:z-[155] max-md:max-h-[85dvh] max-md:animate-rise max-md:overflow-y-auto max-md:rounded-t-2xl max-md:border-x-0 max-md:border-b-0',
+                'md:right-4 md:top-[58px] md:w-[var(--panel-w)] md:max-w-[calc(100vw-2rem)] md:animate-fade-in md:rounded-2xl',
+              ].join(' ')
+            : 'absolute z-50 w-[var(--panel-w)] max-w-[calc(100vw-2rem)] animate-fade-in rounded-2xl',
           className ?? '',
         ].join(' ')}
       >

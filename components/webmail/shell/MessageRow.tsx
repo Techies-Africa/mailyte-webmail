@@ -45,8 +45,12 @@ type MessageRowProps = {
 
 const HOVER_INTENT_MS = 120;
 
+// Revealed on hover, so they exist only where there is a hover (can-hover):
+// on touch they were invisible but still took taps, and a tap under a row's
+// date could archive or bin a message nobody saw a button for. There the
+// open message's toolbar, the bulk bar and the keyboard (e, #, s) have them.
 const ACTION =
-  'inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
+  'hidden h-6 w-6 items-center justify-center rounded text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground can-hover:inline-flex can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100';
 
 export default function MessageRow({
   email,
@@ -169,8 +173,9 @@ export default function MessageRow({
         </div>
 
         {/* Right column: the time, and under it the actions. Archive and
-            Trash appear on hover; the star stays once set. In the flow, not
-            floated over the text, so a long subject truncates before it. */}
+            Trash appear on hover (with a mouse only); the star stays once
+            set. In the flow, not floated over the text, so a long subject
+            truncates before it. */}
         <div className="flex shrink-0 flex-col items-end gap-1">
           <span className="flex items-center gap-1 text-[10.5px] tabular-nums text-muted-foreground">
             {email.hasAttachment && <Paperclip size={11} aria-label="Has attachment" />}
@@ -191,7 +196,7 @@ export default function MessageRow({
                 type="button"
                 onClick={(e) => stop(e, onCancelScheduled)}
                 title="Cancel send and move to Drafts"
-                className="inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] font-semibold text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                className="hidden h-6 items-center gap-1 rounded px-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground can-hover:inline-flex can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100"
               >
                 <X size={12} /> Cancel send
               </button>
@@ -218,10 +223,10 @@ export default function MessageRow({
               onClick={(e) => stop(e, onStar)}
               title={email.isStarred ? 'Unstar' : 'Star'}
               aria-label={email.isStarred ? 'Unstar' : 'Star'}
-              className={`inline-flex h-6 w-6 items-center justify-center rounded transition-[opacity,transform] hover:scale-110 focus-visible:opacity-100 group-hover:opacity-100 ${
+              className={`h-6 w-6 items-center justify-center rounded transition-[opacity,transform] hover:scale-110 ${
                 email.isStarred
-                  ? 'text-[hsl(38,85%,55%)] opacity-100'
-                  : 'text-muted-foreground opacity-0 hover:text-[hsl(38,85%,55%)]'
+                  ? 'inline-flex text-[hsl(38,85%,55%)] opacity-100'
+                  : 'hidden text-muted-foreground hover:text-[hsl(38,85%,55%)] can-hover:inline-flex can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100'
               }`}
             >
               <Star size={13} className={email.isStarred ? 'fill-current' : ''} />
