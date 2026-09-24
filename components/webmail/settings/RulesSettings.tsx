@@ -439,10 +439,15 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
   const [draft, setDraft] = useState<Draft>(initial);
   const [problem, setProblem] = useState<string | null>(null);
 
+  /** Every edit goes through here so a problem from the last attempt clears as soon as something changes. */
+  const update = (fn: (d: Draft) => Draft) => {
+    setProblem(null);
+    setDraft(fn);
+  };
   const setCondition = (index: number, patch: Partial<Condition>) =>
-    setDraft((d) => ({ ...d, conditions: d.conditions.map((c, i) => (i === index ? { ...c, ...patch } : c)) }));
+    update((d) => ({ ...d, conditions: d.conditions.map((c, i) => (i === index ? { ...c, ...patch } : c)) }));
   const setAction = (index: number, patch: Partial<Action>) =>
-    setDraft((d) => ({ ...d, actions: d.actions.map((a, i) => (i === index ? { ...a, ...patch } : a)) }));
+    update((d) => ({ ...d, actions: d.actions.map((a, i) => (i === index ? { ...a, ...patch } : a)) }));
 
   const hasDiscard = draft.actions.some((a) => a.type === 'discard');
   const hasPattern = draft.conditions.some((c) => c.operator === 'matches');
@@ -483,7 +488,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
           <Input
             id="rule-name"
             value={draft.name}
-            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+            onChange={(e) => update((d) => ({ ...d, name: e.target.value }))}
             placeholder={namePlaceholder}
             autoComplete="off"
             maxLength={80}
@@ -496,9 +501,9 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
             <span>When a message arrives and</span>
             <Select
               value={draft.match}
-              onChange={(e) => setDraft((d) => ({ ...d, match: e.target.value as 'all' | 'any' }))}
+              onChange={(e) => update((d) => ({ ...d, match: e.target.value as 'all' | 'any' }))}
               aria-label="How many conditions must be true"
-              className="w-auto py-1"
+              className="!w-auto py-1 pr-7"
             >
               <option value="all">all</option>
               <option value="any">any</option>
@@ -542,7 +547,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                 />
                 <button
                   type="button"
-                  onClick={() => setDraft((d) => ({ ...d, conditions: d.conditions.filter((_, i) => i !== index) }))}
+                  onClick={() => update((d) => ({ ...d, conditions: d.conditions.filter((_, i) => i !== index) }))}
                   disabled={draft.conditions.length === 1}
                   aria-label={`Remove condition ${index + 1}`}
                   className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
@@ -558,7 +563,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
               size="sm"
               icon={<Plus size={12} />}
               onClick={() =>
-                setDraft((d) => ({ ...d, conditions: [...d.conditions, { field: 'subject', operator: 'contains', value: '' }] }))
+                update((d) => ({ ...d, conditions: [...d.conditions, { field: 'subject', operator: 'contains', value: '' }] }))
               }
             >
               Add a condition
@@ -639,7 +644,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                   )}
                   <button
                     type="button"
-                    onClick={() => setDraft((d) => ({ ...d, actions: d.actions.filter((_, i) => i !== index) }))}
+                    onClick={() => update((d) => ({ ...d, actions: d.actions.filter((_, i) => i !== index) }))}
                     disabled={draft.actions.length === 1}
                     aria-label={`Remove action ${index + 1}`}
                     className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
@@ -655,7 +660,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
               variant="dashed"
               size="sm"
               icon={<Plus size={12} />}
-              onClick={() => setDraft((d) => ({ ...d, actions: [...d.actions, { type: 'label', value: '' }] }))}
+              onClick={() => update((d) => ({ ...d, actions: [...d.actions, { type: 'label', value: '' }] }))}
             >
               Do something else too
             </Button>
@@ -671,7 +676,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
           )}
         </div>
 
-        <Switch checked={draft.enabled} onChange={(next) => setDraft((d) => ({ ...d, enabled: next }))} label="Rule is on" />
+        <Switch checked={draft.enabled} onChange={(next) => update((d) => ({ ...d, enabled: next }))} label="Rule is on" />
 
         {problem && (
           <p className="text-sm text-destructive" role="alert">
