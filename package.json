@@ -9,15 +9,15 @@
     "url": "https://github.com/Techies-Africa/mailyte-webmail.git"
   },
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "check:brand": "node scripts/check-brand-tokens.mjs",
     "mock": "node scripts/mock-mail-server.mjs",
-    "dev:mock": "MAILBOX_API_BASE_URL=http://localhost:8089/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3000",
-    "dev:prod": "MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3000"
+    "dev:mock": "MAILBOX_API_BASE_URL=http://localhost:8089/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001",
+    "dev:prod": "MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.30.5",
