@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  FileCode2,
   FileDown,
   FolderInput,
   Forward,
@@ -28,7 +29,7 @@ import {
 import type { ComposeMode, SendResult, WebmailAttachment, WebmailListItem, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
-import { attachmentUrl, rawMessageUrl } from '@/lib/webmail/client';
+import { attachmentPreviewUrl, attachmentUrl, isPreviewableAttachment, originalPageUrl, rawMessageUrl } from '@/lib/webmail/client';
 import { allowImageSender, isImageSenderAllowed, remoteImagePolicy } from '@/lib/webmail/sanitize';
 import { formatDateTime, formatShortDateTime } from '@/lib/webmail/dates';
 import WebmailBodyFrame, { BlockedImagesBar } from '../WebmailBodyFrame';
@@ -75,19 +76,50 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** A downloadable attachment. Never opened in the app's origin (PRD SS7.6). */
-function AttachmentChip({ attachment, href }: { attachment: WebmailAttachment; href: string }) {
+/**
+ * An attachment chip.
+ *
+ * Clicking the name opens a PREVIEW in a new tab when the browser can show
+ * the type itself (images, PDF, text, audio, video); the browser's own viewer
+ * then has its download button. The small arrow at the end always downloads
+ * straight away. Types the browser would have to execute or that need another
+ * app -- HTML, Office files, archives -- download on click, because a
+ * sender-supplied document rendered on this origin is stored XSS (PRD SS7.6).
+ */
+function AttachmentChip({
+  attachment,
+  href,
+  previewHref,
+}: {
+  attachment: WebmailAttachment;
+  href: string;
+  previewHref: string;
+}) {
+  const previewable = isPreviewableAttachment(attachment.type);
   return (
-    <a
-      href={href}
-      download={attachment.name}
-      className="inline-flex max-w-xs items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[12.5px] hover:bg-muted"
-    >
-      <Paperclip size={14} className="shrink-0 text-muted-foreground" />
-      <span className="truncate font-medium">{attachment.name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(attachment.size)}</span>
-      <Download size={13} className="shrink-0 text-muted-foreground" />
-    </a>
+    <span className="inline-flex max-w-xs items-stretch overflow-hidden rounded-lg border border-border bg-card text-[12.5px]">
+      <a
+        href={previewable ? previewHref : href}
+        target={previewable ? '_blank' : undefined}
+        rel={previewable ? 'noopener' : undefined}
+        download={previewable ? undefined : attachment.name}
+        title={previewable ? `Open ${attachment.name} in a new tab` : `Download ${attachment.name}`}
+        className="flex min-w-0 items-center gap-2 px-3 py-2 hover:bg-muted"
+      >
+        <Paperclip size={14} className="shrink-0 text-muted-foreground" />
+        <span className="truncate font-medium">{attachment.name}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(attachment.size)}</span>
+      </a>
+      <a
+        href={href}
+        download={attachment.name}
+        title={`Download ${attachment.name}`}
+        aria-label={`Download ${attachment.name}`}
+        className="flex shrink-0 items-center border-l border-border px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <Download size={13} />
+      </a>
+    </span>
   );
 }
 
@@ -295,6 +327,12 @@ function MessageReader({
           { key: 'ai', label: 'Write with AI', icon: <Sparkles size={14} />, onSelect: () => setShowAiWriter(true) },
         ]
       : []),
+    {
+      key: 'original',
+      label: 'Show original',
+      icon: <FileCode2 size={14} />,
+      onSelect: () => window.open(originalPageUrl(message.id), '_blank', 'noopener'),
+    },
     { key: 'raw', label: 'Download original (.eml)', icon: <FileDown size={14} />, onSelect: downloadOriginal },
     ...(!isOwnAddress && message.fromEmail
       ? [{ key: 'block', label: `Block ${message.fromEmail}`, icon: <Ban size={14} />, tone: 'danger' as const, onSelect: () => setConfirmBlock(true) }]
@@ -489,7 +527,12 @@ function MessageReader({
                   {message.attachments
                     .filter((a) => !a.isInline)
                     .map((attachment) => (
-                      <AttachmentChip key={attachment.index} attachment={attachment} href={attachmentUrl(message.id, attachment.index)} />
+                      <AttachmentChip
+                        key={attachment.index}
+                        attachment={attachment}
+                        href={attachmentUrl(message.id, attachment.index)}
+                        previewHref={attachmentPreviewUrl(message.id, attachment.index)}
+                      />
                     ))}
                 </div>
               </div>
@@ -556,6 +599,7 @@ function MessageReader({
                                       key={`${loaded.id}-${attachment.index}`}
                                       attachment={attachment}
                                       href={attachmentUrl(loaded.id, attachment.index)}
+                                      previewHref={attachmentPreviewUrl(loaded.id, attachment.index)}
                                     />
                                   ))}
                                 </div>

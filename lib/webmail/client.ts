@@ -279,6 +279,16 @@ export function rawMessageUrl(messageId: string): string {
   return `/api/webmail/messages/${encodeURIComponent(messageId)}/raw`;
 }
 
+/** The same bytes as plain text, for the "Show original" page. */
+export function rawMessageTextUrl(messageId: string): string {
+  return `${rawMessageUrl(messageId)}?format=text`;
+}
+
+/** The "Show original" page for a message. Opens in its own tab. */
+export function originalPageUrl(messageId: string): string {
+  return `/original?id=${encodeURIComponent(messageId)}`;
+}
+
 /** The rest of a message's conversation, oldest first; empty if it stands alone. */
 export function getThread(id: string, onUnauthorized: () => void) {
   return call<ApiMessageSummary[]>(
@@ -294,6 +304,28 @@ export function getThread(id: string, onUnauthorized: () => void) {
  */
 export function attachmentUrl(messageId: string, index: number): string {
   return `/api/webmail/messages/${encodeURIComponent(messageId)}/attachments/${index}`;
+}
+
+/**
+ * The same bytes, asked to render in the browser rather than download. The
+ * proxy honours it only for types a browser shows without executing anything
+ * (images, PDF, plain text, audio, video); anything else downloads regardless.
+ */
+export function attachmentPreviewUrl(messageId: string, index: number): string {
+  return `${attachmentUrl(messageId, index)}?disposition=inline`;
+}
+
+/** Whether the browser can show this type on its own, matching the proxy's allowlist. */
+export function isPreviewableAttachment(type: string): boolean {
+  const t = type.split(";")[0].trim().toLowerCase();
+  return (
+    /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(t) ||
+    t === "application/pdf" ||
+    t === "text/plain" ||
+    t === "text/csv" ||
+    /^audio\/(mpeg|mp4|ogg|wav|webm)$/.test(t) ||
+    /^video\/(mp4|webm|ogg)$/.test(t)
+  );
 }
 
 export function getMessage(id: string, onUnauthorized: () => void) {

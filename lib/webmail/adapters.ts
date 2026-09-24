@@ -59,6 +59,16 @@ export interface ApiMessageDetail extends ApiMessageSummary {
   message_id: string | null;
   references: string | null;
   attachments?: ApiAttachment[];
+  /**
+   * Provenance, read off the header block (message_provenance on the mail
+   * server). Every key is present and null when the header is absent.
+   */
+  mailed_by?: string | null;
+  signed_by?: string | null;
+  /** "tls" or "none" for the last hop, null when unknowable. */
+  security?: string | null;
+  list_unsubscribe?: { mailto: string | null; url: string | null; one_click: boolean } | null;
+  authentication?: { spf: string | null; dkim: string | null; dmarc: string | null } | null;
 }
 
 export interface ApiContact {
@@ -156,6 +166,17 @@ export function toMessage(m: ApiMessageDetail): WebmailMessage {
     messageIdHeader: m.message_id ?? null,
     references: m.references ?? null,
     attachments: (m.attachments ?? []).map(toAttachment),
+    provenance: {
+      mailedBy: m.mailed_by ?? null,
+      signedBy: m.signed_by ?? null,
+      security: m.security ?? null,
+      listUnsubscribe: m.list_unsubscribe ?? null,
+      authentication: {
+        spf: m.authentication?.spf ?? null,
+        dkim: m.authentication?.dkim ?? null,
+        dmarc: m.authentication?.dmarc ?? null,
+      },
+    },
   };
 }
 
