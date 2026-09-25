@@ -44,12 +44,15 @@ export const metadata: Metadata = {
   description: 'Read and send mail from your own mail server.',
   // A webmail is a private surface; there is nothing here for a crawler.
   robots: { index: false, follow: false },
+  // The icons live in public/ only -- an app/favicon.ico or app/apple-icon.png
+  // gets emitted as well and drifts from these. ?v= is the cache-buster:
+  // browsers keep favicons by URL, so bump it whenever an icon is replaced.
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/logo-192.png', type: 'image/png', sizes: '192x192' },
+      { url: '/favicon.ico?v=2026', sizes: 'any' },
+      { url: '/logo-192.png?v=2026', type: 'image/png', sizes: '192x192' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/apple-touch-icon.png?v=2026',
   },
 };
 
