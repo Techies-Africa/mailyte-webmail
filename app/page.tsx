@@ -7,21 +7,24 @@ import Sidebar from '@/components/webmail/shell/Sidebar';
 import FolderNav from '@/components/webmail/shell/FolderNav';
 import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
 import MessageListPane from '@/components/webmail/shell/MessageListPane';
+import PaneResizeHandle from '@/components/webmail/shell/PaneResizeHandle';
 import ReadingPane, { type QuickReplyMode } from '@/components/webmail/shell/ReadingPane';
 import CalendarPanel from '@/components/webmail/shell/CalendarPanel';
 import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
 import ComposeDock from '@/components/webmail/compose/ComposeDock';
 import WebmailSkeleton from '@/components/webmail/WebmailSkeleton';
 import WebmailShortcutHelp from '@/components/webmail/WebmailShortcutHelp';
-import WebmailUndoToast from '@/components/webmail/WebmailUndoToast';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import MoveEmailModal from '@/components/webmail/modals/MoveEmailModal';
 import LabelPickerDialog from '@/components/webmail/modals/LabelPickerDialog';
 import type { ComposeMode, WebmailListItem } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
 import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
+import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
+import { useIsMobile } from '@/lib/webmail/useIsMobile';
+import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
 
 /**
  * The mailbox screen: the rail, the message list, the reading pane, and the
@@ -34,8 +37,9 @@ export default function WebmailInboxPage() {
   const compose = useComposeWindows();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
 
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [panel, setPanel] = useState<'calendar' | 'contacts' | null>(null);
   const [quickReply, setQuickReply] = useState<QuickReplyMode>(null);
   const [showBulkMove, setShowBulkMove] = useState(false);
@@ -56,13 +60,6 @@ export default function WebmailInboxPage() {
     signatureSeed,
     sharedMailboxes,
   } = mailbox;
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   // A different message means a fresh reply box.
   useEffect(() => {
@@ -111,6 +108,11 @@ export default function WebmailInboxPage() {
             bcc: message.bcc.map((p) => p.email).join(', '),
             subject: message.subject === '(no subject)' ? '' : message.subject,
           },
+          // A reply saved as a draft stays in the conversation it answers.
+          threading: {
+            inReplyTo: message.inReplyTo ?? undefined,
+            references: message.references ?? undefined,
+          },
         });
       }
       if (isMobile) setMenuOpen(false);
@@ -131,28 +133,66 @@ export default function WebmailInboxPage() {
     [openMessage, compose, signatureSeed],
   );
 
+  const [replySignal, setReplySignal] = useState(0);
+
+  /**
+   * Open the inline reply, or bring it back into view when it is already
+   * open. The counter is what makes a second Reply do something: the mode
+   * alone would not change, and React skips a render for a value it has.
+   */
+  const startReply = useCallback((mode: 'reply' | 'replyAll') => {
+    setQuickReply(mode);
+    setReplySignal((n) => n + 1);
+  }, []);
+
+  // Stable, so the reading pane's Escape listener is not re-attached on
+  // every render of this page.
+  const changeQuickReply = useCallback(
+    (mode: QuickReplyMode) => {
+      if (mode) startReply(mode);
+      else setQuickReply(null);
+    },
+    [startReply],
+  );
+
   const send = useCallback(
     (payload: ComposePayload, context: SendContext) => mailbox.send(payload, context),
     [mailbox],
   );
 
-  /** Undo puts the message back in front of the person, exactly as it was. */
-  const undoSend = useCallback(() => {
-    const held = mailbox.cancelUndo();
-    if (!held) return;
-    compose.openCompose({
-      mode: held.context.mode,
-      replyTo: held.context.replyTo,
-      initialBody: held.payload.body,
-      draftId: held.context.draftId,
-      resumed: {
-        to: held.payload.to,
-        cc: held.payload.cc,
-        bcc: held.payload.bcc,
-        subject: held.payload.subject,
-      },
-    });
-  }, [mailbox, compose]);
+  // Undo, or Reopen after a failed send -- from this page or any other --
+  // puts the message back in a compose window exactly as it was: its text
+  // (quote included, so it is not quoted twice), attachments and From, and
+  // marked as edited, so closing it saves what is there.
+  const { openCompose } = compose;
+  const { registerComposeOpener } = useOutbox();
+  useEffect(
+    () =>
+      registerComposeOpener(({ payload, context }) =>
+        openCompose({
+          mode: context.mode,
+          replyTo: context.replyTo,
+          initialBody: payload.body,
+          draftId: payload.draftId ?? context.draftId,
+          resumed: { to: payload.to, cc: payload.cc, bcc: payload.bcc, subject: payload.subject },
+          attachments: payload.attachments,
+          from: payload.from,
+          quoteIncluded: true,
+          restored: true,
+        }),
+      ),
+    [registerComposeOpener, openCompose],
+  );
+
+  // Leaving the inbox keeps what is being written -- it is saved to Drafts --
+  // but not its attachments. Ask first, only when there are some.
+  const { hasAttachments } = compose;
+  const confirmLeave = useCallback(
+    () =>
+      !hasAttachments() ||
+      window.confirm('Leave the inbox? The message you are writing is saved to Drafts, but its attachments are not kept.'),
+    [hasAttachments],
+  );
 
   const fromOptions = useMemo(
     () =>
@@ -196,8 +236,8 @@ export default function WebmailInboxPage() {
   const { helpOpen, setHelpOpen } = useKeyboardShortcuts(
     {
       compose: () => openNewMessage(),
-      reply: openMessage ? () => setQuickReply('reply') : undefined,
-      replyAll: openMessage ? () => setQuickReply('replyAll') : undefined,
+      reply: openMessage ? () => startReply('reply') : undefined,
+      replyAll: openMessage ? () => startReply('replyAll') : undefined,
       forward: openMessage ? () => openReplyInComposer('forward') : undefined,
       next: () => step(1),
       previous: () => step(-1),
@@ -232,10 +272,10 @@ export default function WebmailInboxPage() {
     return <WebmailSkeleton />;
   }
 
-  const showList = !isMobile || !openMessage;
-
   return (
-    <div className="relative flex h-screen overflow-hidden bg-pane">
+    // h-dvh: 100vh on iOS is taller than what is visible, which hid the
+    // list's pager and the rail's account chip behind the browser's toolbar.
+    <div className="relative flex h-dvh overflow-hidden bg-pane">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -246,16 +286,21 @@ export default function WebmailInboxPage() {
         email={displayEmail}
         name={settings?.name ?? null}
         unreadCount={unreadCount}
-        onOpenSettings={() => router.push('/settings')}
-        onOpenSecurity={() => router.push('/settings/security')}
+        onOpenSettings={() => confirmLeave() && router.push('/settings')}
+        onOpenSecurity={() => confirmLeave() && router.push('/settings/security')}
         onShowShortcuts={() => setHelpOpen(true)}
+        onHome={() => {
+          mailbox.setFolder('INBOX');
+          setMenuOpen(false);
+        }}
+        onLeave={confirmLeave}
         mobileOpen={menuOpen}
-        onCloseMobile={() => setMenuOpen(false)}
+        onCloseMobile={closeMenu}
       >
         <FolderNav
           folders={folders}
           activeFolder={activeFolder}
-          collapsed={collapsed && !menuOpen}
+          collapsed={collapsed}
           onFolderChange={(folder) => {
             mailbox.setFolder(folder);
             setMenuOpen(false);
@@ -266,42 +311,65 @@ export default function WebmailInboxPage() {
           labels={mailbox.labels}
           calendar={
             mailbox.calendarAvailable
-              ? { active: panel === 'calendar', onToggle: () => setPanel((p) => (p === 'calendar' ? null : 'calendar')) }
+              ? {
+                  active: panel === 'calendar',
+                  // On a phone the panel opens over the page, so the drawer goes.
+                  onToggle: () => {
+                    setPanel((p) => (p === 'calendar' ? null : 'calendar'));
+                    setMenuOpen(false);
+                  },
+                }
               : undefined
           }
           contacts={
             mailbox.contactsAvailable
-              ? { active: panel === 'contacts', onToggle: () => setPanel((p) => (p === 'contacts' ? null : 'contacts')) }
+              ? {
+                  active: panel === 'contacts',
+                  onToggle: () => {
+                    setPanel((p) => (p === 'contacts' ? null : 'contacts'));
+                    setMenuOpen(false);
+                  },
+                }
               : undefined
           }
         />
       </Sidebar>
 
       <div className="relative flex min-w-0 flex-1">
-        {showList && (
-          <MessageListPane
-            mailbox={mailbox}
-            fullWidth={isMobile}
-            onOpen={(item) => void handleOpen(item)}
-            onTrashRow={trashRow}
-            onBulkMove={() => setShowBulkMove(true)}
-            onBulkLabel={() => setShowBulkLabel(true)}
-            onBulkDeleteForever={() =>
-              setPendingDeleteForever({
-                ids: selectedIds,
-                label: `${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`,
-              })
-            }
-            onOpenMenu={() => setMenuOpen(true)}
-            searchSignal={searchSignal}
-          />
+        {/* Always mounted. On a phone an open message covers it (the reading
+            pane is absolute over it) and it is only hidden, so Back returns to
+            the same place in the list rather than to the top. */}
+        <MessageListPane
+          mailbox={mailbox}
+          menuOpen={menuOpen}
+          covered={isMobile && (!!openMessage || mailbox.loadingMessage)}
+          onOpen={(item) => void handleOpen(item)}
+          onTrashRow={trashRow}
+          onBulkMove={() => setShowBulkMove(true)}
+          onBulkLabel={() => setShowBulkLabel(true)}
+          onBulkDeleteForever={() =>
+            setPendingDeleteForever({
+              ids: selectedIds,
+              label: `${selectedIds.length} message${selectedIds.length === 1 ? '' : 's'}`,
+            })
+          }
+          onOpenMenu={() => setMenuOpen(true)}
+          searchSignal={searchSignal}
+        />
+
+        {!isMobile && (
+          // No width of its own; the handle hangs off it over the list's border.
+          <div className="relative hidden w-0 shrink-0 md:block">
+            <PaneResizeHandle pane="list" controls={LIST_PANE_ID} label="Resize message list" className="left-0" />
+          </div>
         )}
 
         <ReadingPane
           mailbox={mailbox}
           isMobile={isMobile}
           quickReply={quickReply}
-          onQuickReplyChange={setQuickReply}
+          onQuickReplyChange={changeQuickReply}
+          replySignal={replySignal}
           onForward={() => openReplyInComposer('forward')}
           onOpenInComposer={(mode, body) => openReplyInComposer(mode, body)}
           onQuickReplySend={(payload, mode) =>
@@ -315,12 +383,18 @@ export default function WebmailInboxPage() {
       </div>
 
       {mailbox.calendarAvailable && (
-        <CalendarPanel open={panel === 'calendar'} onClose={() => setPanel(null)} onUnauthorized={mailbox.handleUnauthorized} />
+        <CalendarPanel
+          open={panel === 'calendar'}
+          onClose={() => setPanel(null)}
+          onUnauthorized={mailbox.handleUnauthorized}
+          onLeave={confirmLeave}
+        />
       )}
       {mailbox.contactsAvailable && (
         <ContactsPanel
           open={panel === 'contacts'}
           onClose={() => setPanel(null)}
+          onLeave={confirmLeave}
           contacts={mailbox.contacts}
           onWriteTo={(email, name) => {
             setPanel(null);
@@ -382,9 +456,6 @@ export default function WebmailInboxPage() {
 
       {helpOpen && <WebmailShortcutHelp onClose={() => setHelpOpen(false)} />}
 
-      {mailbox.pendingSend && (
-        <WebmailUndoToast subject={mailbox.pendingSend.subject} until={mailbox.pendingSend.until} onUndo={undoSend} />
-      )}
     </div>
   );
 }

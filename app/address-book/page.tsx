@@ -11,28 +11,52 @@
  * from message headers; these are the people you chose to keep.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
-import PageShell, { useOpenPageMenu } from '@/components/webmail/shell/PageShell';
+import PageShell, { pageMenuButtonProps, usePageMenu } from '@/components/webmail/shell/PageShell';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import IconButton from '@/components/ui/IconButton';
 import { Input, Label, Select, Textarea } from '@/components/ui/Field';
+import SelectMenu, { type SelectMenuOption } from '@/components/ui/SelectMenu';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import {
   createContact,
   deleteContact,
   displayName,
-  listAddressBooks,
-  listContacts,
   primaryEmail,
   updateContact,
   type AddressBook,
   type Contact,
   type ContactDraft,
 } from '@/lib/webmail/contacts';
+import { contactKeys, useAddressBooks, useBookContacts } from '@/lib/webmail/query/contactQueries';
+import { qk } from '@/lib/webmail/query/keys';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { ADDRESS_BOOK_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
+
+const NO_BOOKS: AddressBook[] = [];
+const NO_CONTACTS: Contact[] = [];
+
+/** The mailbox's own book. Every server has it, so it is the fallback for everything. */
+const PERSONAL_BOOK = 'default';
+
+/**
+ * The book to open: the one last picked in this mailbox if the server still
+ * lists it, else the personal book. Null while that is unknowable -- storage
+ * not read yet, or a remembered shared book with the list still loading -- so
+ * the screen waits rather than showing the personal book and then swapping.
+ */
+function bookToOpen(remembered: string | null | undefined, books: AddressBook[] | undefined, failed: boolean): string | null {
+  if (remembered === undefined) return null;
+  if (!remembered || remembered === PERSONAL_BOOK) return PERSONAL_BOOK;
+  if (!books) return failed ? PERSONAL_BOOK : null;
+  return books.some((b) => b.uri === remembered) ? remembered : PERSONAL_BOOK;
+}
 
 const EMPTY_DRAFT: ContactDraft = {
   first_name: '',
@@ -61,57 +85,55 @@ function draftFrom(contact: Contact): ContactDraft {
 }
 
 export default function AddressBookPage() {
-  const [supported, setSupported] = useState<boolean | null>(null);
+  // Null until the server has answered once; cached after that, so a revisit gates at once.
+  const capabilities = useCapabilities().data;
+  const supported = capabilities ? capabilities.capabilities?.contacts === true : null;
   return (
-    <PageShell current="contacts" onCapabilities={(caps) => setSupported(caps.contacts)}>
-      <AddressBookScreen supported={supported} />
+    <PageShell current="contacts">
+      <AddressBookScreen supported={supported} email={capabilities?.email_address ?? null} />
     </PageShell>
   );
 }
 
-function AddressBookScreen({ supported }: { supported: boolean | null }) {
-  const router = useRouter();
-  const openMenu = useOpenPageMenu();
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
+function AddressBookScreen({ supported, email }: { supported: boolean | null; email: string | null }) {
+  const [menuOpen, openMenu] = usePageMenu();
+  const queryClient = useQueryClient();
+  const onUnauthorized = useUnauthorizedHandler();
 
-  const [books, setBooks] = useState<AddressBook[]>([]);
-  const [activeBook, setActiveBook] = useState('default');
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState<string | null>(null);
+  const booksResult = useAddressBooks(supported === true);
+  const books = booksResult.data ?? NO_BOOKS;
+  const [remembered, remember] = useRememberedChoice(ADDRESS_BOOK_CHOICE_KEY, email);
+  const resolved = bookToOpen(remembered, booksResult.data, booksResult.isError);
+  const activeBook = resolved ?? PERSONAL_BOOK;
+  // Held until the book is known, so only that book's contacts are asked for.
+  const contactsResult = useBookContacts(activeBook, supported === true && resolved !== null);
+  const contacts = contactsResult.data ?? NO_CONTACTS;
+  // Only a book never opened before shows "Loading".
+  const loading = contactsResult.isPending;
+  /** What went wrong with the last thing the person did. */
+  const [actionError, setBanner] = useState<string | null>(null);
+  const banner = actionError ?? (contactsResult.isError ? contactsResult.error.message : null);
   const [query, setQuery] = useState('');
 
   const [editing, setEditing] = useState<Contact | null>(null);
   const [draft, setDraft] = useState<ContactDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Contact | null>(null);
 
   const currentBook = books.find((b) => b.uri === activeBook);
   const readOnly = currentBook?.read_only ?? false;
-
-  useEffect(() => {
-    if (supported !== true) return;
-    (async () => {
-      const res = await listAddressBooks(onUnauthorized);
-      if (res.success && Array.isArray(res.data)) setBooks(res.data);
-    })();
-  }, [supported, onUnauthorized]);
-
-  const load = useCallback(async () => {
-    const res = await listContacts(onUnauthorized, activeBook);
-    if (res.success && Array.isArray(res.data)) {
-      setContacts(res.data);
-      setBanner(null);
-    } else if (!res.success) {
-      setBanner(res.message);
-    }
-    setLoading(false);
-  }, [activeBook, onUnauthorized]);
-
-  useEffect(() => {
-    if (supported !== true) return;
-    void load();
-  }, [supported, load]);
+  const bookOptions = useMemo<SelectMenuOption[]>(
+    () =>
+      books.map((b) => ({
+        value: b.uri,
+        label: b.name || b.uri,
+        description: b.description,
+        readOnly: b.read_only,
+        leading: b.read_only ? <Users size={14} /> : <BookUser size={14} />,
+      })),
+    [books],
+  );
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -124,9 +146,21 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
     });
   }, [contacts, query]);
 
+  /** This book changed: reload it behind the list, and compose's suggestions with it. */
+  const refreshBook = (book: string) => {
+    void queryClient.invalidateQueries({ queryKey: contactKeys.book(book) });
+    void queryClient.invalidateQueries({ queryKey: qk.suggestions });
+  };
+
+  /**
+   * Saving waits for the server, in the dialog: it assigns the id and the
+   * etag, and it can refuse. A refusal is shown in the dialog, where the
+   * person is looking, rather than on the page behind it.
+   */
   async function save() {
     if (!draft) return;
     setSaving(true);
+    setFormError(null);
     // Blank rows are how a form with "add another" always ends up; they are
     // not the user saying "save an empty address".
     const cleaned: ContactDraft = {
@@ -139,21 +173,31 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
       : await createContact(cleaned, onUnauthorized, activeBook);
     setSaving(false);
     if (!res.success) {
-      setBanner(res.message);
+      setFormError(res.message);
       return;
     }
     setDraft(null);
     setEditing(null);
-    await load();
+    setBanner(null);
+    refreshBook(activeBook);
   }
 
-  async function remove(contact: Contact) {
-    const res = await deleteContact(contact.id, contact.etag, onUnauthorized, activeBook);
-    if (!res.success) {
-      setBanner(res.message);
-      return;
-    }
-    await load();
+  /** Deleting (after the confirm) takes the card off the list at once; a refusal puts it back. */
+  function remove(contact: Contact) {
+    const book = activeBook;
+    const key = contactKeys.book(book);
+    queryClient.setQueryData<Contact[]>(key, (list) => list?.filter((c) => c.id !== contact.id));
+    void (async () => {
+      const res = await deleteContact(contact.id, contact.etag, onUnauthorized, book);
+      if (!res.success) {
+        // Only this card comes back; anything deleted meanwhile stays deleted.
+        queryClient.setQueryData<Contact[]>(key, (list) =>
+          list && !list.some((c) => c.id === contact.id) ? [...list, contact] : list,
+        );
+        setBanner(`Couldn't delete ${displayName(contact)}: ${res.message}`);
+      }
+      refreshBook(book);
+    })();
   }
 
   if (supported === null) {
@@ -168,9 +212,9 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         <p className="max-w-sm text-sm text-muted-foreground">
           This mail server does not run a contacts service, so there is nothing to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm font-semibold text-primary underline">
+        <Link href="/" className="text-sm font-semibold text-primary underline">
           Back to mail
-        </a>
+        </Link>
       </div>
     );
   }
@@ -178,53 +222,62 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-card">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-5">
-        <IconButton label="Menu" size="sm" onClick={openMenu} className="md:hidden">
+        <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
           <MenuIcon size={15} />
         </IconButton>
-        <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
-        {books.length > 1 && (
-          <Select
-            value={activeBook}
-            onChange={(e) => {
-              setActiveBook(e.target.value);
-              setLoading(true);
-            }}
-            aria-label="Address book"
-            className="ml-1 h-8 !w-auto py-0 text-[12.5px]"
-          >
-            {books.map((book) => (
-              <option key={book.uri} value={book.uri}>
-                {book.name}
-              </option>
-            ))}
-          </Select>
+        {/* With more than one book the title is the picker: "Contacts" next
+            to a picker that also said "Contacts" read twice. The page keeps
+            its level-1 heading for heading navigation. */}
+        {books.length > 1 ? (
+          <>
+            <h1 className="sr-only">Contacts</h1>
+            <SelectMenu
+              appearance="heading"
+              label="Address book"
+              heading="Address books"
+              placeholder="Contacts"
+              options={bookOptions}
+              value={activeBook}
+              onChange={(uri) => {
+                remember(uri);
+                setBanner(null);
+              }}
+            />
+          </>
+        ) : (
+          <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
-            <Search size={12} strokeWidth={2.2} className="text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search contacts"
-              aria-label="Search contacts"
-              className="w-36 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/70 sm:w-48"
-            />
-          </div>
-          {!readOnly && (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus size={13} />}
-              onClick={() => {
-                setEditing(null);
-                setDraft({ ...EMPTY_DRAFT });
-              }}
-            >
-              Add contact
-            </Button>
-          )}
+        {/* On a phone the search takes a row of its own, full width, and
+            Add shrinks to its icon: side by side they squeezed the search box
+            to a few letters and wrapped awkwardly. */}
+        <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 max-sm:order-last max-sm:w-full sm:ml-auto">
+          <Search size={12} strokeWidth={2.2} className="shrink-0 text-muted-foreground" />
+          <input
+            type="search"
+            enterKeyHint="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search contacts"
+            aria-label="Search contacts"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/70 sm:w-48 sm:flex-none [&::-webkit-search-cancel-button]:hidden"
+          />
         </div>
+        {!readOnly && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus size={13} />}
+            collapseLabel
+            onClick={() => {
+              setEditing(null);
+              setDraft({ ...EMPTY_DRAFT });
+            }}
+            className="max-sm:ml-auto"
+          >
+            Add contact
+          </Button>
+        )}
       </header>
 
       {banner && <p className="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{banner}</p>}
@@ -281,13 +334,14 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
 
                 <div className="flex shrink-0 items-center gap-0.5">
                   {primaryEmail(contact) && (
-                    <a
+                    <Link
                       href={`/?compose=${encodeURIComponent(primaryEmail(contact) as string)}`}
                       title={`Write to ${displayName(contact)}`}
+                      aria-label={`Write to ${displayName(contact)}`}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground"
                     >
                       <Mail size={14} />
-                    </a>
+                    </Link>
                   )}
                   {!readOnly && (
                     <>
@@ -321,8 +375,10 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
           onClose={() => {
             setDraft(null);
             setEditing(null);
+            setFormError(null);
           }}
           saving={saving}
+          error={formError}
           isEdit={Boolean(editing)}
         />
       )}
@@ -331,7 +387,7 @@ function AddressBookScreen({ supported }: { supported: boolean | null }) {
         isOpen={confirmDelete !== null}
         onClose={() => setConfirmDelete(null)}
         onConfirm={() => {
-          if (confirmDelete) void remove(confirmDelete);
+          if (confirmDelete) remove(confirmDelete);
         }}
         icon={<Trash2 size={18} />}
         tone="danger"
@@ -354,6 +410,7 @@ function ContactForm({
   onSave,
   onClose,
   saving,
+  error,
   isEdit,
 }: {
   draft: ContactDraft;
@@ -361,6 +418,7 @@ function ContactForm({
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
+  error: string | null;
   isEdit: boolean;
 }) {
   const emails = draft.emails ?? [];
@@ -386,6 +444,11 @@ function ContactForm({
       }
     >
       <div className="space-y-4">
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="contact-first">First name</Label>
@@ -421,7 +484,7 @@ function ContactForm({
                     setDraft({ ...draft, emails: next });
                   }}
                   aria-label="Email type"
-                  className="w-28"
+                  className="w-28 shrink-0"
                 >
                   <option value="WORK">Work</option>
                   <option value="HOME">Home</option>
@@ -467,7 +530,7 @@ function ContactForm({
                     setDraft({ ...draft, phones: next });
                   }}
                   aria-label="Phone type"
-                  className="w-28"
+                  className="w-28 shrink-0"
                 >
                   <option value="CELL">Mobile</option>
                   <option value="WORK">Work</option>

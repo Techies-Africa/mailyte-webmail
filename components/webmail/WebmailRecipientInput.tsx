@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, AlertCircle } from 'lucide-react';
+import { CircleAlert, X } from 'lucide-react';
 import type { WebmailContact } from './types';
 import Avatar from '@/components/ui/Avatar';
+import { displayChip, extractEmail, splitRecipients } from './recipients';
 
 /**
  * A recipient field as chips, with autocomplete (PRD C2).
@@ -29,13 +30,6 @@ type WebmailRecipientInputProps = {
   trailing?: React.ReactNode;
   placeholder?: string;
 };
-
-export function splitRecipients(value: string): string[] {
-  return value
-    .split(/[,;]/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
 
 export default function WebmailRecipientInput({
   label,
@@ -129,18 +123,25 @@ export default function WebmailRecipientInput({
 
   return (
     <div ref={containerRef} className="relative flex items-start gap-2 border-b border-border px-4 py-1.5">
-      <span className="w-8 shrink-0 pt-1.5 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      {/* Every line of this row is 32px -- a 24px chip with 4px above and
+          below, or the input -- so the label and the Cc/Bcc toggles, centred
+          in a 32px box, sit on the first line however many lines the chips
+          wrap to. Left-aligned, hugging its own text: a fixed 8px (the row's
+          gap-2) from its field, not a column's width away -- a short label
+          like "To" sits right next to its chips instead of the ragged gap a
+          shared right-aligned column left to its left. */}
+      <span className="flex h-8 shrink-0 items-center font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
 
-      <div className="flex min-h-[2rem] min-w-0 flex-1 flex-wrap items-center gap-1">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1">
         {chips.map((chip, index) => {
           const email = extractEmail(chip);
           const valid = EMAIL_RE.test(email);
           return (
             <span
               key={`${chip}-${index}`}
-              className={`inline-flex max-w-full items-center gap-1 rounded-full py-0.5 pl-0.5 pr-1 text-[12.5px] ${
+              className={`my-1 inline-flex h-6 max-w-full items-center gap-1 rounded-full pl-0.5 pr-1 text-[12.5px] ${
                 valid
                   ? 'bg-muted text-foreground'
                   : 'bg-destructive/10 text-destructive ring-1 ring-destructive/30'
@@ -150,7 +151,7 @@ export default function WebmailRecipientInput({
               {valid ? (
                 <Avatar name={displayChip(chip)} email={email} size={18} />
               ) : (
-                <AlertCircle size={13} className="ml-1 shrink-0" />
+                <CircleAlert size={13} className="ml-1 shrink-0" />
               )}
               <span className="truncate px-0.5">{displayChip(chip)}</span>
               <button
@@ -177,13 +178,13 @@ export default function WebmailRecipientInput({
           // meant to add; losing it silently is the worst option.
           onBlur={() => pending.trim() !== '' && commit(pending)}
           placeholder={chips.length === 0 ? placeholder : undefined}
-          className="min-w-[8rem] flex-1 bg-transparent py-1 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          className="h-8 min-w-[8rem] flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
           aria-label={label}
           autoComplete="off"
         />
       </div>
 
-      {trailing && <div className="shrink-0 pt-1">{trailing}</div>}
+      {trailing && <div className="flex h-8 shrink-0 items-center">{trailing}</div>}
 
       {open && suggestions.length > 0 && (
         <ul className="absolute left-12 top-full z-30 mt-1 w-80 max-w-[calc(100%-3rem)] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-panel">
@@ -219,17 +220,4 @@ export default function WebmailRecipientInput({
       )}
     </div>
   );
-}
-
-/** "Ada Lovelace <ada@x.com>" -> "ada@x.com"; a bare address passes through. */
-function extractEmail(entry: string): string {
-  const match = entry.match(/<([^>]+)>/);
-  return (match ? match[1] : entry).trim();
-}
-
-/** Prefer the display name on the chip; fall back to the address. */
-function displayChip(entry: string): string {
-  const named = entry.match(/^(.*?)\s*<[^>]+>$/);
-  const name = named?.[1]?.trim().replace(/^["']|["']$/g, '');
-  return name && name !== '' ? name : extractEmail(entry);
 }

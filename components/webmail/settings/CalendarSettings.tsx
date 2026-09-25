@@ -9,35 +9,27 @@
  * honest about that difference is the whole job of this screen.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Link2, Plus, Trash2 } from 'lucide-react';
-import { createSubscription, listSubscriptions, revokeSubscription, type SubscriptionLink } from '@/lib/webmail/calendar';
+import { createSubscription, revokeSubscription, type SubscriptionLink } from '@/lib/webmail/calendar';
+import { settingsKeys, useSubscriptions } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import type { SettingsSectionProps } from './types';
 
+const NO_LINKS: SubscriptionLink[] = [];
+
 export default function CalendarSettings({ onUnauthorized }: SettingsSectionProps) {
-  const [links, setLinks] = useState<SubscriptionLink[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Cached: the links are there at once on a second visit.
+  const queryClient = useQueryClient();
+  const subscriptions = useSubscriptions(onUnauthorized);
+  const links = subscriptions.data ?? NO_LINKS;
+  const loading = subscriptions.isPending && !subscriptions.isError;
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (subscriptions.isError ? subscriptions.error.message : null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await listSubscriptions(onUnauthorized);
-    if (res.success && Array.isArray(res.data)) {
-      setLinks(res.data);
-      setError(null);
-    } else if (!res.success) {
-      setError(res.message);
-    }
-    setLoading(false);
-  }, [onUnauthorized]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   async function create() {
     setBusy(true);
@@ -47,19 +39,32 @@ export default function CalendarSettings({ onUnauthorized }: SettingsSectionProp
       setError(res.message);
       return;
     }
-    await load();
+    setError(null);
+    // The new link, from the answer: no second request to list them all again.
+    queryClient.setQueryData<SubscriptionLink[]>(settingsKeys.subscriptions, (list) => [...(list ?? []), res.data]);
+    void queryClient.invalidateQueries({ queryKey: settingsKeys.subscriptions });
   }
 
+  /**
+   * Off the list at once. A refusal puts it back and says so plainly: a
+   * revoke that did not happen leaves a working link in someone's calendar.
+   */
   async function revoke(token: string) {
-    setBusy(true);
-    const res = await revokeSubscription(token, onUnauthorized);
-    setBusy(false);
     setConfirming(null);
+    setError(null);
+    const link = queryClient.getQueryData<SubscriptionLink[]>(settingsKeys.subscriptions)?.find((l) => l.token === token);
+    queryClient.setQueryData<SubscriptionLink[]>(settingsKeys.subscriptions, (list) => list?.filter((l) => l.token !== token));
+    const res = await revokeSubscription(token, onUnauthorized);
     if (!res.success) {
-      setError(res.message);
+      // Only this link comes back; one revoked or made meanwhile keeps its state.
+      queryClient.setQueryData<SubscriptionLink[]>(settingsKeys.subscriptions, (list) =>
+        link && list && !list.some((l) => l.token === token) ? [...list, link] : list,
+      );
+      void queryClient.invalidateQueries({ queryKey: settingsKeys.subscriptions });
+      setError(`That link was NOT revoked and still works: ${res.message}`);
       return;
     }
-    await load();
+    void queryClient.invalidateQueries({ queryKey: settingsKeys.subscriptions });
   }
 
   async function copy(value: string, token: string) {

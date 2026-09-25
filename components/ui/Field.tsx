@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 /**
  * Form controls in the guide's shape: 8px radius, zinc border, indigo focus
@@ -8,31 +9,105 @@ import { forwardRef } from 'react';
 export const fieldClass =
   'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:bg-primary/[0.04] focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50';
 
-type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
+/**
+ * The same control as a soft grey well with no border until it has focus:
+ * the event dialog's look, where a border round every field turned the form
+ * into a grid of boxes. Same size and radius as fieldClass.
+ */
+export const filledFieldClass =
+  'w-full rounded-lg border border-transparent bg-muted/70 px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60';
+
+/** `outline` everywhere a form takes input; `filled` in the event dialog. */
+export type FieldVariant = 'outline' | 'filled';
+
+const FIELD_VARIANTS: Record<FieldVariant, string> = { outline: fieldClass, filled: filledFieldClass };
+
+type InputProps = React.InputHTMLAttributes<HTMLInputElement> & { variant?: FieldVariant };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, ...rest },
+  { className, variant = 'outline', ...rest },
   ref,
 ) {
-  return <input ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return <input ref={ref} className={`${FIELD_VARIANTS[variant]} ${className ?? ''}`} {...rest} />;
 });
 
-type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & { variant?: FieldVariant };
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { className, ...rest },
+  { className, variant = 'outline', ...rest },
   ref,
 ) {
-  return <textarea ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return <textarea ref={ref} className={`${FIELD_VARIANTS[variant]} ${className ?? ''}`} {...rest} />;
 });
 
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
+type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> & {
+  /** 'md' matches Input (38px); 'sm' (32px) is for a select inside a sentence or a toolbar. */
+  size?: 'sm' | 'md';
+  variant?: FieldVariant;
+};
 
+const SELECT_SIZES = {
+  md: 'py-2 pl-3 pr-9 text-sm',
+  sm: 'py-1.5 pl-2.5 pr-8 text-[12.5px] leading-[18px]',
+};
+
+/** Each variant's box and focus ring (focus-visible: see below). */
+const SELECT_VARIANTS: Record<FieldVariant, string> = {
+  outline:
+    'border-input bg-background focus-visible:border-primary focus-visible:bg-primary/[0.04] focus-visible:ring-2 focus-visible:ring-primary/25',
+  filled:
+    'border-transparent bg-muted/70 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/20',
+};
+
+/**
+ * A native select in the field look, with its own chevron.
+ *
+ * `className` sizes a wrapper, not the select. Tailwind emits utilities of
+ * one group in its own order, not the order of the class list, so a caller's
+ * `w-28` or `py-1` on top of fieldClass's `w-full` and `py-2` never applied:
+ * the contact type selects were half the row, and the header pickers were
+ * 14px text clipped in a 32px box. Width and layout go on the wrapper
+ * (`block` fills a form column; in a flex row give it a width or flex-1), and
+ * the box itself comes from `size`.
+ *
+ * The ring is focus-visible, not focus: a native select keeps focus after its
+ * popup closes, and `focus:` kept the ring on after every mouse pick. How far
+ * that helps depends on the browser -- Chromium counts a select as taking
+ * typing and matches :focus-visible even after a click, so there the ring
+ * still shows while it has focus, as a text input's does. (The header
+ * pickers that looked broken are SelectMenu buttons now, which never ring
+ * after a click.) Text inputs keep `focus:`: typing is the point.
+ * appearance-none drops the browser's own arrow, which ignored the theme and
+ * sat in a different place in every browser.
+ */
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { className, ...rest },
+  { className, size = 'md', variant = 'outline', ...rest },
   ref,
 ) {
-  return <select ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return (
+    // A span, so the wrapper is valid inside a <label> or a <p>.
+    <span className={['relative block', className ?? ''].join(' ')}>
+      <select
+        ref={ref}
+        {...rest}
+        className={[
+          'peer block w-full cursor-pointer appearance-none rounded-lg border text-foreground outline-none transition-colors',
+          SELECT_VARIANTS[variant],
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          SELECT_SIZES[size],
+        ].join(' ')}
+      />
+      <ChevronDown
+        aria-hidden
+        size={size === 'sm' ? 13 : 14}
+        strokeWidth={2.2}
+        className={[
+          'pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground peer-disabled:opacity-50',
+          size === 'sm' ? 'right-2.5' : 'right-3',
+        ].join(' ')}
+      />
+    </span>
+  );
 });
 
 export function Label({

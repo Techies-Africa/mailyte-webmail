@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Info } from 'lucide-react';
 
 /**
@@ -15,11 +15,19 @@ import { AlertTriangle, Check, Info } from 'lucide-react';
 
 export type ToastTone = 'success' | 'info' | 'warning' | 'error';
 
+export type ToastCloseReason = 'timeout' | 'dismissed' | 'action' | 'replaced';
+
 export interface ToastOptions {
   tone?: ToastTone;
   /** Milliseconds. Defaults per tone; 0 keeps it until dismissed. */
   duration?: number;
   action?: { label: string; onClick: () => void };
+  /**
+   * Called once when the toast goes, with why. An Undo toast uses it to know
+   * its window is over: a timeout, a dismissal or being replaced by the next
+   * toast all mean "go ahead"; only 'action' means the person took it back.
+   */
+  onClose?: (reason: ToastCloseReason) => void;
 }
 
 interface ToastEntry extends Required<Pick<ToastOptions, 'tone'>> {
@@ -46,30 +54,73 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const closers = useRef(new Map<number, (reason: ToastCloseReason) => void>());
 
-  const dismiss = useCallback((id: number) => {
+  // A plain message that arrives while an Undo toast is up waits for it
+  // rather than replacing it: replacing would end the Undo window early and
+  // send the action the person may still be about to take back.
+  const waiting = useRef<{ id: number; text: string; options: ToastOptions } | null>(null);
+  const showRef = useRef<(id: number, text: string, options: ToastOptions) => void>(() => {});
+
+  const close = useCallback((id: number, reason: ToastCloseReason) => {
     const timer = timers.current.get(id);
     if (timer) clearTimeout(timer);
     timers.current.delete(id);
+    const onClose = closers.current.get(id);
+    closers.current.delete(id);
     setToasts((current) => current.filter((t) => t.id !== id));
+    onClose?.(reason);
+    // Being replaced means another Undo is taking the slot: the waiting
+    // toast keeps waiting, behind that one.
+    const next = waiting.current;
+    if (next && reason !== 'replaced' && closers.current.size === 0) {
+      waiting.current = null;
+      showRef.current(next.id, next.text, next.options);
+    }
   }, []);
 
-  const toast = useCallback(
-    (text: string, options: ToastOptions = {}) => {
-      const id = nextId.current++;
+  const dismiss = useCallback(
+    (id: number) => {
+      if (waiting.current?.id === id) waiting.current = null;
+      else close(id, 'dismissed');
+    },
+    [close],
+  );
+
+  const show = useCallback(
+    (id: number, text: string, options: ToastOptions) => {
       const tone = options.tone ?? 'success';
-      // One at a time: a stack of confirmations reads as a fault.
+      // One at a time: a stack of confirmations reads as a fault. Whatever
+      // was showing is closed first, so its onClose hears that it was replaced.
+      for (const previous of [...closers.current.keys()]) close(previous, 'replaced');
+      if (options.onClose) closers.current.set(id, options.onClose);
       setToasts([{ id, text, tone, action: options.action }]);
       const duration = options.duration ?? DEFAULT_DURATION[tone];
       if (duration > 0) {
         timers.current.set(
           id,
-          setTimeout(() => dismiss(id), duration),
+          setTimeout(() => close(id, 'timeout'), duration),
         );
       }
+    },
+    [close],
+  );
+  useEffect(() => {
+    showRef.current = show;
+  }, [show]);
+
+  const toast = useCallback(
+    (text: string, options: ToastOptions = {}) => {
+      const id = nextId.current++;
+      // Only another Undo replaces an Undo; anything else waits its turn (the newest wins).
+      if (!options.onClose && closers.current.size > 0) {
+        waiting.current = { id, text, options };
+        return id;
+      }
+      show(id, text, options);
       return id;
     },
-    [dismiss],
+    [show],
   );
 
   const api = useMemo(() => ({ toast, dismiss }), [toast, dismiss]);
@@ -82,18 +133,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={entry.id}
             role="status"
-            className="pointer-events-auto absolute bottom-0 left-1/2 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-toast-in items-center gap-2.5 whitespace-nowrap rounded-full bg-toast px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-toast"
+            // Wraps on a phone rather than cutting a long error off mid-word;
+            // one line, as a pill, from sm up. w-max so the auto width is not
+            // capped at half the screen by left-1/2.
+            className="pointer-events-auto absolute bottom-0 left-1/2 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-toast-in items-center gap-2.5 rounded-2xl bg-toast px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-toast sm:whitespace-nowrap sm:rounded-full"
           >
-            <ToastIcon tone={entry.tone} />
-            <span className="truncate">{entry.text}</span>
+            <span className="shrink-0">
+              <ToastIcon tone={entry.tone} />
+            </span>
+            <span className="min-w-0 sm:truncate">{entry.text}</span>
             {entry.action && (
               <button
                 type="button"
                 onClick={() => {
                   entry.action?.onClick();
-                  dismiss(entry.id);
+                  close(entry.id, 'action');
                 }}
-                className="ml-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/20"
+                className="ml-1 shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold hover:bg-white/20"
               >
                 {entry.action.label}
               </button>
@@ -103,7 +159,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => dismiss(entry.id)}
                 aria-label="Dismiss"
-                className="ml-1 text-white/60 hover:text-white"
+                className="-mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 hover:text-white"
               >
                 ×
               </button>

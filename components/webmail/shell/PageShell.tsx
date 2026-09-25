@@ -1,27 +1,32 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
-import { getCapabilities, getSettings } from '@/lib/webmail/client';
+import { useCapabilities, useSettings } from '@/lib/webmail/query/accountQueries';
+import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 type PageShellProps = {
   /** Which rail row is lit. */
   current: 'calendar' | 'contacts';
   children: React.ReactNode;
-  /** Reported up so the page can gate itself; the page shows nothing until the server answers. */
-  onCapabilities?: (caps: { calendar: boolean; contacts: boolean }) => void;
 };
 
-const PageMenuContext = createContext<() => void>(() => {});
+const PageMenuContext = createContext<[boolean, () => void]>([false, () => {}]);
 
-/** The phone menu trigger, for a page header inside PageShell. */
-export function useOpenPageMenu(): () => void {
+/**
+ * The phone menu, for a page header inside PageShell: whether the drawer is
+ * out (for the Menu button's aria-expanded) and the opener.
+ */
+export function usePageMenu(): [boolean, () => void] {
   return useContext(PageMenuContext);
 }
+
+/** Props for a page header's Menu button, so all of them announce the drawer the same way. */
+export const pageMenuButtonProps = (open: boolean) => ({ 'aria-expanded': open, 'aria-controls': SIDEBAR_ID });
 
 /**
  * The rail around the calendar and address-book screens.
@@ -31,39 +36,29 @@ export function useOpenPageMenu(): () => void {
  * composes (it lands on the inbox with a window open), and the account chip
  * still opens settings and signs out.
  */
-export default function PageShell({ current, children, onCapabilities }: PageShellProps) {
+export default function PageShell({ current, children }: PageShellProps) {
   const router = useRouter();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState<string | null>(null);
-  const [caps, setCaps] = useState<{ calendar: boolean; contacts: boolean } | null>(null);
+  // Shared with the inbox and every other screen: a revisit paints at once.
+  const capabilities = useCapabilities().data;
+  const email = capabilities?.email_address ?? '';
+  const name = useSettings().data?.name ?? null;
+  const caps = capabilities
+    ? {
+        calendar: capabilities.capabilities?.calendar === true,
+        contacts: capabilities.capabilities?.contacts === true,
+      }
+    : null;
 
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
-
-  useEffect(() => {
-    void getCapabilities(onUnauthorized).then((result) => {
-      if (!result.success || !result.data) return;
-      const next = {
-        calendar: result.data.capabilities?.calendar === true,
-        contacts: result.data.capabilities?.contacts === true,
-      };
-      setCaps(next);
-      onCapabilities?.(next);
-      if (result.data.email_address) setEmail(result.data.email_address);
-    });
-    void getSettings(onUnauthorized).then((result) => {
-      if (result.success && result.data) setName(result.data.name ?? null);
-    });
-    // onCapabilities is a page-level setter; re-running on its identity would refetch for nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onUnauthorized]);
-
-  const rail = collapsed && !menuOpen;
   const openMenu = useCallback(() => setMenuOpen(true), []);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const menu = useMemo<[boolean, () => void]>(() => [menuOpen, openMenu], [menuOpen, openMenu]);
 
+  // h-dvh: 100vh on iOS is taller than what is visible, which hid the rail's
+  // account chip behind the browser's toolbar.
   return (
-    <div className="relative flex h-screen overflow-hidden bg-pane">
+    <div className="relative flex h-dvh overflow-hidden bg-pane">
       <Sidebar
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
@@ -73,21 +68,21 @@ export default function PageShell({ current, children, onCapabilities }: PageShe
         onOpenSettings={() => router.push('/settings')}
         onOpenSecurity={() => router.push('/settings/security')}
         mobileOpen={menuOpen}
-        onCloseMobile={() => setMenuOpen(false)}
+        onCloseMobile={closeMenu}
       >
-        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={rail} as="a" href="/" />
+        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} as="a" href="/" />
         <SidebarDivider />
         {(caps?.calendar ?? current === 'calendar') && (
-          <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={rail} as="a" href="/calendar" />
+          <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={collapsed} as="a" href="/calendar" />
         )}
         {(caps?.contacts ?? current === 'contacts') && (
-          <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={rail} as="a" href="/address-book" />
+          <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={collapsed} as="a" href="/address-book" />
         )}
         <SidebarDivider />
-        <SidebarItem icon={<Settings />} label="Settings" collapsed={rail} as="a" href="/settings" />
+        <SidebarItem icon={<Settings />} label="Settings" collapsed={collapsed} as="a" href="/settings" />
       </Sidebar>
 
-      <PageMenuContext.Provider value={openMenu}>{children}</PageMenuContext.Provider>
+      <PageMenuContext.Provider value={menu}>{children}</PageMenuContext.Provider>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HardDrive, PenLine, Check, AtSign, Rows3, ImageIcon } from 'lucide-react';
 import WebmailEditor from '../WebmailEditor';
 import { updateSettings } from '@/lib/webmail/client';
@@ -46,11 +46,28 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
     setImages(remoteImagePolicy());
   }, []);
 
+  // Follow the server copy while the form is untouched -- a fresher copy
+  // replaces a stale cached one -- and after this form's own save. Never over
+  // what is being typed.
+  const reseedAfterSave = useRef(false);
+  const touched = useRef(false);
+  // The editor reads its HTML only when it is created, so a signature
+  // re-read from the server gets a fresh editor to show it.
+  const [signatureEditor, setSignatureEditor] = useState({ key: 0, html: settings.signatureHtml });
+  const markDirty = () => {
+    touched.current = true;
+    onDirty?.();
+  };
   useEffect(() => {
-    // Re-seed from the server copy after a save re-reads it.
+    if (touched.current && !reseedAfterSave.current) return;
+    reseedAfterSave.current = false;
+    touched.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(settings.name ?? '');
     setSignature(settings.signatureHtml);
+    setSignatureEditor((prev) =>
+      prev.html === settings.signatureHtml ? prev : { key: prev.key + 1, html: settings.signatureHtml },
+    );
     setOnReply(settings.signatureOnReply);
     setDensity(settings.displayDensity);
   }, [settings]);
@@ -74,6 +91,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
       setError(result.message);
       return;
     }
+    reseedAfterSave.current = true;
     onSettingsChanged?.();
     onSaved?.();
     setSaved(true);
@@ -93,7 +111,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
           maxLength={255}
           onChange={(e) => {
             setName(e.target.value);
-            onDirty?.();
+            markDirty();
           }}
           placeholder="Your name"
           className="max-w-sm"
@@ -111,13 +129,14 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
         <SectionTitle icon={<PenLine size={15} />}>Signature</SectionTitle>
         <div className="overflow-hidden rounded-lg border border-border">
           <WebmailEditor
-            initialHtml={settings.signatureHtml}
+            key={signatureEditor.key}
+            initialHtml={signatureEditor.html}
             placeholder="Your name, role, a link…"
             autoFocus={false}
             minHeightClass="min-h-[8rem]"
             onChange={(html) => {
               setSignature(html);
-              onDirty?.();
+              markDirty();
             }}
           />
         </div>
@@ -126,7 +145,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
             checked={onReply}
             onChange={(next) => {
               setOnReply(next);
-              onDirty?.();
+              markDirty();
             }}
             label="Include the signature on replies"
           />
@@ -143,7 +162,7 @@ export default function GeneralSettings({ settings, onUnauthorized, onDirty, onS
               aria-pressed={density === option}
               onClick={() => {
                 setDensity(option);
-                onDirty?.();
+                markDirty();
               }}
               className={`rounded-md px-3 py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
                 density === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'

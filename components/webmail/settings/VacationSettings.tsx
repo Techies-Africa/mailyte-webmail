@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
-import { getVacation, updateVacation } from '@/lib/webmail/client';
+import { updateVacation } from '@/lib/webmail/client';
+import { settingsKeys, useSeed, useVacation } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import { Hint, Input, Label, Switch, Textarea } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
@@ -20,29 +22,28 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
   const [message, setMessage] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void getVacation(onUnauthorized).then((result) => {
-      // Restore ALL of it: the mail server stores every field on the Sieve
-      // script and returns them from parse_vacation.
-      if (result.success && result.data) {
-        setEnabled(result.data.enabled);
-        setSubject(result.data.subject || 'Out of Office');
-        setMessage(result.data.message ?? '');
-        setStartDate(result.data.start_date ?? '');
-        setEndDate(result.data.end_date ?? '');
-      } else if (!result.success) {
-        setError(result.message);
-      }
-      setLoading(false);
-    });
-  }, [onUnauthorized]);
+  // Cached: a second visit opens with the saved responder already filled in.
+  const queryClient = useQueryClient();
+  const vacation = useVacation(onUnauthorized);
+  const [touched, setTouched] = useState(false);
+  const seeded = useSeed(vacation, (data) => {
+    // Restore ALL of it: the mail server stores every field on the Sieve
+    // script and returns them from parse_vacation.
+    setEnabled(data.enabled);
+    setSubject(data.subject || 'Out of Office');
+    setMessage(data.message ?? '');
+    setStartDate(data.start_date ?? '');
+    setEndDate(data.end_date ?? '');
+  }, touched);
+  const loading = !seeded && !vacation.isError;
+  const error = actionError ?? (!seeded && vacation.isError ? vacation.error.message : null);
 
   const touch = () => {
+    setTouched(true);
     setSaved(false);
     onDirty?.();
   };
@@ -58,21 +59,22 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
       return;
     }
     setSaving(true);
-    const result = await updateVacation(
-      {
-        enabled,
-        subject: subject.trim() || 'Out of Office',
-        message,
-        start_date: startDate || null,
-        end_date: endDate || null,
-      },
-      onUnauthorized,
-    );
+    const payload = {
+      enabled,
+      subject: subject.trim() || 'Out of Office',
+      message,
+      start_date: startDate || null,
+      end_date: endDate || null,
+    };
+    const result = await updateVacation(payload, onUnauthorized);
     setSaving(false);
     if (!result.success) {
       setError(result.message);
       return;
     }
+    setTouched(false);
+    // What was saved is what the server now holds; the next visit opens with it.
+    queryClient.setQueryData(settingsKeys.vacation, (prev: object | undefined) => ({ ...prev, ...payload, managed: true }));
     onSaved?.();
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -118,7 +120,8 @@ export default function VacationSettings({ onUnauthorized, onDirty, onSaved }: S
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Stacked on a phone: side by side, each date field was too narrow to read. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="vac-start">Start (optional)</Label>
             <Input

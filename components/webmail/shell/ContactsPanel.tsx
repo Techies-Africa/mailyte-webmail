@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Search } from 'lucide-react';
 import type { WebmailContact } from '../types';
@@ -9,6 +10,8 @@ import Avatar from '@/components/ui/Avatar';
 type ContactsPanelProps = {
   open: boolean;
   onClose: () => void;
+  /** Asked before a link leaves the inbox; false stays. */
+  onLeave?: () => boolean;
   /** The merged suggestion list: saved cards first, then the directory. */
   contacts: WebmailContact[];
   onWriteTo: (email: string, name: string | null) => void;
@@ -24,13 +27,21 @@ const LIMIT = 40;
  * header addresses are left out -- this panel is the address book, not the
  * history.
  */
-export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: ContactsPanelProps) {
+export default function ContactsPanel({ open, onClose, onLeave, contacts, onWriteTo }: ContactsPanelProps) {
+  // Every link here leaves the inbox; the page may want to ask first.
+  const guardLeave = (e: React.MouseEvent) => {
+    if (onLeave && !onLeave()) e.preventDefault();
+  };
+
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Straight into the search with a mouse. Not on touch: focusing a field
+  // throws the keyboard up over the sheet before anyone asked to type.
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-    else setQuery('');
+    if (open) {
+      if (window.matchMedia('(pointer: fine)').matches) inputRef.current?.focus();
+    } else setQuery('');
   }, [open]);
 
   const book = useMemo(() => contacts.filter((c) => c.source), [contacts]);
@@ -46,9 +57,15 @@ export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: Co
   }, [book, query]);
 
   return (
-    <FloatingPanel open={open} onClose={onClose} label="Contacts" width={300}>
+    <FloatingPanel open={open} onClose={onClose} label="Contacts" width={300} positionKey="contacts">
       <div className="border-b border-border px-4 pb-3 pt-3.5">
-        <div className="mb-2.5 font-display text-[13.5px] font-bold">Contacts</div>
+        <div
+          data-drag-handle
+          title="Drag to move. Double-click to put it back."
+          className="mb-2.5 font-display text-[13.5px] font-bold md:cursor-grab md:touch-none md:select-none"
+        >
+          Contacts
+        </div>
         <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
           <Search size={12} strokeWidth={2.2} className="shrink-0 text-muted-foreground" />
           <input
@@ -91,13 +108,13 @@ export default function ContactsPanel({ open, onClose, contacts, onWriteTo }: Co
         )}
       </div>
 
-      <a
+      <Link onClick={guardLeave}
         href="/address-book"
         className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[12.5px] font-semibold text-primary hover:bg-muted"
       >
         Open address book
         <ExternalLink size={13} />
-      </a>
+      </Link>
     </FloatingPanel>
   );
 }

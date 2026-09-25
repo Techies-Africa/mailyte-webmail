@@ -167,6 +167,7 @@ export function toMessage(m: ApiMessageDetail): WebmailMessage {
     replyTo: participants(m.reply_to),
     bcc: participants(m.bcc),
     messageIdHeader: m.message_id ?? null,
+    inReplyTo: m.in_reply_to ?? null,
     references: m.references ?? null,
     attachments: (m.attachments ?? []).map(toAttachment),
     provenance: {

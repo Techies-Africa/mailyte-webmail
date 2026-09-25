@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import {
   addDays,
   addMonths,
@@ -19,15 +20,19 @@ import {
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import FloatingPanel from '@/components/ui/Popover';
 import IconButton from '@/components/ui/IconButton';
-import { listCalendars, listEvents, type CalendarEvent } from '@/lib/webmail/calendar';
+import type { CalendarEvent } from '@/lib/webmail/calendar';
+import { pickDefaultCalendar, useCalendars, useEvents } from '@/lib/webmail/query/calendarQueries';
 
 type CalendarPanelProps = {
   open: boolean;
   onClose: () => void;
+  /** Asked before a link leaves the inbox; false stays. */
+  onLeave?: () => boolean;
   onUnauthorized: () => void;
 };
 
 const WEEK_OPTS = { weekStartsOn: 0 as const };
+const NO_EVENTS: CalendarEvent[] = [];
 const UPCOMING_DAYS = 7;
 
 /**
@@ -37,59 +42,35 @@ const UPCOMING_DAYS = 7;
  * same endpoint the calendar screen uses. The month grid marks days that
  * have something on them, and clicking a day opens the full calendar there.
  */
-export default function CalendarPanel({ open, onClose, onUnauthorized }: CalendarPanelProps) {
+export default function CalendarPanel({ open, onClose, onLeave }: CalendarPanelProps) {
+  // Every link here leaves the inbox; the page may want to ask first.
+  const guardLeave = (e: React.MouseEvent) => {
+    if (onLeave && !onLeave()) e.preventDefault();
+  };
+
   const [anchor, setAnchor] = useState(() => new Date());
-  const [calendar, setCalendar] = useState<string | null>(null);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
 
   // Which calendar to read: the default one, or the first the server lists.
-  useEffect(() => {
-    if (!open || calendar) return;
-    let cancelled = false;
-    void listCalendars(onUnauthorized).then((res) => {
-      if (cancelled) return;
-      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-        setCalendar((res.data.find((c) => c.is_default) ?? res.data[0]).uri);
-      } else {
-        setCalendar('default');
-        if (!res.success) setFailed(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, calendar, onUnauthorized]);
+  // Shared with the calendar screen, so opening either after the other is instant.
+  const calendarsResult = useCalendars(open);
+  const calendar = calendarsResult.data
+    ? pickDefaultCalendar(calendarsResult.data)
+    : calendarsResult.isError
+      ? 'default'
+      : null;
 
   // The visible month plus the upcoming window, in one request.
-  useEffect(() => {
-    if (!open || !calendar) return;
-    let cancelled = false;
-    setLoading(true);
+  const range = useMemo(() => {
     const start = startOfWeek(startOfMonth(anchor), WEEK_OPTS);
     const end = addDays(endOfWeek(endOfMonth(anchor), WEEK_OPTS), 1);
-    const upcomingEnd = addDays(startOfDay(new Date()), UPCOMING_DAYS + 1);
-    void listEvents(
-      calendar,
-      start < new Date() ? start : startOfDay(new Date()),
-      end > upcomingEnd ? end : upcomingEnd,
-      onUnauthorized,
-    ).then((res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (res.success && Array.isArray(res.data)) {
-        setEvents(res.data);
-        setFailed(false);
-      } else {
-        setEvents([]);
-        setFailed(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, calendar, anchor, onUnauthorized]);
+    const today = startOfDay(new Date());
+    const upcomingEnd = addDays(today, UPCOMING_DAYS + 1);
+    return { start: start < today ? start : today, end: end > upcomingEnd ? end : upcomingEnd };
+  }, [anchor]);
+  const eventsResult = useEvents(calendar, range.start, range.end, open);
+  const events = eventsResult.data ?? NO_EVENTS;
+  const loading = eventsResult.isFetching;
+  const failed = eventsResult.isError || (calendarsResult.isError && !eventsResult.data);
 
   const days = useMemo(() => {
     const first = startOfWeek(startOfMonth(anchor), WEEK_OPTS);
@@ -118,9 +99,13 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
   const dayHref = (day: Date) => `/calendar?date=${format(day, 'yyyy-MM-dd')}`;
 
   return (
-    <FloatingPanel open={open} onClose={onClose} label="Calendar" width={300}>
+    <FloatingPanel open={open} onClose={onClose} label="Calendar" width={300} positionKey="calendar">
       <div className="border-b border-border px-4 pb-3 pt-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div
+          data-drag-handle
+          title="Drag to move. Double-click to put it back."
+          className="mb-3 flex items-center justify-between md:cursor-grab md:touch-none md:select-none"
+        >
           <span className="font-display text-[13.5px] font-bold">{format(anchor, 'MMMM yyyy')}</span>
           <div className="flex gap-0.5">
             <IconButton label="Previous month" size="xs" onClick={() => setAnchor((a) => subMonths(a, 1))}>
@@ -142,7 +127,7 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
             const today = isToday(day);
             const busy = busyDays.has(format(day, 'yyyy-MM-dd'));
             return (
-              <a
+              <Link onClick={guardLeave}
                 key={day.toISOString()}
                 href={dayHref(day)}
                 aria-label={format(day, 'EEEE d MMMM yyyy')}
@@ -159,7 +144,7 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
                 {busy && !today && (
                   <span aria-hidden className="absolute bottom-[3px] left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-primary" />
                 )}
-              </a>
+              </Link>
             );
           })}
         </div>
@@ -185,7 +170,7 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
               const start = new Date(event.start);
               return (
                 <li key={`${event.id}-${event.start}`}>
-                  <a href={dayHref(start)} className="flex items-start gap-2.5 py-2 hover:text-primary">
+                  <Link onClick={guardLeave} href={dayHref(start)} className="flex items-start gap-2.5 py-2 hover:text-primary">
                     <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] font-semibold">{event.summary ?? 'Untitled'}</span>
@@ -195,7 +180,7 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
                         {event.location ? ` · ${event.location}` : ''}
                       </span>
                     </span>
-                  </a>
+                  </Link>
                 </li>
               );
             })}
@@ -203,13 +188,13 @@ export default function CalendarPanel({ open, onClose, onUnauthorized }: Calenda
         )}
       </div>
 
-      <a
+      <Link onClick={guardLeave}
         href="/calendar"
         className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[12.5px] font-semibold text-primary hover:bg-muted"
       >
         Open calendar
         <ExternalLink size={13} />
-      </a>
+      </Link>
     </FloatingPanel>
   );
 }

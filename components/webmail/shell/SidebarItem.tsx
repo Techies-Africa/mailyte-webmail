@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 type SidebarItemProps = {
   icon?: React.ReactNode;
   /** A coloured dot in place of an icon (the category rows). */
@@ -78,11 +80,13 @@ export default function SidebarItem({
     </>
   );
 
+  // A client-side navigation, not a page load: the app's cache survives the
+  // trip between mail, calendar, contacts and settings.
   const row =
     as === 'a' && href ? (
-      <a href={href} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
+      <Link href={href} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
         {content}
-      </a>
+      </Link>
     ) : (
       <button type="button" onClick={onClick} title={collapsed ? label : title} aria-current={active ? 'page' : undefined} className={className}>
         {content}
@@ -94,7 +98,9 @@ export default function SidebarItem({
   return (
     <div className="group/row relative">
       {row}
-      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
+      {/* Revealed on hover with a mouse; always there on touch, where a
+          hover never comes and folder rename and delete had no way in. */}
+      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 transition-opacity can-hover:opacity-0 can-hover:focus-within:opacity-100 can-hover:group-hover/row:opacity-100">
         {trailing}
       </span>
     </div>

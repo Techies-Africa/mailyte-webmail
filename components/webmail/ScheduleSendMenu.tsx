@@ -44,7 +44,8 @@ export default function ScheduleSendMenu({ onSchedule, disabled }: ScheduleSendM
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault(); // handled: nothing further out closes on the same key
         setOpen(false);
         setPicking(false);
       }

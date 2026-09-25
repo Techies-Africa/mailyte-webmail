@@ -55,7 +55,7 @@ export default function AuthLayout({
   trustCues = defaultTrustCues,
 }: AuthLayoutProps) {
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex min-h-dvh flex-col md:flex-row">
       <div className="relative hidden overflow-hidden bg-sidebar text-white md:flex md:w-[46%] md:flex-col md:p-12 lg:p-14">
         {/* A single brand-gradient sweep, per the guide: hero panels only. */}
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-brand-gradient" />

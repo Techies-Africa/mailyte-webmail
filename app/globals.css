@@ -267,6 +267,90 @@
   }
 }
 
+/* --- Pane widths -----------------------------------------------------------
+ * The rail and the message list are the person's to drag at md and up
+ * (PaneResizeHandle). The numbers mirror lib/webmail/paneLayout.ts; change both.
+ *
+ *   --rail-w / --list-w      what they chose: copied onto <html> from
+ *                            localStorage by the <head> script before first
+ *                            paint, then written live by the handles
+ *   --rail-now / --list-now  what the panes are: the choice held back so the
+ *                            reading pane keeps 420px while the window allows
+ *
+ * clamp() does it with no resize listener: the list gives way first, then the
+ * rail. When even their floors do not fit (a 768px tablet), the floors win --
+ * clamp's minimum beats a smaller maximum.
+ *
+ * Each pane's cap grows with a wide screen: 360px or 20vw for the rail, 640px
+ * or 40vw for the list (RAIL_MAX_SHARE / LIST_MAX_SHARE). A width chosen on
+ * an ultrawide shows at the smaller cap on a laptop, and comes back on the
+ * ultrawide.
+ *
+ * Deliberately outside any @layer: always emitted (no class to purge), and
+ * after the utilities, so it wins over them. */
+:root {
+  --rail-w: 228px;
+  --list-w: 360px;
+  --rail-now: clamp(200px, var(--rail-w), min(calc(100vw - 740px), max(360px, 20vw))); /* 740 = list floor 320 + reading 420 */
+  --list-now: clamp(320px, var(--list-w), min(calc(100vw - var(--rail-now) - 420px), max(640px, 40vw)));
+}
+:root[data-rail='collapsed'] {
+  --rail-now: 58px;
+}
+
+/* Phones: the drawer is always 228px and the list always full width. A stored
+   width is a desktop choice. */
+.pane-rail {
+  width: 228px;
+}
+.pane-list {
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .pane-rail {
+    width: var(--rail-now);
+  }
+  .pane-list {
+    width: var(--list-now);
+  }
+  /* Skeleton pieces a collapsed rail has no room for. */
+  :root[data-rail='collapsed'] .rail-open-only {
+    display: none;
+  }
+  /* A server-rendered rail (Calendar, Contacts, Settings) is 58px from the
+     first paint once the head script has run, but its HTML still has labels
+     until React hydrates. Paint the ink column empty rather than a squashed
+     full rail; the icons arrive with hydration. */
+  :root[data-rail='collapsed'] [data-sidebar]:not([data-collapsed]) > * {
+    visibility: hidden;
+  }
+}
+
+/* While a pane edge or a compose window is dragged (data-dragging on <html>):
+   the cursor holds everywhere, nothing selects, email iframes stop swallowing
+   the pointer (pointer capture alone does not keep events out of an iframe in
+   every browser), and the rail's width transition is off so it follows the
+   pointer instead of trailing it by 200ms. */
+:root[data-dragging='col-resize'],
+:root[data-dragging='col-resize'] * {
+  cursor: col-resize !important;
+}
+:root[data-dragging='grabbing'],
+:root[data-dragging='grabbing'] * {
+  cursor: grabbing !important;
+}
+:root[data-dragging],
+:root[data-dragging] * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+:root[data-dragging] iframe {
+  pointer-events: none;
+}
+:root[data-dragging] [data-sidebar] {
+  transition: none;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -308,6 +392,19 @@
   to {
     opacity: 1;
     transform: translate(-50%, 0);
+  }
+}
+
+/* iOS zooms the page in when a field smaller than 16px takes focus, and
+   leaves it zoomed and panned sideways afterwards. Every field here is
+   12.5-14px by design, so every field did it. Gated to iOS and iPadOS WebKit
+   (the only engines that match -webkit-touch-callout), so everywhere else
+   keeps the design. :where() keeps the specificity at zero, so a deliberate
+   `!text-lg` still wins; !important because every field sets its size with
+   a utility class, which a plain element rule could never beat. */
+@supports (-webkit-touch-callout: none) {
+  :where(input, select, textarea, [contenteditable='true']) {
+    font-size: 16px !important;
   }
 }
 

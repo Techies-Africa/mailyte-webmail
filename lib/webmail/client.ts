@@ -10,9 +10,24 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
+import {
+  abortSessionChange,
+  announceAccountChange,
+  prepareSessionChange,
+  withAccountHeader,
+} from "./query/session";
+
+/**
+ * `status` on a failure is the HTTP status, or 0 when the server was never
+ * reached. The query layer uses it to decide what is worth retrying: a 4xx
+ * will say the same thing again, a dropped connection may not.
+ */
+/** Fired on the window when the proxy refuses a request made for another mailbox. */
+export const ACCOUNT_MISMATCH_EVENT = "mailyte:account-mismatch";
 
 export type ApiResult<T> =
-  { success: true; data: T } | { success: false; message: string };
+  | { success: true; data: T }
+  | { success: false; message: string; status?: number };
 
 async function call<T>(
   input: string,
@@ -21,17 +36,18 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
     return {
       success: false,
       message: "Could not reach the mail server. Check your connection.",
+      status: 0,
     };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: "Not logged in" };
+    return { success: false, message: "Not logged in", status: 401 };
   }
 
   const data = await res.json().catch(() => ({}) as Record<string, unknown>);
@@ -55,8 +71,20 @@ async function call<T>(
       if (window.location.pathname !== "/change-password") {
         window.location.assign("/change-password");
       }
-      return { success: false, message: "Set a new password to continue" };
+      return { success: false, message: "Set a new password to continue", status: 403 };
     }
+  }
+
+  // The proxy refused this request: it named a mailbox the session no longer
+  // has active (another tab switched, or a token expired and the next account
+  // took over). Tell the page, which checks whose mailbox this is and starts
+  // over on the right one.
+  if (
+    res.status === 409 &&
+    (data as { error_code?: string })?.error_code === "account_mismatch" &&
+    typeof window !== "undefined"
+  ) {
+    window.dispatchEvent(new Event(ACCOUNT_MISMATCH_EVENT));
   }
 
   // Two envelopes are accepted on purpose.
@@ -80,6 +108,7 @@ async function call<T>(
     return {
       success: false,
       message: body.message ?? body.msg ?? "Request failed",
+      status: res.status,
     };
   }
 
@@ -175,6 +204,12 @@ export interface ApiCapabilities {
      * the worst kind of wrong.
      */
     scheduled_send?: boolean;
+    /**
+     * The server takes one action on many messages in one request
+     * (POST /mailbox/messages/bulk). Optional: an older server does not have
+     * it, and the client then sends one request per message.
+     */
+    bulk_actions?: boolean;
   };
   /**
    * Shared mailboxes this person is a member of, with what they may do there.
@@ -382,6 +417,51 @@ export const setLabels = (
   remove: string[],
   onUnauthorized: () => void,
 ) => messageAction(id, "labels", { add, remove }, onUnauthorized);
+
+export type BulkAction =
+  | "mark_read"
+  | "mark_unread"
+  | "star"
+  | "unstar"
+  | "move"
+  | "trash"
+  | "delete"
+  | "labels";
+
+export interface BulkRequest {
+  ids: string[];
+  action: BulkAction;
+  /** The destination, for `move`. */
+  folder?: string;
+  /** Label names to add and remove, for `labels`. */
+  add?: string[];
+  remove?: string[];
+}
+
+/** One message's outcome. `new_id` is its id after a move; `error_code` says why it failed. */
+export interface BulkItemResult {
+  id: string;
+  ok: boolean;
+  new_id?: string | null;
+  error_code?: string | null;
+  message?: string | null;
+}
+
+/**
+ * One action on many messages at once. Answers 200 with a result per message
+ * even when some fail; a whole-request failure means none were attempted.
+ */
+export function bulkMessageAction(body: BulkRequest, onUnauthorized: () => void) {
+  return call<{ results: BulkItemResult[]; succeeded?: number; failed?: number }>(
+    "/api/webmail/messages/bulk",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    onUnauthorized,
+  );
+}
 
 /** Every label in use in the mailbox, as slugs. */
 export function listLabels(onUnauthorized: () => void) {
@@ -835,6 +915,7 @@ export function listAccounts() {
  * unload guard gets its say before anything is lost.
  */
 export async function switchAccount(email: string): Promise<string | null> {
+  await prepareSessionChange();
   const result = await call<{ accounts: AccountSummary[] }>(
     "/api/webmail-auth/accounts",
     {
@@ -844,8 +925,12 @@ export async function switchAccount(email: string): Promise<string | null> {
     },
     () => {},
   );
-  if (!result.success) return result.message;
+  if (!result.success) {
+    abortSessionChange();
+    return result.message;
+  }
   forgetDisplayAddress();
+  announceAccountChange();
   window.location.assign("/");
   return null;
 }
@@ -855,6 +940,7 @@ export async function switchAccount(email: string): Promise<string | null> {
  * Lands on the next account's inbox when one remains, else on the login page.
  */
 export async function signOut(all = false): Promise<void> {
+  await prepareSessionChange();
   const res = await fetch("/api/webmail-auth/logout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -864,6 +950,7 @@ export async function signOut(all = false): Promise<void> {
     data?: { remaining?: number };
   };
   forgetDisplayAddress();
+  announceAccountChange();
   window.location.assign(body?.data?.remaining ? "/" : "/login");
 }
 

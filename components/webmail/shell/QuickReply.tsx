@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Editor } from '@tiptap/react';
 import { Maximize2, Send } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
+import { useRevealInView } from './useRevealInView';
 
 type QuickReplyProps = {
   message: WebmailMessage;
@@ -18,6 +20,12 @@ type QuickReplyProps = {
   onCancel: () => void;
   /** Move what has been typed into a full compose window. */
   onExpand: (body: string) => void;
+  /**
+   * Bumped each time the person asks to reply while this card is already
+   * open in the same mode. Nothing else about the card changes then, so this
+   * is what brings it back into view and the caret back into it.
+   */
+  revealSignal?: number;
 };
 
 /**
@@ -28,6 +36,12 @@ type QuickReplyProps = {
  * indistinguishable on the wire from one written there. The quotation is
  * appended on send rather than shown, which is what an inline reply is for:
  * the original is already on screen above it.
+ *
+ * It opens at the very end of the message and the conversation below it, so
+ * on a long email it used to open off-screen and Reply looked dead. It now
+ * scrolls itself into view once its editor exists (and holds there while the
+ * message's images finish loading), and again whenever Reply is asked for
+ * while it is already open.
  */
 export default function QuickReply({
   message,
@@ -37,6 +51,7 @@ export default function QuickReply({
   onSend,
   onCancel,
   onExpand,
+  revealSignal,
 }: QuickReplyProps) {
   const recipients = useMemo(() => {
     if (mode === 'replyAll') return replyAllRecipients(message, selfAddress);
@@ -47,6 +62,33 @@ export default function QuickReply({
   const bodyRef = useRef(signatureSeed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [rootRef, reveal] = useRevealInView<HTMLDivElement>();
+  const editorRef = useRef<Editor | null>(null);
+
+  // First open, a switch between Reply and Reply all (the key remounts this
+  // card), and the r / a shortcuts all arrive here once the editor exists --
+  // the moment the card has its real height.
+  const handleReady = useCallback(
+    (editor: Editor) => {
+      editorRef.current = editor;
+      reveal();
+    },
+    [reveal],
+  );
+
+  // A repeat request with the card already open. The caret goes back where it
+  // was, not to the top: they may be halfway through a line. view.focus(),
+  // not commands.focus() -- see the Android note in WebmailEditor.
+  const seenSignal = useRef(revealSignal);
+  useEffect(() => {
+    if (revealSignal === seenSignal.current) return;
+    seenSignal.current = revealSignal;
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return; // still loading: handleReady reveals
+    editor.view.focus();
+    reveal();
+  }, [revealSignal, reveal]);
 
   const hasText = body.replace(/<[^>]*>/g, '').trim().length > 0 || /<img\b/i.test(body);
 
@@ -77,7 +119,14 @@ export default function QuickReply({
   };
 
   return (
-    <div data-shortcuts="off" className="animate-fade-in overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    // scroll margins: the pane's own padding below the card stays in view when
+    // its foot is aligned, and a card taller than the pane stops short of the
+    // header when its top is.
+    <div
+      ref={rootRef}
+      data-shortcuts="off"
+      className="animate-fade-in scroll-mb-4 scroll-mt-3 overflow-hidden rounded-xl border border-border bg-card shadow-sm sm:scroll-mb-5"
+    >
       <div className="flex items-start gap-2 border-b border-border/70 px-3.5 py-2.5">
         <span className="w-6 shrink-0 pt-px font-mono text-[11px] font-medium uppercase text-muted-foreground">To</span>
         <div className="min-w-0 flex-1 text-[13px]">
@@ -99,6 +148,7 @@ export default function QuickReply({
         placeholder="Write your reply…"
         compact
         toolbarPosition="bottom"
+        onReady={handleReady}
         onChange={(html) => {
           bodyRef.current = html;
           setBody(html);
@@ -113,7 +163,14 @@ export default function QuickReply({
           Discard
         </Button>
         <span className="flex-1" />
-        <Button variant="ghost" icon={<Maximize2 size={12} />} onClick={() => onExpand(bodyRef.current)} title="Attach files, change recipients or schedule">
+        {/* Words from sm up: at 360px they pushed this past the card's edge. */}
+        <Button
+          variant="ghost"
+          icon={<Maximize2 size={12} />}
+          collapseLabel
+          onClick={() => onExpand(bodyRef.current)}
+          title="Attach files, change recipients or schedule"
+        >
           Open in full editor
         </Button>
       </div>

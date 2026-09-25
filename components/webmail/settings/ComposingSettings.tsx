@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Undo2 } from 'lucide-react';
 import { updateSettings } from '@/lib/webmail/client';
 import Button from '@/components/ui/Button';
@@ -24,13 +24,21 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Follows the server copy while untouched, and after this form's own
+  // save; never over an edit in progress.
+  const reseedAfterSave = useRef(false);
+  const touched = useRef(false);
   useEffect(() => {
+    if (touched.current && !reseedAfterSave.current) return;
+    reseedAfterSave.current = false;
+    touched.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEnabled(settings.undoSendEnabled);
     setSeconds(settings.undoSendSeconds);
   }, [settings]);
 
   const touch = () => {
+    touched.current = true;
     setSaved(false);
     onDirty?.();
   };
@@ -44,6 +52,7 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
       setError(result.message);
       return;
     }
+    reseedAfterSave.current = true;
     onSettingsChanged?.();
     onSaved?.();
     setSaved(true);

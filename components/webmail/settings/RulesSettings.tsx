@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDown, ArrowUp, ListFilter, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { getRules, listFolders, listLabels, updateRules, type ApiRule } from '@/lib/webmail/client';
-import type { ApiFolder } from '@/lib/webmail/adapters';
+import { updateRules, type ApiRule } from '@/lib/webmail/client';
+import type { WebmailFolder } from '@/components/webmail/types';
+import { useLabels } from '@/lib/webmail/query/accountQueries';
+import { foldersQuery } from '@/lib/webmail/query/mailQueries';
+import { settingsKeys, useRules } from '@/lib/webmail/query/settingsQueries';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import { Hint, Input, Label, Select, Switch } from '@/components/ui/Field';
@@ -138,34 +142,25 @@ function actionText(a: { type: string; value?: string }): string {
   return meta.label;
 }
 
+const NO_FOLDERS: WebmailFolder[] = [];
+
 export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) {
   const { toast } = useToast();
-  const [rules, setRules] = useState<ApiRule[] | null>(null);
-  const [managed, setManaged] = useState(true);
-  const [folders, setFolders] = useState<ApiFolder[]>([]);
-  const [labels, setLabels] = useState<string[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // The rules are cached; the folders and labels are the same cached copies
+  // the mailbox uses, so none of the three loads again on a second visit.
+  const rulesResult = useRules(onUnauthorized);
+  const rules = rulesResult.data ? (rulesResult.data.rules ?? []) : null;
+  const managed = rulesResult.data?.managed !== false;
+  const loadError = !rulesResult.data && rulesResult.isError ? rulesResult.error.message : null;
+  const folders: WebmailFolder[] = useQuery(foldersQuery(queryClient, onUnauthorized)).data ?? NO_FOLDERS;
+  const labels = useLabels();
+
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<{ index: number | null; draft: Draft } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
-
-  useEffect(() => {
-    void getRules(onUnauthorized).then((result) => {
-      if (result.success && result.data) {
-        setRules(result.data.rules ?? []);
-        setManaged(result.data.managed !== false);
-      } else if (!result.success) {
-        setLoadError(result.message);
-      }
-    });
-    void listFolders(onUnauthorized).then((result) => {
-      if (result.success && Array.isArray(result.data)) setFolders(result.data);
-    });
-    void listLabels(onUnauthorized).then((result) => {
-      if (result.success && Array.isArray(result.data?.labels)) setLabels(result.data.labels);
-    });
-  }, [onUnauthorized]);
 
   /** Folders a rule may file into: yours, not a shared mailbox's. */
   const fileableFolders = useMemo(
@@ -180,18 +175,34 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
     [folders],
   );
 
-  /** Write the whole list; the server replaces the script in one go. */
+  // Only the newest write's answer may land: two quick toggles send two whole
+  // lists, and the first answer must not paint over the second.
+  const writeTicket = useRef(0);
+
+  /**
+   * Write the whole list; the server replaces the script in one go. The list
+   * on screen changes at once, and goes back, with the reason, if the server
+   * refuses.
+   */
   const persist = async (next: ApiRule[], done: string): Promise<boolean> => {
+    const ticket = ++writeTicket.current;
+    const before = queryClient.getQueryData(settingsKeys.rules);
+    queryClient.setQueryData(settingsKeys.rules, (prev: { rules: ApiRule[]; active: boolean; managed: boolean } | undefined) =>
+      prev ? { ...prev, rules: next } : prev,
+    );
     setBusy(true);
     setError(null);
     const result = await updateRules(next, onUnauthorized);
+    if (ticket !== writeTicket.current) return result.success;
     setBusy(false);
     if (!result.success) {
+      queryClient.setQueryData(settingsKeys.rules, before);
       setError(result.message);
       return false;
     }
-    setRules(result.data?.rules ?? next);
-    setManaged(true);
+    queryClient.setQueryData(settingsKeys.rules, (prev: { rules: ApiRule[]; active: boolean; managed: boolean } | undefined) =>
+      prev ? { ...prev, rules: result.data?.rules ?? next, managed: true } : prev,
+    );
     toast(done);
     return true;
   };
@@ -316,7 +327,9 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
               const enabled = rule.enabled !== false;
               return (
                 <li key={rule.id ?? index} className={`px-3.5 py-3 ${enabled ? '' : 'bg-muted/40'}`}>
-                  <div className="flex items-start gap-3">
+                  {/* On a phone the switch and buttons drop below the rule,
+                      which beside them had about 120px to say what it does. */}
+                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2 sm:flex-nowrap">
                     <div className="flex shrink-0 flex-col pt-0.5">
                       <button
                         type="button"
@@ -350,7 +363,7 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
                       </p>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
                       <Switch checked={enabled} onChange={(next) => toggle(index, next)} label={enabled ? 'On' : 'Off'} disabled={busy} />
                       <button
                         type="button"
@@ -427,7 +440,7 @@ export default function RulesSettings({ onUnauthorized }: SettingsSectionProps) 
 type RuleEditorProps = {
   draft: Draft;
   isNew: boolean;
-  folders: ApiFolder[];
+  folders: WebmailFolder[];
   labels: string[];
   busy: boolean;
   onCancel: () => void;
@@ -503,7 +516,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
               value={draft.match}
               onChange={(e) => update((d) => ({ ...d, match: e.target.value as 'all' | 'any' }))}
               aria-label="How many conditions must be true"
-              className="!w-auto py-1 pr-7"
+              size="sm"
             >
               <option value="all">all</option>
               <option value="any">any</option>
@@ -517,7 +530,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                   value={condition.field}
                   onChange={(e) => setCondition(index, { field: e.target.value as Field })}
                   aria-label={`Condition ${index + 1}: which part of the message`}
-                  className="sm:w-40"
+                  className="w-full sm:w-40"
                 >
                   {FIELDS.map((f) => (
                     <option key={f.value} value={f.value}>
@@ -529,7 +542,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                   value={condition.operator}
                   onChange={(e) => setCondition(index, { operator: e.target.value as Operator })}
                   aria-label={`Condition ${index + 1}: how to compare`}
-                  className="sm:w-44"
+                  className="w-full sm:w-44"
                 >
                   {OPERATORS.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -589,7 +602,7 @@ function RuleEditor({ draft: initial, isNew, folders, labels, busy, onCancel, on
                     value={action.type}
                     onChange={(e) => setAction(index, { type: e.target.value as ActionType, value: '' })}
                     aria-label={`Action ${index + 1}`}
-                    className="sm:w-52"
+                    className="w-full sm:w-52"
                   >
                     {ACTIONS.map((a) => (
                       <option key={a.value} value={a.value}>

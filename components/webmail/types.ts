@@ -61,6 +61,8 @@ export interface WebmailMessage extends WebmailListItem {
   bcc: WebmailParticipant[];
   /** The real RFC 822 Message-Id header, not the JMAP resource id. */
   messageIdHeader: string | null;
+  /** The Message-ID this one answers; on a saved reply draft, what keeps it in its thread. */
+  inReplyTo: string | null;
   references: string | null;
   attachments: WebmailAttachment[];
   /** What the headers say about where the message came from and how. */

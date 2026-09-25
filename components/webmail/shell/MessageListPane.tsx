@@ -30,8 +30,7 @@ import Menu from '@/components/ui/Menu';
 import { FilterPill } from '@/components/ui/Pill';
 import MessageRow from './MessageRow';
 import WebmailEmptyState from '../WebmailEmptyState';
-
-export const LIST_WIDTH = 360;
+import { LIST_PANE_ID, SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 function formatRelativeSync(date: Date): string {
   const seconds = Math.round((Date.now() - date.getTime()) / 1000);
@@ -65,8 +64,13 @@ type MessageListPaneProps = {
   onBulkDeleteForever: () => void;
   /** Phone drawer trigger, shown in the header under md. */
   onOpenMenu: () => void;
-  /** Fills the screen on phones; a fixed column otherwise. */
-  fullWidth: boolean;
+  /** Whether the phone drawer is out, for the Menu button's aria-expanded. */
+  menuOpen: boolean;
+  /**
+   * On a phone, under an open message: kept mounted -- and so scrolled where
+   * it was -- but hidden from sight, the Tab order and screen readers.
+   */
+  covered?: boolean;
   /** Bumped by the `/` shortcut: opens the search field and focuses it. */
   searchSignal?: number;
 };
@@ -83,7 +87,8 @@ export default function MessageListPane({
   onBulkLabel,
   onBulkDeleteForever,
   onOpenMenu,
-  fullWidth,
+  menuOpen,
+  covered = false,
   searchSignal = 0,
 }: MessageListPaneProps) {
   const {
@@ -95,6 +100,10 @@ export default function MessageListPane({
     total,
     offset,
     loadingList,
+    refreshing,
+    isPlaceholderPage,
+    prefetchNextPage,
+    prefetchMessage,
     error,
     lastSyncAt,
     refreshAll,
@@ -125,6 +134,13 @@ export default function MessageListPane({
 
   const [showSearch, setShowSearch] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // A cached view now replaces the last one in the same frame, so the
+  // scroll position has to be reset by hand: a new folder starts at the top.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rowsRef.current?.scrollTo({ top: 0 });
+  }, [activeFolder, activeSearch, searchScope, filter, offset]);
   const [scope, setScope] = useState(searchScope);
 
   // Open the field automatically when there is an active search (a deep link
@@ -181,15 +197,25 @@ export default function MessageListPane({
   ];
 
   return (
+    // pane-list: the full width on a phone, the remembered (draggable) width
+    // at md and up -- set in CSS (globals.css), so it is right on the first
+    // render rather than after an effect has measured the window.
     <section
+      id={LIST_PANE_ID}
       aria-label={`${title} messages`}
-      style={fullWidth ? undefined : { width: LIST_WIDTH }}
-      className={`flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card ${fullWidth ? 'w-full' : ''}`}
+      className={`pane-list flex h-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-border bg-card ${covered ? 'invisible' : ''}`}
     >
       {/* Header */}
       <div className="shrink-0 border-b border-border px-3.5 pb-2 pt-3">
         <div className="mb-2 flex items-center gap-1.5">
-          <IconButton label="Menu" size="sm" onClick={onOpenMenu} className="md:hidden">
+          <IconButton
+            label="Menu"
+            size="sm"
+            onClick={onOpenMenu}
+            aria-expanded={menuOpen}
+            aria-controls={SIDEBAR_ID}
+            className="md:hidden"
+          >
             <MenuIcon size={15} />
           </IconButton>
           <h2 className="min-w-0 flex-1 truncate font-display text-[15px] font-bold tracking-tight">
@@ -221,7 +247,7 @@ export default function MessageListPane({
             </IconButton>
           )}
           <IconButton label="Refresh (g)" size="sm" onClick={refreshAll}>
-            <RefreshCw size={13} strokeWidth={2.2} className={loadingList ? 'animate-spin' : ''} />
+            <RefreshCw size={13} strokeWidth={2.2} className={refreshing ? 'animate-spin' : ''} />
           </IconButton>
         </div>
 
@@ -232,12 +258,14 @@ export default function MessageListPane({
               <input
                 ref={searchRef}
                 type="search"
+                enterKeyHint="search"
                 data-webmail-search
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') submitSearch();
                   if (e.key === 'Escape') {
+                    e.preventDefault(); // handled: an open reply or message stays put
                     closeSearch();
                     (e.target as HTMLInputElement).blur();
                   }
@@ -264,7 +292,8 @@ export default function MessageListPane({
               <FilterPill active={scope === 'all'} onClick={() => setScope('all')}>
                 All mail
               </FilterPill>
-              <span className="ml-auto text-[10.5px] text-muted-foreground">Enter to search</span>
+              {/* A keyboard hint, for where there is a keyboard. */}
+              <span className="ml-auto hidden text-[10.5px] text-muted-foreground can-hover:inline">Enter to search</span>
             </div>
           </div>
         )}
@@ -313,20 +342,22 @@ export default function MessageListPane({
           <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-primary">
             {selectedIds.length} selected
           </span>
-          <Button size="xs" onClick={() => void setRead(selectedIds, true)}>
+          {/* Icons alone on a phone (collapseLabel): with their words the
+              buttons pushed "N selected" down to a couple of letters. */}
+          <Button size="xs" icon={<MailOpen size={12} />} collapseLabel onClick={() => void setRead(selectedIds, true)}>
             Mark read
           </Button>
           {!inTrash && (
-            <Button size="xs" icon={<Archive size={12} />} onClick={() => void archive(selectedIds)}>
+            <Button size="xs" icon={<Archive size={12} />} collapseLabel onClick={() => void archive(selectedIds)}>
               Archive
             </Button>
           )}
           {inTrash ? (
-            <Button size="xs" variant="danger" onClick={onBulkDeleteForever}>
+            <Button size="xs" variant="danger" icon={<Trash2 size={12} />} collapseLabel onClick={onBulkDeleteForever}>
               Delete forever
             </Button>
           ) : (
-            <Button size="xs" variant="danger" onClick={() => void trash(selectedIds)}>
+            <Button size="xs" variant="danger" icon={<Trash2 size={12} />} collapseLabel onClick={() => void trash(selectedIds)}>
               Delete
             </Button>
           )}
@@ -374,7 +405,11 @@ export default function MessageListPane({
       )}
 
       {/* Rows */}
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+      {/* A neighbouring page stands in, dimmed, while the asked-for one loads. */}
+      <div
+        ref={rowsRef}
+        className={`thin-scroll min-h-0 flex-1 overflow-y-auto transition-opacity ${isPlaceholderPage ? 'opacity-60' : ''}`}
+      >
         {loadingList ? (
           <div>
             {Array.from({ length: 10 }).map((_, i) => (
@@ -413,6 +448,7 @@ export default function MessageListPane({
               showFolder={showFolderTags || isLabelView}
               autoTags={autoTags}
               onOpen={() => onOpen(email)}
+              onHover={() => prefetchMessage(email)}
               onSelect={(selected) =>
                 setSelectedIds((prev) =>
                   selected ? [...prev, email.id] : prev.filter((id) => id !== email.id),
@@ -443,7 +479,13 @@ export default function MessageListPane({
         >
           <ChevronLeft size={14} />
         </IconButton>
-        <IconButton label="Older messages" size="xs" disabled={!hasNext} onClick={() => goToPage(offset + PAGE_SIZE)}>
+        <IconButton
+          label="Older messages"
+          size="xs"
+          disabled={!hasNext}
+          onClick={() => goToPage(offset + PAGE_SIZE)}
+          onMouseEnter={prefetchNextPage}
+        >
           <ChevronRight size={14} />
         </IconButton>
       </div>

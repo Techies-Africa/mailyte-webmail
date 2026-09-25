@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useKeepOnScreen } from '@/components/ui/useKeepOnScreen';
 
 /**
  * A small emoji palette for the compose toolbar.
@@ -39,13 +40,18 @@ type EmojiPickerProps = {
 export default function EmojiPicker({ onPick, onClose, direction = 'up' }: EmojiPickerProps) {
   const [group, setGroup] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  // Mounted only while open. On a phone the toolbar wraps and the button can
+  // sit near the left edge, where this right-anchored palette ran off it.
+  useKeepOnScreen(ref, true);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) onClose();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault(); // handled: nothing further out closes on the same key
+      onClose();
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);

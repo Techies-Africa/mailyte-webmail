@@ -5,9 +5,8 @@ import type { NextConfig } from 'next';
 // there (a CSP nonce and per-path frame-ancestors for an embed widget that
 // does not exist in this repo).
 //
-// Note what is NOT here: no middleware. The original needed one only to
-// EXEMPT /webmail from an admin session check. There is no admin session to
-// be exempted from, so the file is gone rather than emptied.
+// The request proxy (proxy.ts) is not here either: it refuses mailbox requests
+// meant for an account the session cookie no longer makes active.
 const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -21,6 +20,14 @@ const nextConfig: NextConfig = {
   // Required by the Dockerfile: emits a self-contained server bundle so the
   // runtime image does not need node_modules.
   output: 'standalone',
+  experimental: {
+    // With a proxy in place, Next buffers each request body so both the proxy
+    // and the route can read it -- and past this size it keeps only the first
+    // part and carries on, without an error. A send carries up to 25 MB of
+    // attachments plus the message itself, so the default 10 MB cut messages
+    // short. This leaves room for both.
+    proxyClientMaxBodySize: '30mb',
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

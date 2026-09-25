@@ -6,6 +6,12 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   /** A spinner replaces the icon and the button stops accepting clicks. */
   busy?: boolean;
   icon?: React.ReactNode;
+  /**
+   * Below `sm`, draw the icon alone. Toolbars whose words fit a desktop row
+   * push a 360px phone row off the edge; the words stay the accessible name.
+   * Needs `icon`, and a plain string label.
+   */
+  collapseLabel?: boolean;
 };
 
 const SIZES = {
@@ -28,13 +34,17 @@ const VARIANTS = {
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'sm', busy = false, icon, className, children, type = 'button', disabled, ...rest },
+  { variant = 'secondary', size = 'sm', busy = false, icon, collapseLabel = false, className, children, type = 'button', disabled, ...rest },
   ref,
 ) {
+  // A hidden span is not read out, so the name moves to aria-label. `rest`
+  // comes after it and can still override.
+  const name = collapseLabel && typeof children === 'string' ? children : undefined;
   return (
     <button
       ref={ref}
       type={type}
+      aria-label={name}
       disabled={disabled || busy}
       className={[
         'inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-[filter,background-color,color] disabled:cursor-not-allowed disabled:opacity-50',
@@ -52,7 +62,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       ) : (
         icon
       )}
-      {children}
+      {/* Flex gap skips a display:none child, so no stray gap is left behind. */}
+      {collapseLabel ? <span className="hidden sm:inline">{children}</span> : children}
     </button>
   );
 });
