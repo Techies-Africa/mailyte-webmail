@@ -281,13 +281,18 @@
  * rail. When even their floors do not fit (a 768px tablet), the floors win --
  * clamp's minimum beats a smaller maximum.
  *
+ * Each pane's cap grows with a wide screen: 360px or 20vw for the rail, 640px
+ * or 40vw for the list (RAIL_MAX_SHARE / LIST_MAX_SHARE). A width chosen on
+ * an ultrawide shows at the smaller cap on a laptop, and comes back on the
+ * ultrawide.
+ *
  * Deliberately outside any @layer: always emitted (no class to purge), and
  * after the utilities, so it wins over them. */
 :root {
   --rail-w: 228px;
   --list-w: 360px;
-  --rail-now: clamp(200px, var(--rail-w), calc(100vw - 740px)); /* 740 = list floor 320 + reading 420 */
-  --list-now: clamp(320px, var(--list-w), calc(100vw - var(--rail-now) - 420px));
+  --rail-now: clamp(200px, var(--rail-w), min(calc(100vw - 740px), max(360px, 20vw))); /* 740 = list floor 320 + reading 420 */
+  --list-now: clamp(320px, var(--list-w), min(calc(100vw - var(--rail-now) - 420px), max(640px, 40vw)));
 }
 :root[data-rail='collapsed'] {
   --rail-now: 58px;

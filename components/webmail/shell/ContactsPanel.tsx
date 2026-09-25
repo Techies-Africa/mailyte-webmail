@@ -57,9 +57,15 @@ export default function ContactsPanel({ open, onClose, onLeave, contacts, onWrit
   }, [book, query]);
 
   return (
-    <FloatingPanel open={open} onClose={onClose} label="Contacts" width={300}>
+    <FloatingPanel open={open} onClose={onClose} label="Contacts" width={300} positionKey="contacts">
       <div className="border-b border-border px-4 pb-3 pt-3.5">
-        <div className="mb-2.5 font-display text-[13.5px] font-bold">Contacts</div>
+        <div
+          data-drag-handle
+          title="Drag to move. Double-click to put it back."
+          className="mb-2.5 font-display text-[13.5px] font-bold md:cursor-grab md:touch-none md:select-none"
+        >
+          Contacts
+        </div>
         <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5">
           <Search size={12} strokeWidth={2.2} className="shrink-0 text-muted-foreground" />
           <input

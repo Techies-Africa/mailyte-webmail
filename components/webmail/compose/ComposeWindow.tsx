@@ -6,6 +6,7 @@ import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../t
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
 import WebmailRecipientInput from '../WebmailRecipientInput';
+import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
 import ConfirmModal from '../modals/ConfirmModal';
@@ -94,6 +95,8 @@ type ComposeWindowProps = {
   onFullscreen: () => void;
   onRestore: () => void;
   onLabelChange: (label: string) => void;
+  /** The To line changed: the dock's minimized tab names who the message is for. */
+  onToChange: (to: string) => void;
   onDraftId: (draftId: string) => void;
   /** How many files are attached, so the page can warn before they are lost. */
   onAttachmentsChange?: (count: number) => void;
@@ -138,6 +141,7 @@ export default function ComposeWindow({
   onFullscreen,
   onRestore,
   onLabelChange,
+  onToChange,
   onDraftId,
   onAttachmentsChange,
   onSend,
@@ -221,6 +225,16 @@ export default function ComposeWindow({
   useEffect(() => {
     onLabelChangeRef.current(draft.subject.trim() || MODE_TITLE[mode]);
   }, [draft.subject, mode]);
+
+  // The same for the To line, which the minimized tab reads for the
+  // recipient's name and avatar. Through a ref for the same reason.
+  const onToChangeRef = useRef(onToChange);
+  useEffect(() => {
+    onToChangeRef.current = onToChange;
+  }, [onToChange]);
+  useEffect(() => {
+    onToChangeRef.current(draft.to);
+  }, [draft.to]);
 
   // A restored message already carries its quotation in initialBody.
   const quoted = useMemo(
@@ -424,6 +438,12 @@ export default function ComposeWindow({
 
   const title = draft.subject.trim() || MODE_TITLE[mode];
 
+  // Who this is addressed to, if anyone -- the exact computation the
+  // minimized tab uses (primaryRecipient), so the two can never show a
+  // different person for the same window. Null while To is empty, so a
+  // blank compose window still shows you, as it always has.
+  const person = useMemo(() => primaryRecipient(draft.to, contacts, replyTo), [draft.to, contacts, replyTo]);
+
   // The keyboard's way to reorder: from any control in the title bar. The
   // row's slots count from the right edge, so ArrowLeft is +1.
   const onTitleKeyDown = (event: React.KeyboardEvent) => {
@@ -451,10 +471,24 @@ export default function ComposeWindow({
       }}
     >
       <div className="flex min-w-0 items-center gap-2.5">
-        <Avatar name={selfName ?? selfAddress} email={selfAddress} size={fullscreen ? 34 : 30} onDark className="!bg-primary !text-primary-foreground" />
+        {/* Once someone is in To, this and the minimized tab (ComposeDock's
+            DockTab) show THAT person -- never "you" in one and "them" in the
+            other. Blank, it falls back to you, exactly as before. */}
+        <Avatar
+          name={person?.name ?? (selfName ?? selfAddress)}
+          email={person?.email ?? selfAddress}
+          size={fullscreen ? 34 : 30}
+          onDark
+          className={person ? undefined : '!bg-primary !text-primary-foreground'}
+        />
         <div className="min-w-0">
-          <div className="max-w-[280px] truncate text-[12.5px] font-semibold">{fullscreen ? from : title}</div>
-          <div className="truncate text-[10.5px] text-white/45">{fullscreen ? title : from}</div>
+          <div className="flex max-w-[280px] items-baseline gap-1 text-[12.5px] font-semibold">
+            <span className="min-w-0 truncate">{person ? person.name : fullscreen ? from : title}</span>
+            {person && person.others > 0 && (
+              <span className="shrink-0 text-[11px] font-medium text-white/55">+{person.others}</span>
+            )}
+          </div>
+          <div className="truncate text-[10.5px] text-white/45">{person ? title : fullscreen ? title : from}</div>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
@@ -510,12 +544,12 @@ export default function ComposeWindow({
       <div className="shrink-0">
         {fromOptions.length > 0 && (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
-            <span className="w-8 shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">From</span>
+            <span className="shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">From</span>
             <select
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               aria-label="Send as"
-              className="min-w-0 flex-1 bg-transparent py-1 text-[13px] text-foreground outline-none"
+              className="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none"
             >
               <option value={selfAddress}>
                 {selfName ? `${selfName} <${selfAddress}>` : selfAddress}
@@ -545,14 +579,14 @@ export default function ComposeWindow({
           <WebmailRecipientInput label="Bcc" value={draft.bcc} onChange={(value) => touch({ bcc: value })} contacts={contacts} placeholder="bcc@domain.com" />
         )}
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
-          <span className="w-8 shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Subj</span>
+          <span className="shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Subj</span>
           <input
             type="text"
             value={draft.subject}
             onChange={(e) => touch({ subject: e.target.value })}
             placeholder="Subject"
             aria-label="Subject"
-            className="min-w-0 flex-1 bg-transparent py-1.5 text-[13px] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground/60"
+            className="h-8 min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground/60"
           />
         </div>
       </div>

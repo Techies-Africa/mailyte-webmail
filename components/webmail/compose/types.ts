@@ -52,6 +52,8 @@ export interface ComposeWindow {
   layout: ComposeLayout;
   /** What the title bar and the minimized tab show; follows the subject. */
   label: string;
+  /** The To line as it stands, reported by the window: the minimized tab names who the message is for. */
+  to: string;
   /** Bumped to remount the window when its content is replaced from outside. */
   seed: number;
   /**

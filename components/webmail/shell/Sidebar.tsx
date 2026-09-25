@@ -7,10 +7,12 @@ import { useTheme } from 'next-themes';
 import {
   ChevronDown,
   Keyboard,
+  LoaderCircle,
   LogOut,
   Menu as MenuIcon,
   Moon,
   Plus,
+  Power,
   Settings,
   ShieldCheck,
   Sun,
@@ -21,6 +23,7 @@ import { BrandLockup } from '@/components/brand/BrandMark';
 import Avatar from '@/components/ui/Avatar';
 import IconButton from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
+import { useKeepOnScreen } from '@/components/ui/useKeepOnScreen';
 import { signOut, switchAccount } from '@/lib/webmail/client';
 import { useAccounts } from '@/lib/webmail/query/accountQueries';
 import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
@@ -99,7 +102,8 @@ export default function Sidebar({
   const router = useRouter();
   const { toast } = useToast();
   const [profileOpen, setProfileOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /** The mailbox being switched to: its row shows a spinner until the page reloads into it. */
+  const [switching, setSwitching] = useState<string | null>(null);
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -130,6 +134,8 @@ export default function Sidebar({
   const asideRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useKeepOnScreen(menuRef, profileOpen);
   // Read through a ref: callers pass a fresh arrow each render, and the
   // listeners below should not re-attach -- and so move behind the ones they
   // must run after -- every time the page re-renders.
@@ -174,10 +180,10 @@ export default function Sidebar({
   }, [isMobile, mobileOpen]);
 
   const switchTo = async (target: string) => {
-    setBusy(true);
+    setSwitching(target);
     const error = await switchAccount(target);
     if (error) {
-      setBusy(false);
+      setSwitching(null);
       toast(error, { tone: 'error' });
     }
   };
@@ -322,88 +328,105 @@ export default function Sidebar({
               {/* Above the docked compose windows (z-140 and up): with a wide
                   rail the menu opens over them. */}
               <div aria-hidden onClick={() => setProfileOpen(false)} className="fixed inset-0 z-[155]" />
+              {/* Its own width, not the rail's. Stretched to the rail it was
+                  180px wide once the rail was dragged to its narrowest, and
+                  every address in it was cut short. Wider than the rail it
+                  spills over the page; on a phone it is nudged back on screen;
+                  on a short screen the middle scrolls, so the other accounts
+                  and sign-out stay reachable instead of running off the top. */}
               <div
+                ref={menuRef}
                 role="menu"
                 aria-label="Account"
-                className={[
-                  'absolute bottom-[calc(100%+6px)] z-[160] w-64 animate-fade-in overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel',
-                  rail ? 'left-0' : 'inset-x-0 w-auto',
-                ].join(' ')}
+                className="absolute bottom-[calc(100%+6px)] left-0 z-[160] flex max-h-[calc(100dvh-7.5rem)] w-72 min-w-[min(100%,360px)] max-w-[calc(100vw-1.25rem)] animate-fade-in flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel"
               >
-                <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-3">
-                  <Avatar name={name ?? email} email={email} size={30} />
-                  <span className="min-w-0">
-                    {name && <span className="block truncate text-[12.5px] font-bold">{name}</span>}
-                    <span className="block truncate font-mono text-[11px] text-muted-foreground">{email}</span>
+                <div className="flex shrink-0 items-center gap-3 border-b border-border px-3.5 py-3">
+                  <Avatar name={name ?? email} email={email} size={36} />
+                  <span className="min-w-0 flex-1">
+                    {name && <span className="block truncate text-[13px] font-semibold">{name}</span>}
+                    {/* Wraps rather than truncates: which mailbox this is must be readable in full. */}
+                    <span className="block text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{email}</span>
                   </span>
                 </div>
 
-                {others.length > 0 && (
-                  <div className="border-b border-border p-1.5">
-                    <div className="px-2 pb-1 pt-1 font-mono text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                      Switch to
+                <div className="thin-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  {others.length > 0 && (
+                    <div className="border-b border-border p-1.5">
+                      <div className="px-2 pb-1 pt-1 font-mono text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Switch to
+                      </div>
+                      {others.map((account) => (
+                        <button
+                          key={account.email}
+                          type="button"
+                          role="menuitem"
+                          disabled={switching !== null}
+                          onClick={() => void switchTo(account.email)}
+                          title={account.email}
+                          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-60"
+                        >
+                          <Avatar name={account.email} email={account.email} size={28} />
+                          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">{account.email}</span>
+                          {switching === account.email && (
+                            <LoaderCircle size={14} aria-hidden className="shrink-0 animate-spin text-muted-foreground" />
+                          )}
+                        </button>
+                      ))}
+                      {switching && (
+                        <p role="status" className="sr-only">
+                          Switching to {switching}
+                        </p>
+                      )}
                     </div>
-                    {others.map((account) => (
-                      <button
-                        key={account.email}
-                        type="button"
-                        role="menuitem"
-                        disabled={busy}
-                        onClick={() => void switchTo(account.email)}
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-muted disabled:opacity-50"
-                      >
-                        <Avatar name={account.email} email={account.email} size={24} />
-                        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{account.email}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  )}
 
-                <div className="p-1.5">
-                  <ProfileMenuItem
-                    icon={<UserPlus size={13} />}
-                    label="Add another account"
-                    onClick={() => {
-                      setProfileOpen(false);
-                      if (onLeave && !onLeave()) return;
-                      router.push('/login?add=1');
-                    }}
-                  />
-                  <ProfileMenuItem
-                    icon={<Settings size={13} />}
-                    label="Settings"
-                    onClick={() => {
-                      setProfileOpen(false);
-                      onOpenSettings();
-                    }}
-                  />
-                  {onOpenSecurity && (
+                  <div className="p-1.5">
                     <ProfileMenuItem
-                      icon={<ShieldCheck size={13} />}
-                      label="Security"
+                      icon={<UserPlus size={13} />}
+                      label="Add another account"
                       onClick={() => {
                         setProfileOpen(false);
-                        onOpenSecurity();
+                        if (onLeave && !onLeave()) return;
+                        router.push('/login?add=1');
                       }}
                     />
-                  )}
-                  {/* Not on a touch screen, where there is no keyboard to use them. */}
-                  {onShowShortcuts && canHover && (
                     <ProfileMenuItem
-                      icon={<Keyboard size={13} />}
-                      label="Keyboard shortcuts"
+                      icon={<Settings size={13} />}
+                      label="Settings"
                       onClick={() => {
                         setProfileOpen(false);
-                        onShowShortcuts();
+                        onOpenSettings();
                       }}
                     />
-                  )}
+                    {onOpenSecurity && (
+                      <ProfileMenuItem
+                        icon={<ShieldCheck size={13} />}
+                        label="Security"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          onOpenSecurity();
+                        }}
+                      />
+                    )}
+                    {/* Not on a touch screen, where there is no keyboard to use them. */}
+                    {onShowShortcuts && canHover && (
+                      <ProfileMenuItem
+                        icon={<Keyboard size={13} />}
+                        label="Keyboard shortcuts"
+                        onClick={() => {
+                          setProfileOpen(false);
+                          onShowShortcuts();
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
 
-                <div className="border-t border-border p-1.5">
+                <div className="shrink-0 border-t border-border p-1.5">
                   <ProfileMenuItem
                     icon={<LogOut size={13} />}
-                    label={others.length > 0 ? `Sign out of ${email}` : 'Sign out'}
+                    label="Sign out"
+                    hint={others.length > 0 ? email : undefined}
                     danger
                     onClick={() => {
                       setProfileOpen(false);
@@ -412,7 +435,7 @@ export default function Sidebar({
                   />
                   {others.length > 0 && (
                     <ProfileMenuItem
-                      icon={<LogOut size={13} />}
+                      icon={<Power size={13} />}
                       label="Sign out of all accounts"
                       danger
                       onClick={() => {
@@ -438,11 +461,14 @@ export default function Sidebar({
 function ProfileMenuItem({
   icon,
   label,
+  hint,
   onClick,
   danger = false,
 }: {
   icon: React.ReactNode;
   label: string;
+  /** A second, muted line: which mailbox a sign-out is for. */
+  hint?: string;
   onClick: () => void;
   danger?: boolean;
 }) {
@@ -451,12 +477,17 @@ function ProfileMenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 truncate rounded-lg px-3 py-2 text-left text-[12.5px] font-semibold ${
+      title={hint ? `${label} (${hint})` : label}
+      aria-label={hint ? `${label}, ${hint}` : undefined}
+      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12.5px] font-semibold ${
         danger ? 'text-destructive hover:bg-destructive/10' : 'text-foreground hover:bg-muted'
       }`}
     >
       <span className="shrink-0">{icon}</span>
-      <span className="truncate">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {hint && <span className="block truncate text-[11px] font-normal text-muted-foreground">{hint}</span>}
+      </span>
     </button>
   );
 }

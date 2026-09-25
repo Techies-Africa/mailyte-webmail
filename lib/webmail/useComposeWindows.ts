@@ -133,6 +133,7 @@ export function useComposeWindows() {
             threading: options.threading,
             layout,
             label,
+            to: options.resumed?.to ?? '',
             seed: 0,
             activatedAt: stamp,
             created: stamp,
@@ -180,7 +181,7 @@ export function useComposeWindows() {
     });
   }, []);
 
-  // All four below return the SAME array when nothing changed. A fresh array
+  // All five below return the SAME array when nothing changed. A fresh array
   // from map() is a state change to React even when every element is
   // identical, and the window's label effect fires after every render -- so
   // "no change" has to be literally no change, or the two chase each other
@@ -191,6 +192,15 @@ export function useComposeWindows() {
       const target = current.find((w) => w.id === id);
       if (!target || target.label === label) return current;
       return current.map((w) => (w.id === id ? { ...w, label } : w));
+    });
+  }, []);
+
+  /** The To line, for the minimized tab. Same-array guarded, like the label it sits beside. */
+  const setTo = useCallback((id: string, to: string) => {
+    setWindows((current) => {
+      const target = current.find((w) => w.id === id);
+      if (!target || target.to === to) return current;
+      return current.map((w) => (w.id === id ? { ...w, to } : w));
     });
   }, []);
 
@@ -235,6 +245,7 @@ export function useComposeWindows() {
     closeCompose,
     setLayout,
     setLabel,
+    setTo,
     setDraftId,
     activate,
     moveWindow,

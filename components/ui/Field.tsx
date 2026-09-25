@@ -9,32 +9,54 @@ import { ChevronDown } from 'lucide-react';
 export const fieldClass =
   'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:bg-primary/[0.04] focus:ring-2 focus:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50';
 
-type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
+/**
+ * The same control as a soft grey well with no border until it has focus:
+ * the event dialog's look, where a border round every field turned the form
+ * into a grid of boxes. Same size and radius as fieldClass.
+ */
+export const filledFieldClass =
+  'w-full rounded-lg border border-transparent bg-muted/70 px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60';
+
+/** `outline` everywhere a form takes input; `filled` in the event dialog. */
+export type FieldVariant = 'outline' | 'filled';
+
+const FIELD_VARIANTS: Record<FieldVariant, string> = { outline: fieldClass, filled: filledFieldClass };
+
+type InputProps = React.InputHTMLAttributes<HTMLInputElement> & { variant?: FieldVariant };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, ...rest },
+  { className, variant = 'outline', ...rest },
   ref,
 ) {
-  return <input ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return <input ref={ref} className={`${FIELD_VARIANTS[variant]} ${className ?? ''}`} {...rest} />;
 });
 
-type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & { variant?: FieldVariant };
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { className, ...rest },
+  { className, variant = 'outline', ...rest },
   ref,
 ) {
-  return <textarea ref={ref} className={`${fieldClass} ${className ?? ''}`} {...rest} />;
+  return <textarea ref={ref} className={`${FIELD_VARIANTS[variant]} ${className ?? ''}`} {...rest} />;
 });
 
 type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'size'> & {
   /** 'md' matches Input (38px); 'sm' (32px) is for a select inside a sentence or a toolbar. */
   size?: 'sm' | 'md';
+  variant?: FieldVariant;
 };
 
 const SELECT_SIZES = {
   md: 'py-2 pl-3 pr-9 text-sm',
   sm: 'py-1.5 pl-2.5 pr-8 text-[12.5px] leading-[18px]',
+};
+
+/** Each variant's box and focus ring (focus-visible: see below). */
+const SELECT_VARIANTS: Record<FieldVariant, string> = {
+  outline:
+    'border-input bg-background focus-visible:border-primary focus-visible:bg-primary/[0.04] focus-visible:ring-2 focus-visible:ring-primary/25',
+  filled:
+    'border-transparent bg-muted/70 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary/20',
 };
 
 /**
@@ -59,7 +81,7 @@ const SELECT_SIZES = {
  * sat in a different place in every browser.
  */
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { className, size = 'md', ...rest },
+  { className, size = 'md', variant = 'outline', ...rest },
   ref,
 ) {
   return (
@@ -69,8 +91,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         ref={ref}
         {...rest}
         className={[
-          'peer block w-full cursor-pointer appearance-none rounded-lg border border-input bg-background text-foreground outline-none transition-colors',
-          'focus-visible:border-primary focus-visible:bg-primary/[0.04] focus-visible:ring-2 focus-visible:ring-primary/25',
+          'peer block w-full cursor-pointer appearance-none rounded-lg border text-foreground outline-none transition-colors',
+          SELECT_VARIANTS[variant],
           'disabled:cursor-not-allowed disabled:opacity-50',
           SELECT_SIZES[size],
         ].join(' ')}

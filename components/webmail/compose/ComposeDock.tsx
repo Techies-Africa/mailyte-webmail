@@ -8,6 +8,8 @@ import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } 
 import type { SendContext } from '@/lib/webmail/useMailbox';
 import ComposeWindow from './ComposeWindow';
 import IconButton from '@/components/ui/IconButton';
+import Avatar from '@/components/ui/Avatar';
+import { primaryRecipient, type Recipient } from '../recipients';
 import { PANE_RESIZE_END_EVENT } from '@/lib/webmail/paneLayout';
 import {
   COMPOSE_RIGHT,
@@ -102,7 +104,7 @@ export default function ComposeDock({
   onSaveDraft,
   onDiscardDraft,
 }: ComposeDockProps) {
-  const { windows, closeCompose, setLayout, setLabel, setDraftId, reportAttachments, activate, moveWindow } = compose;
+  const { windows, closeCompose, setLayout, setLabel, setTo, setDraftId, reportAttachments, activate, moveWindow } = compose;
   const viewport = useSyncExternalStore(subscribeToViewport, getViewport, getServerViewport);
   const slots = layoutSlots(windows, viewport.width, viewport.inset);
 
@@ -228,6 +230,7 @@ export default function ComposeDock({
               onFullscreen={() => setLayout(w.id, 'fullscreen')}
               onRestore={() => setLayout(w.id, 'open')}
               onLabelChange={(label) => setLabel(w.id, label)}
+              onToChange={(to) => setTo(w.id, to)}
               onDraftId={(draftId) => setDraftId(w.id, draftId)}
               onAttachmentsChange={(count) => reportAttachments(w.id, count)}
               onSend={(payload) => onSend(payload, { mode: w.mode, replyTo: w.replyTo, draftId: w.draftId })}
@@ -237,6 +240,7 @@ export default function ComposeDock({
             {!isMobile && w.layout === 'minimized' && (
               <DockTab
                 label={w.label}
+                person={primaryRecipient(w.to, contacts, w.replyTo)}
                 slot={{ ...slot, zIndex }}
                 canReorder={canReorder}
                 drag={drag}
@@ -260,6 +264,7 @@ export default function ComposeDock({
             <DockTab
               key={w.id}
               label={w.label}
+              person={primaryRecipient(w.to, contacts, w.replyTo)}
               canReorder={false}
               drag={dragFor(w)}
               restoreRef={tabRefFor(w.id)}
@@ -280,6 +285,8 @@ export default function ComposeDock({
 
 type DockTabProps = {
   label: string;
+  /** Who the message is for, drawn as LinkedIn draws a collapsed chat; null until To has someone. */
+  person: Recipient | null;
   /** Docked in its own slot on a desktop. Absent: one of a phone's strip of tabs, in flow. */
   slot?: Slot & { zIndex: number };
   canReorder: boolean;
@@ -296,18 +303,24 @@ type DockTabProps = {
 /**
  * A minimized window, as a tab in the window's own slot of the row.
  *
+ * With someone in To it reads like a collapsed chat: their avatar and name
+ * (+N when there are more), the subject beneath -- a row of "New message"
+ * tabs could not be told apart. Before then, the subject alone.
+ *
  * The restore region and Close are siblings, never one inside the other: a
  * button nested in a button is two controls a screen reader cannot tell
  * apart, and a click on Close restored the window first. The restore region
  * is a `role="button"` div rather than a <button> so that a press anywhere on
  * the tab but Close can start a drag (useDockDrag ignores presses on real
- * buttons). A drag's drop does not restore it; a click does.
+ * buttons); the avatar and name inside it are plain spans for the same
+ * reason. A drag's drop does not restore it; a click does.
  *
  * `data-shortcuts="off"`: Enter and Space on a focused tab restore it, and
  * must not also open the selected message.
  */
 function DockTab({
   label,
+  person,
   slot,
   canReorder,
   drag: dragCallbacks,
@@ -334,12 +347,17 @@ function DockTab({
     onMoveBy(event.key === 'ArrowLeft' ? 1 : -1);
   };
 
+  // What the tab is called, for its tooltip and for screen readers.
+  const name = person
+    ? `${person.name}${person.others > 0 ? ` and ${person.others} more` : ''}: ${label}`
+    : label;
+
   return (
     <div
       ref={rootRef}
       data-shortcuts="off"
       role="group"
-      aria-label={`${label}, minimized`}
+      aria-label={`${name}, minimized`}
       // On a phone a press must not raise a tab: the window in front is the
       // one used last, and it would swap under the finger before the tap.
       onFocusCapture={onActivate}
@@ -357,8 +375,8 @@ function DockTab({
         ref={restoreRef}
         role="button"
         tabIndex={0}
-        title="Restore"
-        aria-label={`Restore ${label}`}
+        title={name}
+        aria-label={`Restore ${name}`}
         onClick={onRestore}
         onKeyDown={(event) => {
           if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -366,12 +384,32 @@ function DockTab({
           event.preventDefault();
           onRestore();
         }}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch rounded-tl-xl pl-3.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60"
+        className={[
+          'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch rounded-tl-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60',
+          person ? 'pl-2' : 'pl-3.5',
+        ].join(' ')}
       >
-        <Mail size={12} className="shrink-0 text-white/50" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">{label}</span>
+        {person ? (
+          <>
+            <Avatar name={person.name} email={person.email} size={24} onDark />
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="flex min-w-0 items-baseline gap-1">
+                <span className="truncate text-[12.5px] font-semibold">{person.name}</span>
+                {person.others > 0 && (
+                  <span className="shrink-0 text-[11px] font-medium text-white/55">+{person.others}</span>
+                )}
+              </span>
+              <span className="block truncate text-[10.5px] text-white/55">{label}</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <Mail size={12} className="shrink-0 text-white/50" aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">{label}</span>
+          </>
+        )}
       </div>
-      <IconButton label={`Close ${label}`} tone="onDark" size="xs" onClick={onClose}>
+      <IconButton label={`Close ${name}`} tone="onDark" size="xs" onClick={onClose}>
         <X size={11} strokeWidth={2.8} />
       </IconButton>
     </div>

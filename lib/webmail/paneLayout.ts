@@ -34,12 +34,29 @@ export const RAIL_DEFAULT = 228;
 export const RAIL_COLLAPSED = 58;
 /** The lockup and the collapse button still fit; folder names truncate. */
 export const RAIL_MIN = 200;
+/** The rail's cap on an ordinary screen: every screen up to 1800px keeps exactly this. */
 export const RAIL_MAX = 360;
+/**
+ * On a wider screen the cap grows with it, to this share of the window: an
+ * ultrawide (3440px) has room a laptop does not, and may take the rail to
+ * 688px.
+ */
+export const RAIL_MAX_SHARE = 0.2;
 
 export const LIST_DEFAULT = 360;
 /** The bulk-selection bar needs about 300px; rows truncate at any width. */
 export const LIST_MIN = 320;
+/** The list's cap on an ordinary screen (up to 1600px); a wider one allows LIST_MAX_SHARE of it -- 1376px at 3440px. */
 export const LIST_MAX = 640;
+export const LIST_MAX_SHARE = 0.4;
+
+/**
+ * The widest a stored width is read back as: a sanity bound past any real
+ * screen, not a limit. What a pane may be on THIS screen is railMaxFor /
+ * listMaxFor, and globals.css holds it to the same. A width chosen on an
+ * ultrawide survives a visit from a laptop, where it shows at the laptop's cap.
+ */
+export const PANE_CEILING = 4000;
 
 /**
  * What the reading pane keeps while the window allows. A soft floor: at 768px
@@ -82,20 +99,25 @@ export type PaneId = 'rail' | 'list';
 
 export const PANES: Record<
   PaneId,
-  { key: string; cssVar: '--rail-w' | '--list-w'; min: number; max: number; fallback: number }
+  { key: string; cssVar: '--rail-w' | '--list-w'; min: number; max: number; ceiling: number; fallback: number }
 > = {
-  rail: { key: RAIL_WIDTH_KEY, cssVar: '--rail-w', min: RAIL_MIN, max: RAIL_MAX, fallback: RAIL_DEFAULT },
-  list: { key: LIST_WIDTH_KEY, cssVar: '--list-w', min: LIST_MIN, max: LIST_MAX, fallback: LIST_DEFAULT },
+  rail: { key: RAIL_WIDTH_KEY, cssVar: '--rail-w', min: RAIL_MIN, max: RAIL_MAX, ceiling: PANE_CEILING, fallback: RAIL_DEFAULT },
+  list: { key: LIST_WIDTH_KEY, cssVar: '--list-w', min: LIST_MIN, max: LIST_MAX, ceiling: PANE_CEILING, fallback: LIST_DEFAULT },
 };
 
 export const between = (lo: number, value: number, hi: number) => Math.max(lo, Math.min(hi, value));
 
-/** The widest the rail can be now: room is left for the list's floor and the reading pane. Mirrors --rail-now. */
-export const railMaxFor = (viewport: number) => between(RAIL_MIN, viewport - LIST_MIN - READING_MIN, RAIL_MAX);
+/**
+ * The widest the rail can be now: its cap -- 360px, or RAIL_MAX_SHARE of a
+ * wider window -- held back so the list's floor and the reading pane still
+ * fit. Mirrors --rail-now.
+ */
+export const railMaxFor = (viewport: number) =>
+  between(RAIL_MIN, viewport - LIST_MIN - READING_MIN, Math.max(RAIL_MAX, viewport * RAIL_MAX_SHARE));
 
-/** The widest the list can be beside a rail this wide. Mirrors --list-now. */
+/** The widest the list can be beside a rail this wide: 640px or LIST_MAX_SHARE of the window, if the reading pane keeps its floor. Mirrors --list-now. */
 export const listMaxFor = (viewport: number, rail: number) =>
-  between(LIST_MIN, viewport - rail - READING_MIN, LIST_MAX);
+  between(LIST_MIN, viewport - rail - READING_MIN, Math.max(LIST_MAX, viewport * LIST_MAX_SHARE));
 
 /** The stored width, clamped; null when nothing is stored. Never throws. */
 export function readPaneWidth(pane: PaneId): number | null {
@@ -103,7 +125,7 @@ export function readPaneWidth(pane: PaneId): number | null {
   const spec = PANES[pane];
   try {
     const n = parseInt(window.localStorage.getItem(spec.key) ?? '', 10);
-    return Number.isNaN(n) ? null : between(spec.min, n, spec.max);
+    return Number.isNaN(n) ? null : between(spec.min, n, spec.ceiling);
   } catch {
     // Blocked storage -- the default is a fine answer.
     return null;
@@ -199,7 +221,7 @@ export const PANE_LAYOUT_SCRIPT = [
   '(function(){try{var d=document.documentElement,s=window.localStorage;',
   `if(s.getItem(${JSON.stringify(RAIL_COLLAPSED_KEY)})==='1')d.setAttribute('data-rail','collapsed');`,
   'function w(k,p,lo,hi){var n=parseInt(s.getItem(k)||"",10);if(!isNaN(n))d.style.setProperty(p,Math.min(hi,Math.max(lo,n))+"px")}',
-  `w(${JSON.stringify(RAIL_WIDTH_KEY)},'--rail-w',${RAIL_MIN},${RAIL_MAX});`,
-  `w(${JSON.stringify(LIST_WIDTH_KEY)},'--list-w',${LIST_MIN},${LIST_MAX});`,
+  `w(${JSON.stringify(RAIL_WIDTH_KEY)},'--rail-w',${RAIL_MIN},${PANE_CEILING});`,
+  `w(${JSON.stringify(LIST_WIDTH_KEY)},'--list-w',${LIST_MIN},${PANE_CEILING});`,
   '}catch(e){}})();',
 ].join('');

@@ -13,7 +13,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { addDays, addMonths, endOfMonth, endOfWeek, format, isValid, parseISO, startOfMonth, startOfWeek, subMonths } from 'date-fns';
-import { CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
+import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Link2, Menu as MenuIcon, Plus } from 'lucide-react';
 import { AgendaView, MonthView, WeekView, type ViewMode } from '@/components/calendar/CalendarViews';
 import EventModal from '@/components/calendar/EventModal';
 import InvitationsPanel from '@/components/calendar/InvitationsPanel';
@@ -78,6 +78,13 @@ function rangeFor(anchor: Date, view: ViewMode): { start: Date; end: Date } {
 function stepAnchor(anchor: Date, view: ViewMode, direction: -1 | 1): Date {
   if (view === 'week') return addDays(anchor, 7 * direction);
   return direction === 1 ? addMonths(anchor, 1) : subMonths(anchor, 1);
+}
+
+/** Now, rounded up to the next half hour: where "New" starts an event, as Google Calendar does (not 04:28). */
+function nextHalfHour(): Date {
+  const at = new Date();
+  at.setMinutes(Math.ceil(at.getMinutes() / 30) * 30, 0, 0);
+  return at;
 }
 
 const NO_CALENDARS: CalendarSummary[] = [];
@@ -188,7 +195,11 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
     void queryClient.invalidateQueries({ queryKey: calendarKeys.events });
   }
 
-  const readOnly = useMemo(() => calendars.find((c) => c.uri === active)?.read_only ?? false, [calendars, active]);
+  const activeCalendar = useMemo(() => calendars.find((c) => c.uri === active) ?? null, [calendars, active]);
+  const readOnly = activeCalendar?.read_only ?? false;
+  // The grid's events wear this calendar's own colour -- the swatch its
+  // picker row shows. Null: the accent.
+  const colour = activeCalendar ? calendarColour(activeCalendar) : null;
   const calendarOptions = useMemo<SelectMenuOption[]>(
     () =>
       calendars.map((c) => ({
@@ -295,16 +306,16 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
         <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
           <MenuIcon size={15} />
         </IconButton>
-        <Button size="xs" onClick={() => setAnchor(new Date())}>
+        <Button size="sm" onClick={() => setAnchor(new Date())}>
           Today
         </Button>
-        <IconButton label="Previous" size="sm" onClick={() => step(-1)}>
-          <ChevronLeft size={15} />
+        <IconButton label="Previous" size="md" onClick={() => step(-1)}>
+          <ChevronLeft size={17} />
         </IconButton>
-        <IconButton label="Next" size="sm" onClick={() => step(1)}>
-          <ChevronRight size={15} />
+        <IconButton label="Next" size="md" onClick={() => step(1)}>
+          <ChevronRight size={17} />
         </IconButton>
-        <h1 className="min-w-0 truncate px-1 font-display text-[15px] font-bold tracking-tight">
+        <h1 className="min-w-0 truncate px-1 font-display text-[17px] font-semibold tracking-tight sm:text-xl">
           <span className="sm:hidden">{shortTitle}</span>
           <span className="hidden sm:inline">{title}</span>
         </h1>
@@ -313,6 +324,24 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {calendars.length > 1 && active && (
             <SelectMenu label="Calendar" heading="Calendars" options={calendarOptions} value={active} onChange={remember} compact />
+          )}
+
+          {/* After Hide, the invitations are one click away rather than gone until a reload. */}
+          {invitationsHidden && invitations.length > 0 && (
+            <IconButton
+              label={invitations.length === 1 ? 'Show 1 invitation' : `Show ${invitations.length} invitations`}
+              size="md"
+              onClick={() => setInvitationsHidden(false)}
+              className="relative"
+            >
+              <CalendarClock size={16} />
+              <span
+                aria-hidden
+                className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[9.5px] font-bold leading-none text-primary-foreground"
+              >
+                {invitations.length}
+              </span>
+            </IconButton>
           )}
 
           <div className="flex items-center gap-0.5 rounded-full border border-border p-0.5">
@@ -334,7 +363,7 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
           </IconButton>
 
           {!readOnly && (
-            <Button variant="primary" size="sm" icon={<Plus size={13} />} collapseLabel onClick={() => openNew(new Date(), false)}>
+            <Button variant="primary" size="sm" icon={<Plus size={13} />} collapseLabel onClick={() => openNew(nextHalfHour(), false)}>
               New
             </Button>
           )}
@@ -355,9 +384,16 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
       <main className="flex min-h-0 flex-1 flex-col">
         {/* The grid stays rendered while a range loads: a spinner would flash the whole screen. */}
         <div className={loading ? 'flex min-h-0 flex-1 flex-col opacity-60' : 'flex min-h-0 flex-1 flex-col'}>
-          {view === 'month' && <MonthView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />}
-          {view === 'week' && <WeekView events={events} anchor={anchor} onSelect={openExisting} onCreateAt={openNew} />}
-          {view === 'agenda' && <AgendaView events={events} onSelect={openExisting} />}
+          {view === 'month' && <MonthView events={events} anchor={anchor} colour={colour} onSelect={openExisting} onCreateAt={openNew} />}
+          {view === 'week' && <WeekView events={events} anchor={anchor} colour={colour} onSelect={openExisting} onCreateAt={openNew} />}
+          {view === 'agenda' && (
+            <AgendaView
+              events={events}
+              colour={colour}
+              onSelect={openExisting}
+              onCreate={readOnly ? undefined : () => openNew(nextHalfHour(), false)}
+            />
+          )}
         </div>
       </main>
 
@@ -369,6 +405,8 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
           readOnly={readOnly}
           saving={saving}
           error={modalError}
+          calendarName={activeCalendar ? activeCalendar.name || activeCalendar.uri : null}
+          colour={colour}
           onClose={() => setModalOpen(false)}
           onSave={save}
           onDelete={remove}

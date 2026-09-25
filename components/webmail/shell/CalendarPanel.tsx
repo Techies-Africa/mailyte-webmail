@@ -99,9 +99,13 @@ export default function CalendarPanel({ open, onClose, onLeave }: CalendarPanelP
   const dayHref = (day: Date) => `/calendar?date=${format(day, 'yyyy-MM-dd')}`;
 
   return (
-    <FloatingPanel open={open} onClose={onClose} label="Calendar" width={300}>
+    <FloatingPanel open={open} onClose={onClose} label="Calendar" width={300} positionKey="calendar">
       <div className="border-b border-border px-4 pb-3 pt-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div
+          data-drag-handle
+          title="Drag to move. Double-click to put it back."
+          className="mb-3 flex items-center justify-between md:cursor-grab md:touch-none md:select-none"
+        >
           <span className="font-display text-[13.5px] font-bold">{format(anchor, 'MMMM yyyy')}</span>
           <div className="flex gap-0.5">
             <IconButton label="Previous month" size="xs" onClick={() => setAnchor((a) => subMonths(a, 1))}>

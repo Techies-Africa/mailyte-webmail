@@ -73,7 +73,17 @@ export default function PaneResizeHandle({ pane, controls, label, className = ''
     // Reading the page's layout is a side effect, which is what an effect is for.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAria(current());
+    // The maximum follows the window now, so a resize changes what the handle
+    // announces. Once a frame at most.
+    let resizeFrame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => setAria(current()));
+    };
+    window.addEventListener('resize', onResize);
     return () => {
+      cancelAnimationFrame(resizeFrame);
+      window.removeEventListener('resize', onResize);
       // Cut short by an unmount (the window narrowed past md mid-drag): never
       // leave the whole page un-selectable.
       if (drag.current?.frame) cancelAnimationFrame(drag.current.frame);
