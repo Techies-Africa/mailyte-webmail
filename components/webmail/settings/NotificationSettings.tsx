@@ -49,11 +49,31 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
     if (result === 'granted') sendTest();
   };
 
+  /**
+   * What happened to the last test. The browser gives the page no word when
+   * the OPERATING SYSTEM hides a notification (macOS with the browser's
+   * notifications off, or Focus on) -- so the button always says it sent one
+   * and where to look, instead of doing "nothing".
+   */
+  const [testNote, setTestNote] = useState<{ ok: boolean; text: string } | null>(null);
+
   const sendTest = () => {
     try {
-      new Notification('Mailyte', { body: 'New mail will show up like this.', icon: '/logo-192.png', tag: 'mailyte-test' });
-    } catch {
-      // Browsers that only notify from a service worker; the switch still works for toasts.
+      // No tag: a fixed one made every click after the first silently
+      // replace the earlier test wherever the system had filed it, which
+      // looked exactly like a button that does nothing.
+      const notification = new Notification('Mailyte', {
+        body: 'New mail will show up like this.',
+        icon: '/logo-192.png',
+      });
+      notification.onerror = () => setTestNote({ ok: false, text: 'Your browser refused to show the test.' });
+      setTestNote({ ok: true, text: `Test sent at ${new Date().toLocaleTimeString()}.` });
+    } catch (error) {
+      // Some mobile browsers only notify from a service worker.
+      setTestNote({
+        ok: false,
+        text: `This browser would not show it${error instanceof Error && error.message ? `: ${error.message}` : '.'}`,
+      });
     }
   };
 
@@ -92,6 +112,21 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
                 Send a test
               </Button>
             )}
+          </div>
+        )}
+
+        {status === 'on' && testNote && (
+          <div
+            role="status"
+            className="mt-4 max-w-2xl rounded-lg border border-border bg-muted/40 p-3 text-[13px] leading-relaxed"
+          >
+            <p className={testNote.ok ? 'font-medium' : 'font-medium text-destructive'}>{testNote.text}</p>
+            <p className="mt-1 text-muted-foreground">
+              Nothing on screen? Your computer may be hiding this browser&apos;s notifications. On a Mac: System
+              Settings → Notifications → your browser (for example Google Chrome) → Allow notifications, and check
+              that Focus or Do Not Disturb is off; it may also be waiting in Notification Center (click the clock). On
+              Windows: Settings → System → Notifications → your browser.
+            </p>
           </div>
         )}
       </section>
