@@ -134,6 +134,8 @@ export interface ListOptions {
   starred?: boolean;
   /** A label (IMAP keyword). With no folder, searched across every folder. */
   label?: string;
+  /** Only messages with attachments, searched server-side across the folder. */
+  attachments?: boolean;
 }
 
 /**
@@ -153,6 +155,7 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.unread) qs.set("unread", "true");
   if (options.starred) qs.set("starred", "true");
   if (options.label) qs.set("label", options.label);
+  if (options.attachments) qs.set("attachments", "true");
 
   const query = qs.toString();
   return call<MessagePage>(
