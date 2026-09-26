@@ -30,4 +30,6 @@ export const qk = {
   summary: (id: string) => ['mb', 'summary', id] as const,
 
   accounts: ['browser', 'accounts'] as const,
+  /** Every signed-in mailbox's newest unread inbox mail: the new-mail notifier's poll. */
+  accountInboxes: ['browser', 'account-inboxes'] as const,
 };
