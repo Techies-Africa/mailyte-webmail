@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import { BellRing } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Field';
+import { playChime } from '@/lib/webmail/chime';
 import {
   desktopNotificationsOn,
   enableNotifications,
   notificationsSupported,
+  soundOn,
   storeNotifyPref,
+  storeSound,
 } from '@/lib/webmail/newMail';
 import type { SettingsSectionProps } from './types';
 
@@ -30,11 +33,19 @@ function currentStatus(): Status {
 export default function NotificationSettings(_props: SettingsSectionProps) {
   const [status, setStatus] = useState<Status>('loading');
   const [asking, setAsking] = useState(false);
+  const [sound, setSound] = useState(true);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatus(currentStatus());
+    setSound(soundOn());
   }, []);
+
+  const turnSound = (on: boolean) => {
+    setSound(on);
+    storeSound(on);
+    if (on) void playChime();
+  };
 
   const turn = async (on: boolean) => {
     if (!on) {
@@ -57,7 +68,10 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
    */
   const [testNote, setTestNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const sendTest = () => {
+  const sendTest = async () => {
+    // The click is what lets the page make sound, so the chime always plays
+    // here; the notification is silent when it did, to avoid a double sound.
+    const chimed = sound ? await playChime() : false;
     try {
       // No tag: a fixed one made every click after the first silently
       // replace the earlier test wherever the system had filed it, which
@@ -65,6 +79,7 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
       const notification = new Notification('Mailyte', {
         body: 'New mail will show up like this.',
         icon: '/logo-192.png',
+        silent: chimed || !sound,
       });
       notification.onerror = () => setTestNote({ ok: false, text: 'Your browser refused to show the test.' });
       setTestNote({ ok: true, text: `Test sent at ${new Date().toLocaleTimeString()}.` });
@@ -85,7 +100,8 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
           A desktop notification when an email reaches the Inbox of any account signed in on this browser, while
           Mailyte is open in a tab, including a tab in the background. Mail sorted into Promotions, Social, Updates
           or Junk does not notify. While you are looking at your mailbox, new mail shows as a message at the
-          bottom of the screen instead.
+          bottom of the screen instead. The sound plays either way, once you have clicked anywhere in Mailyte
+          (browsers do not let a page make sound before that).
         </p>
 
         {status === 'unsupported' && (
@@ -108,10 +124,16 @@ export default function NotificationSettings(_props: SettingsSectionProps) {
               label="Notify me about new mail on this device"
             />
             {status === 'on' && (
-              <Button variant="secondary" size="sm" icon={<BellRing size={13} />} onClick={sendTest}>
+              <Button variant="secondary" size="sm" icon={<BellRing size={13} />} onClick={() => void sendTest()}>
                 Send a test
               </Button>
             )}
+          </div>
+        )}
+
+        {(status === 'on' || status === 'off' || status === 'blocked') && (
+          <div className="mt-4">
+            <Switch checked={sound} onChange={turnSound} label="Play a sound when new mail arrives" />
           </div>
         )}
 

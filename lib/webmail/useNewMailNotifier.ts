@@ -4,13 +4,16 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
 import type { ApiMessageSummary } from './adapters';
+import { playChime } from './chime';
 import { listAccountInboxes, switchAccount, type AccountInbox } from './client';
 import {
+  claimChime,
   desktopNotificationsOn,
   enableNotifications,
   notificationsSupported,
   readNotifyPref,
   senderOf,
+  soundOn,
   storeNotifyPref,
   subjectOf,
   takeNewMail,
@@ -78,7 +81,7 @@ export function useNewMailNotifier({
     const accounts = query.data;
     if (!accounts) return;
     const fresh = takeNewMail(watch.current, accounts, Date.now());
-    if (fresh.length > 0) announce(fresh, accounts.length > 1, latest.current);
+    if (fresh.length > 0) void announce(fresh, accounts.length > 1, latest.current);
   }, [query.data]);
 
   // The one-time question. Only when the browser has never been asked and
@@ -126,7 +129,7 @@ interface Announcer {
   toast: ReturnType<typeof useToast>['toast'];
 }
 
-function announce(fresh: NewMail[], severalAccounts: boolean, ctx: Announcer) {
+async function announce(fresh: NewMail[], severalAccounts: boolean, ctx: Announcer) {
   const here = ctx.currentEmail.toLowerCase();
   const isHere = (account: AccountInbox) => account.email === here;
 
@@ -144,17 +147,25 @@ function announce(fresh: NewMail[], severalAccounts: boolean, ctx: Announcer) {
     byAccount.set(item.account.email, [...(byAccount.get(item.account.email) ?? []), item]);
   }
 
+  // One chime per batch, and only from the first tab to see it.
+  const wantSound = soundOn();
+  const ours = wantSound && claimChime(fresh.map(({ account, message }) => `${account.email}:${message.id}`));
+
   if (document.visibilityState === 'hidden' && desktopNotificationsOn()) {
+    // Our chime or the system's, never both. When the browser would not let
+    // the page play sound (nothing clicked in it yet), the system's stays on.
+    const chimed = ours ? await playChime() : false;
+    const silent = !wantSound || chimed || !ours;
     for (const items of byAccount.values()) {
       const { account } = items[0];
       const where = severalAccounts ? account.email : null;
       if (items.length > MAX_SEPARATE) {
-        notify(`${items.length} new emails`, where ?? 'In your inbox', `${account.email}:batch`, () => open(account, null));
+        notify(`${items.length} new emails`, where ?? 'In your inbox', `${account.email}:batch`, silent, () => open(account, null));
         continue;
       }
       for (const { message } of items) {
         const body = where ? `${subjectOf(message)}\n${where}` : subjectOf(message);
-        notify(senderOf(message), body, `${account.email}:${message.id}`, () => open(account, message));
+        notify(senderOf(message), body, `${account.email}:${message.id}`, silent, () => open(account, message));
       }
     }
     return;
@@ -164,6 +175,7 @@ function announce(fresh: NewMail[], severalAccounts: boolean, ctx: Announcer) {
   // The toast area holds one message at a time, so several arrivals are
   // counted rather than queued.
   if (document.visibilityState !== 'visible') return;
+  if (ours) void playChime();
   const { account, message } = fresh[0];
   const elsewhere = isHere(account) ? '' : ` for ${account.email}`;
   const text =
@@ -182,11 +194,11 @@ function announce(fresh: NewMail[], severalAccounts: boolean, ctx: Announcer) {
   });
 }
 
-function notify(title: string, body: string, tag: string, onClick: () => void) {
+function notify(title: string, body: string, tag: string, silent: boolean, onClick: () => void) {
   try {
     // The tag is per message, so two open tabs announcing the same arrival
     // show one notification, the second quietly replacing the first.
-    const notification = new Notification(title, { body, tag, icon: '/logo-192.png' });
+    const notification = new Notification(title, { body, tag, silent, icon: '/logo-192.png' });
     notification.onclick = () => {
       window.focus();
       notification.close();
