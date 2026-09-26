@@ -1,75 +1,84 @@
-import { useEffect, useState } from "react";
-import { ShieldCheck, ShieldOff, Monitor, Info } from "lucide-react";
+'use client';
+
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { ShieldCheck, ShieldOff, Monitor, Info } from 'lucide-react';
 import {
   beginTwoFactor,
   confirmTwoFactor,
   disableTwoFactor,
-  getSecurity,
-  listSessions,
   revokeSession,
-  type ApiSecurity,
   type ApiSession,
   type ApiTwoFactorEnrolment,
-} from "@/lib/webmail/client";
-import { formatDateTime } from "@/lib/webmail/dates";
+} from '@/lib/webmail/client';
+import { formatDateTime } from '@/lib/webmail/dates';
+import Button from '@/components/ui/Button';
+import { Input } from '@/components/ui/Field';
+import { StatusBadge } from '@/components/ui/Pill';
+import { settingsKeys, useSecurity, useSessions } from '@/lib/webmail/query/settingsQueries';
+
+const NO_SESSIONS: ApiSession[] = [];
 
 /**
  * Two-factor and sign-in history for the mailbox holder (PRD S3).
  *
  * The scope caveat is stated on screen, not buried: this protects webmail
  * sign-in and nothing else, because Dovecot IMAP and Postfix SMTP AUTH have
- * no TOTP path in this stack. A security control that lets someone believe
- * their mailbox is closed when their mail app still opens it with a
- * password is worse than no control -- they stop taking other precautions.
+ * no TOTP path in this stack.
  */
-export default function WebmailSecuritySection({
-  onUnauthorized,
-}: {
-  onUnauthorized: () => void;
-}) {
-  const [security, setSecurity] = useState<ApiSecurity | null>(null);
-  const [sessions, setSessions] = useState<ApiSession[]>([]);
-  const [enrolment, setEnrolment] = useState<ApiTwoFactorEnrolment | null>(
-    null,
-  );
-  const [code, setCode] = useState("");
+export default function WebmailSecuritySection({ onUnauthorized }: { onUnauthorized: () => void }) {
+  // Cached: a second visit shows the status and the sign-ins at once.
+  const queryClient = useQueryClient();
+  const securityResult = useSecurity(onUnauthorized);
+  const security = securityResult.data ?? null;
+  const sessions = useSessions(onUnauthorized).data ?? NO_SESSIONS;
+  const [enrolment, setEnrolment] = useState<ApiTwoFactorEnrolment | null>(null);
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [disarming, setDisarming] = useState(false);
 
-  const refresh = async () => {
-    const [status, history] = await Promise.all([
-      getSecurity(onUnauthorized),
-      listSessions(onUnauthorized),
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: settingsKeys.security }),
+      queryClient.invalidateQueries({ queryKey: settingsKeys.sessions }),
     ]);
-    // `success` does not promise a payload.
-    //
-    // call() accepts the mail server's `{type,msg,data}` envelope and returns
-    // `body.data as T` -- a cast, not a check. Any endpoint declared without a
-    // `response_model` answers `type: 'success'` with NO `data` key at all, so
-    // the cast hands back undefined while claiming otherwise. That is what
-    // reached the render here: setSessions(undefined) turned the next paint
-    // into `undefined.slice(0, 8)` and took the whole settings page down to
-    // the error boundary. Seen live on mail.mailyte.com/settings/security.
-    //
-    // Guarded where the value enters state rather than where it is read, so
-    // there is one place to be right and the render can trust its own props.
-    if (status.success) setSecurity(status.data ?? null);
-    if (history.success) {
-      setSessions(
-        Array.isArray(history.data?.sessions) ? history.data.sessions : [],
-      );
-    }
-  };
-
-  useEffect(() => {
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   if (!security) {
-    return <p className="text-sm text-gray-500">Loading security settings…</p>;
+    // It used to say "Loading" for ever when the request failed.
+    if (securityResult.isError) {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive" role="alert">
+            {securityResult.error.message}
+          </p>
+          <Button size="xs" onClick={() => void securityResult.refetch()}>
+            Try again
+          </Button>
+        </div>
+      );
+    }
+    return <p className="text-sm text-muted-foreground">Loading security settings…</p>;
   }
+
+  /** Signed out on the list at once; back as it was, with the reason, if the server refuses. */
+  const signOutSession = async (session: ApiSession) => {
+    setError(null);
+    queryClient.setQueryData<ApiSession[]>(settingsKeys.sessions, (list) =>
+      list?.map((s) => (s.id === session.id ? { ...s, active: false, revoked: true } : s)),
+    );
+    const result = await revokeSession(session.id, onUnauthorized);
+    if (!result.success) {
+      // Only this session goes back as it was.
+      queryClient.setQueryData<ApiSession[]>(settingsKeys.sessions, (list) =>
+        list?.map((s) => (s.id === session.id ? session : s)),
+      );
+      void queryClient.invalidateQueries({ queryKey: settingsKeys.sessions });
+      setError(result.message);
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: settingsKeys.sessions });
+  };
 
   const start = async () => {
     setError(null);
@@ -80,18 +89,10 @@ export default function WebmailSecuritySection({
       setError(result.message);
       return;
     }
-
-    // Same reason as the guard in refresh(): a success envelope with no
-    // payload would otherwise put undefined into state and render an
-    // enrolment panel with no secret and no QR code, which looks like the
-    // feature is broken rather than the response.
     if (!result.data) {
-      setError(
-        "The mail server did not return an enrolment. Please try again.",
-      );
+      setError('The mail server did not return an enrolment. Please try again.');
       return;
     }
-
     setEnrolment(result.data);
   };
 
@@ -105,7 +106,7 @@ export default function WebmailSecuritySection({
       return;
     }
     setEnrolment(null);
-    setCode("");
+    setCode('');
     await refresh();
   };
 
@@ -119,210 +120,172 @@ export default function WebmailSecuritySection({
       return;
     }
     setDisarming(false);
-    setCode("");
+    setCode('');
     await refresh();
   };
 
   return (
-    <div className="space-y-5" data-shortcuts="off">
-      <div>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+    <div className="space-y-8" data-shortcuts="off">
+      <section>
+        <h3 className="mb-1 flex items-center gap-2 font-display text-[14px] font-semibold">
           {security.two_factor_enabled ? (
-            <ShieldCheck size={15} />
+            <ShieldCheck size={15} className="text-success" />
           ) : (
-            <ShieldOff size={15} />
+            <ShieldOff size={15} className="text-muted-foreground" />
           )}
           Two-factor authentication
+          {security.two_factor_enabled && <StatusBadge tone="success">On</StatusBadge>}
         </h3>
 
-        <p className="flex items-start gap-1.5 text-xs text-gray-500 mb-3">
-          <Info size={13} className="mt-0.5 flex-shrink-0" />
-          Protects signing in to webmail. Mail apps set up with your mailbox
-          password (IMAP/SMTP) are not affected and will keep working.
+        <p className="mb-4 flex max-w-prose items-start gap-1.5 text-[13px] leading-relaxed text-muted-foreground">
+          <Info size={13} className="mt-1 shrink-0" />
+          Protects signing in to webmail. Mail apps set up with your mailbox password (IMAP/SMTP) are not affected
+          and will keep working.
         </p>
 
         {error && (
-          <p
-            className="mb-3 text-sm text-red-600 dark:text-red-400"
-            role="alert"
-          >
+          <p className="mb-3 text-sm text-destructive" role="alert">
             {error}
           </p>
         )}
 
         {security.two_factor_enabled && !disarming && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-green-700 dark:text-green-400">
-              On · {security.recovery_codes_remaining} recovery code
-              {security.recovery_codes_remaining === 1 ? "" : "s"} left
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm">
+              {security.recovery_codes_remaining} recovery code{security.recovery_codes_remaining === 1 ? '' : 's'} left
             </span>
-            <button
+            <Button
+              size="xs"
+              variant="danger"
               onClick={() => {
                 setDisarming(true);
                 setError(null);
               }}
-              className="text-sm text-red-600 hover:underline underline-offset-2"
             >
               Turn off
-            </button>
+            </Button>
           </div>
         )}
 
         {security.two_factor_enabled && disarming && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <input
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
               autoFocus
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Code from your app"
-              className="w-48 text-sm px-2 py-1.5 rounded border border-border bg-transparent"
+              inputMode="numeric"
+              className="w-48 font-mono"
             />
-            <button
-              onClick={() => void turnOff()}
-              disabled={busy || code.trim() === ""}
-              className="px-3 py-1.5 text-sm rounded-md bg-red-600 text-white disabled:opacity-50"
-            >
+            <Button variant="danger" busy={busy} disabled={code.trim() === ''} onClick={() => void turnOff()}>
               Turn off
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               onClick={() => {
                 setDisarming(false);
-                setCode("");
+                setCode('');
               }}
-              className="px-3 py-1.5 text-sm text-gray-500"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         )}
 
         {!security.two_factor_enabled && !enrolment && (
-          <button
-            onClick={() => void start()}
-            disabled={busy}
-            className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
-          >
-            {busy ? "Setting up…" : "Set up"}
-          </button>
+          <Button variant="primary" busy={busy} onClick={() => void start()}>
+            {busy ? 'Setting up…' : 'Set up two-factor'}
+          </Button>
         )}
 
         {!security.two_factor_enabled && enrolment && (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Scan this with your authenticator app, then enter the code it
-              shows.
-            </p>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Scan this with your authenticator app, then enter the code it shows.</p>
             <div
-              className="inline-block bg-white p-2 rounded border border-gray-200"
-              // The SVG is generated server-side by BaconQrCode from the
-              // enrolment secret -- not remote content, and not user input.
+              className="inline-block rounded-lg border border-border bg-white p-2"
+              // The SVG is generated server-side from the enrolment secret --
+              // not remote content, and not user input.
               dangerouslySetInnerHTML={{ __html: enrolment.qr_code_svg }}
             />
-            <details className="text-xs text-gray-500">
-              <summary className="cursor-pointer">
-                Can&rsquo;t scan? Enter this key instead
-              </summary>
-              <code className="mt-1 block break-all font-mono text-gray-700 dark:text-gray-300">
-                {enrolment.secret}
-              </code>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Can&rsquo;t scan? Enter this key instead</summary>
+              <code className="mt-1 block break-all rounded-md bg-muted px-2 py-1 font-mono text-foreground">{enrolment.secret}</code>
             </details>
 
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Save these recovery codes
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-sm font-semibold">Save these recovery codes</p>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Each works once, and this is the only time they are shown. They are how you get in if you lose your
+                phone.
               </p>
-              <p className="text-xs text-gray-500 mb-1">
-                Each works once, and this is the only time they are shown. They
-                are how you get in if you lose your phone.
-              </p>
-              <div className="grid grid-cols-2 gap-1 font-mono text-xs text-gray-700 dark:text-gray-300">
+              <div className="grid grid-cols-2 gap-1 font-mono text-xs">
                 {enrolment.recovery_codes.map((recovery) => (
                   <span key={recovery}>{recovery}</span>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="6-digit code"
                 inputMode="numeric"
-                className="w-40 text-sm px-2 py-1.5 rounded border border-border bg-transparent"
+                className="w-40 font-mono"
               />
-              <button
-                onClick={() => void confirm()}
-                disabled={busy || code.trim() === ""}
-                className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground disabled:opacity-50"
-              >
-                {busy ? "Checking…" : "Turn on"}
-              </button>
-              <button
+              <Button variant="primary" busy={busy} disabled={code.trim() === ''} onClick={() => void confirm()}>
+                {busy ? 'Checking…' : 'Turn on'}
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setEnrolment(null);
-                  setCode("");
+                  setCode('');
                 }}
-                className="px-3 py-1.5 text-sm text-gray-500"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      <div>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          <Monitor size={15} /> Recent webmail sign-ins
+      <section>
+        <h3 className="mb-1 flex items-center gap-2 font-display text-[14px] font-semibold">
+          <Monitor size={15} className="text-muted-foreground" /> Recent webmail sign-ins
         </h3>
-        <p className="text-xs text-gray-500 mb-2">
-          Webmail only — signing in from a mail app goes straight to the mail
-          server and is not listed here.
+        <p className="mb-3 text-[13px] text-muted-foreground">
+          Webmail only — signing in from a mail app goes straight to the mail server and is not listed here.
         </p>
 
-        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+        <ul className="divide-y divide-border rounded-lg border border-border">
           {sessions.slice(0, 8).map((session) => (
-            <li
-              key={session.id}
-              className="py-2 flex items-center justify-between gap-3 text-sm"
-            >
+            <li key={session.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-sm">
               <div className="min-w-0">
-                <div className="text-gray-700 dark:text-gray-300">
-                  {/* date-fns, never a bare toLocaleString(): that threw on a
-                      phone with a malformed default locale and this whole
-                      page became Next's error screen. lib/webmail/dates.ts. */}
-                  {session.signed_in_at
-                    ? formatDateTime(new Date(session.signed_in_at))
-                    : "—"}
-                  {session.current && (
-                    <span className="ml-2 text-xs text-primary">
-                      this device
-                    </span>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span>{session.signed_in_at ? formatDateTime(new Date(session.signed_in_at)) : '—'}</span>
+                  {session.current && <StatusBadge tone="primary">this device</StatusBadge>}
                 </div>
-                <div className="text-xs text-gray-500 truncate">
-                  {session.ip_address ?? "unknown address"}
-                  {session.user_agent ? ` · ${session.user_agent}` : ""}
+                <div className="truncate font-mono text-xs text-muted-foreground">
+                  {session.ip_address ?? 'unknown address'}
+                  {session.user_agent ? ` · ${session.user_agent}` : ''}
                 </div>
               </div>
               {session.active && !session.current && (
                 <button
-                  onClick={async () => {
-                    await revokeSession(session.id, onUnauthorized);
-                    await refresh();
-                  }}
-                  className="text-xs text-red-600 hover:underline underline-offset-2 flex-shrink-0"
+                  type="button"
+                  onClick={() => void signOutSession(session)}
+                  className="shrink-0 text-xs font-semibold text-destructive hover:underline"
                 >
                   Sign out
                 </button>
               )}
-              {session.revoked && (
-                <span className="text-xs text-gray-400">signed out</span>
-              )}
+              {session.revoked && <span className="shrink-0 text-xs text-muted-foreground">signed out</span>}
             </li>
           ))}
+          {sessions.length === 0 && <li className="px-3.5 py-3 text-sm text-muted-foreground">No sign-ins recorded yet.</li>}
         </ul>
-      </div>
+      </section>
     </div>
   );
 }

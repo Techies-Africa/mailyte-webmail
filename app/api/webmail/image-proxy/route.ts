@@ -33,6 +33,26 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 10_000;
 
+/**
+ * Raster formats only. `image/svg+xml` is deliberately absent: an SVG is an
+ * XML document that may carry <script>, and while a browser will not run it
+ * inside an <img>, it WILL run it if the proxy URL is opened as a page --
+ * which a link in the same message can point at. Script on this origin has
+ * the session cookie sent with every request it makes. Mail clients barely
+ * render SVG anyway, so nothing of value is lost.
+ */
+const ALLOWED_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+]);
+
 function isPrivateAddress(address: string): boolean {
   // v4-mapped v6 (::ffff:10.0.0.1) normalises to the dotted quad.
   const v4 = address.replace(/^::ffff:/i, '');
@@ -138,8 +158,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const contentType = upstream.headers.get('content-type') ?? '';
-    if (!contentType.toLowerCase().startsWith('image/')) {
+    const contentType = (upstream.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    if (!ALLOWED_TYPES.has(contentType)) {
       return NextResponse.json({ success: false, message: 'Not an image' }, { status: 502 });
     }
 
@@ -159,6 +179,13 @@ export async function GET(request: NextRequest) {
         'Content-Type': contentType,
         'Cache-Control': 'private, max-age=3600',
         'X-Content-Type-Options': 'nosniff',
+        // Belt and braces for the case the allowlist above already closes:
+        // opened as a top-level document, this response may run nothing and
+        // load nothing. Harmless for an <img>, which ignores both headers.
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': 'inline; filename="image"',
+        // Only this origin may embed what the proxy fetched.
+        'Cross-Origin-Resource-Policy': 'same-origin',
       },
     });
   }

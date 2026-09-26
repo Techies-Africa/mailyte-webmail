@@ -238,7 +238,46 @@ function rewriteRemoteCssUrls(
 }
 
 // ---------------------------------------------------------------------------
-// Per-sender "always show images" allowance
+// The remote-image policy
+//
+// `always` (the default): remote images load on open -- through the image
+// proxy, never directly, so the sender's server sees this host's address,
+// no cookies and no referrer. What it can still learn is that the message
+// was opened and roughly when, which is the trade every large webmail makes
+// (Gmail has loaded images through its proxy by default since 2013).
+//
+// `ask`: the original behaviour. Nothing remote loads until the reader says
+// so, per message or per sender. For anyone who would rather senders never
+// learn a message was read.
+//
+// Per browser, like the accent: a reading preference, not mailbox state.
+// ---------------------------------------------------------------------------
+
+export type RemoteImagePolicy = 'always' | 'ask';
+
+const POLICY_KEY = 'mailyte_webmail_remote_images';
+
+export function remoteImagePolicy(): RemoteImagePolicy {
+  if (typeof window === 'undefined') return 'always';
+  try {
+    return window.localStorage.getItem(POLICY_KEY) === 'ask' ? 'ask' : 'always';
+  } catch {
+    return 'always';
+  }
+}
+
+export function setRemoteImagePolicy(policy: RemoteImagePolicy): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (policy === 'always') window.localStorage.removeItem(POLICY_KEY);
+    else window.localStorage.setItem(POLICY_KEY, policy);
+  } catch {
+    // Storage denied; the choice holds for this page and no longer.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-sender "always show images" allowance (used under the `ask` policy)
 // ---------------------------------------------------------------------------
 
 const ALLOWLIST_KEY = 'mailyte_webmail_image_senders';

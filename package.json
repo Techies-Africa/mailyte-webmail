@@ -1,6 +1,6 @@
 {
   "name": "mailyte-webmail",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "private": false,
   "license": "AGPL-3.0-or-later",
   "description": "A self-hostable webmail client for any Mailyte-compatible mail server.",
@@ -9,14 +9,16 @@
     "url": "https://github.com/Techies-Africa/mailyte-webmail.git"
   },
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
-    "check:brand": "node scripts/check-brand-tokens.mjs"
+    "check:brand": "node scripts/check-brand-tokens.mjs",
+    "dev:prod": "cross-env MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.103.2",
     "@tiptap/extension-image": "^3.30.5",
     "@tiptap/extension-link": "^3.30.2",
     "@tiptap/extension-placeholder": "^3.30.2",
@@ -32,10 +34,12 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.103.2",
     "@types/node": "^20.19.0",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^7.0.3",
     "postcss": "^8.5.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3"

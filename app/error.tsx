@@ -36,7 +36,7 @@ export default function WebmailError({
   }, [error]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-6">
+    <div className="min-h-dvh flex items-center justify-center bg-background px-6">
       <div className="w-full max-w-md">
         <AlertTriangle size={32} className="text-amber-500 mb-4" aria-hidden="true" />
         <h1 className="text-lg font-medium text-gray-900 dark:text-gray-100">

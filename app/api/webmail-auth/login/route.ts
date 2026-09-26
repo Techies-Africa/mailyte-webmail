@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { apiBaseUrl, MAILBOX_COOKIE_NAME } from '@/lib/webmail/server';
+import { apiBaseUrl, readAccountStore, withAccount, writeAccountStore } from '@/lib/webmail/server';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -18,18 +18,14 @@ export async function POST(request: NextRequest) {
       email_address: body.email_address,
       password: body.password,
       // Forwarded when the caller is answering a two_factor_required prompt.
-      // Dropping it here would make a correct code look like no code at all,
-      // so 2FA could be enabled and then never satisfied.
       two_factor_code: body.two_factor_code,
     }),
   });
 
   const data = await backendRes.json().catch(() => ({}));
 
-  // Accept both envelopes. Mailyte's mail server answers `{type, msg, data}`;
-  // some deployments front it with a service that answers
-  // `{success, message, data}`. Reading both means one client works against
-  // either without a build flag. See lib/webmail/client.ts.
+  // Accept both envelopes: `{type,msg,data}` from the mail server, or
+  // `{success,message,data}` from a service some deployments put in front.
   const ok = data?.success === true || data?.type === 'success';
   const message = data?.message ?? data?.msg;
 
@@ -50,32 +46,32 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // The mailbox was provisioned with a starter password, or an admin reset it
-  // with temporary=true. The session is real and is issued as normal, but
-  // every /api/v1/mailbox/* route except POST /security/password and sign-out
-  // will answer 403 password_change_required until a new password is set --
-  // so the client is told here, and sends the holder straight to the screen
-  // that can clear it rather than into an inbox that cannot load.
+  // A starter or admin-reset password buys a session that can do exactly two
+  // things: set a real password, and sign out. The client is told so it sends
+  // the holder straight to the screen that can clear it.
   const mustChangePassword = data?.data?.must_change_password === true;
+
+  const email: string =
+    data?.data?.email_account?.email_address ?? data?.data?.email_address ?? body.email_address;
+
+  // Signing in ADDS to the accounts already on this browser rather than
+  // replacing them. Signing in to an address that is already here refreshes
+  // its token. Either way the new one becomes active.
+  const current = await readAccountStore();
+  const next = withAccount(current, {
+    email,
+    token: data.data.token,
+    expires_at: data.data.expires_at,
+  });
 
   const response = NextResponse.json({
     success: true,
     email_account: data.data.email_account,
     must_change_password: mustChangePassword,
-    // temporary | expired | admin_reset -- worth showing, because "your
-    // administrator reset this" and "this was the password you were given"
-    // are different messages to the person reading the screen.
     password_change_reason: data?.data?.password_change_reason ?? null,
+    accounts: next.accounts.map((a) => a.email),
   });
-
-  const expiresAt = new Date(data.data.expires_at);
-  response.cookies.set(MAILBOX_COOKIE_NAME, data.data.token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    expires: expiresAt,
-  });
+  writeAccountStore(response, next);
 
   return response;
 }

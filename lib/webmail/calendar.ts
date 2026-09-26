@@ -10,6 +10,7 @@
 // the wall-clock intent that recurring events depend on.
 
 import type { ApiResult } from './client';
+import { withAccountHeader } from './query/session';
 
 export type CalendarSummary = {
   uri: string;
@@ -19,6 +20,19 @@ export type CalendarSummary = {
   read_only: boolean;
   is_default: boolean;
 };
+
+/**
+ * A calendar's own colour, fit to hand to CSS, or null.
+ *
+ * The value is whatever a CalDAV client last wrote, so only a hex colour of
+ * 3, 4, 6 or 8 digits gets through (clients often append an alpha pair).
+ * Anything else -- a colour name, a stray string, an attempt at CSS -- is
+ * treated as no colour rather than passed into a style.
+ */
+export function calendarColour(calendar: CalendarSummary): string | null {
+  const value = calendar.color?.trim() ?? '';
+  return /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value) ? value : null;
+}
 
 export type EventAttendee = {
   email: string;
@@ -107,21 +121,21 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
-    return { success: false, message: 'Could not reach the mail server. Check your connection.' };
+    return { success: false, message: 'Could not reach the mail server. Check your connection.', status: 0 };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: 'Not logged in' };
+    return { success: false, message: 'Not logged in', status: 401 };
   }
 
   // 501 is "this deployment has no calendar service" -- a supported
   // configuration, not a fault. The nav entry is gated on the capability so
   // this should be unreachable, but saying it plainly beats a generic error.
   if (res.status === 501) {
-    return { success: false, message: 'This server does not provide a calendar.' };
+    return { success: false, message: 'This server does not provide a calendar.', status: 501 };
   }
 
   const data = (await res.json().catch(() => ({}))) as {
@@ -137,6 +151,7 @@ async function call<T>(
     return {
       success: false,
       message: data.message ?? data.msg ?? 'Something went wrong. Please try again.',
+      status: res.status,
     };
   }
   return { success: true, data: data.data as T };

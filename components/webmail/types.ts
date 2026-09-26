@@ -33,6 +33,8 @@ export interface WebmailListItem {
   isStarred: boolean;
   isAnswered: boolean;
   isDraft: boolean;
+  /** Labels the message carries, as the server's lowercase slugs. */
+  labels: string[];
   hasAttachment: boolean;
   /**
    * The date to DISPLAY. Never null -- a message whose header carried no date
@@ -59,8 +61,24 @@ export interface WebmailMessage extends WebmailListItem {
   bcc: WebmailParticipant[];
   /** The real RFC 822 Message-Id header, not the JMAP resource id. */
   messageIdHeader: string | null;
+  /** The Message-ID this one answers; on a saved reply draft, what keeps it in its thread. */
+  inReplyTo: string | null;
   references: string | null;
   attachments: WebmailAttachment[];
+  /** What the headers say about where the message came from and how. */
+  provenance: WebmailProvenance;
+}
+
+export interface WebmailProvenance {
+  /** The Return-Path domain: who handed the message to us. */
+  mailedBy: string | null;
+  /** The DKIM signing domain, when the signature verified. */
+  signedBy: string | null;
+  /** "tls" or "none" for the last hop; null when the header did not say. */
+  security: string | null;
+  listUnsubscribe: { mailto: string | null; url: string | null; one_click: boolean } | null;
+  /** Verdicts from the Authentication-Results this server wrote: pass / fail / none / null. */
+  authentication: { spf: string | null; dkim: string | null; dmarc: string | null };
 }
 
 /**

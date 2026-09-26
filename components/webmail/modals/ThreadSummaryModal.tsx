@@ -1,158 +1,124 @@
-import { useCallback, useEffect, useState } from 'react';
-import { X, Hash, RefreshCcw, Copy, Check } from 'lucide-react';
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Hash, RefreshCcw, Copy, Check } from 'lucide-react';
 import type { WebmailListItem } from '../types';
 import { formatDateTime } from '@/lib/webmail/dates';
+import Dialog from '@/components/ui/Dialog';
+import Button from '@/components/ui/Button';
+import IconButton from '@/components/ui/IconButton';
 
 type ThreadSummaryModalProps = {
   isOpen: boolean;
   onClose: () => void;
   /** The real conversation, oldest first. Never a fabricated stand-in. */
   thread: WebmailListItem[];
-  onSummarize: () => Promise<string>;
+  /** The summary; `fresh` asks for a new one instead of the one already made. */
+  onSummarize: (fresh?: boolean) => Promise<string>;
 };
 
-export default function ThreadSummaryModal({
-  isOpen,
-  onClose,
-  thread,
-  onSummarize,
-}: ThreadSummaryModalProps) {
+export default function ThreadSummaryModal({ isOpen, onClose, thread, onSummarize }: ThreadSummaryModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [summary, setSummary] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const generateSummary = useCallback(async () => {
+  // Read through a ref: the parent hands down a fresh arrow on every render,
+  // and the summary must not be asked for again each time it does.
+  const onSummarizeRef = useRef(onSummarize);
+  useEffect(() => {
+    onSummarizeRef.current = onSummarize;
+  }, [onSummarize]);
+
+  const generateSummary = useCallback(async (fresh = false) => {
     setIsGenerating(true);
     setError(null);
     try {
-      setSummary(await onSummarize());
+      setSummary(await onSummarizeRef.current(fresh));
     } catch {
       setError('Could not summarize this conversation. Please try again.');
     } finally {
       setIsGenerating(false);
     }
-  }, [onSummarize]);
+  }, []);
 
-  // The previous version called generateSummary() straight from the render
-  // body when the modal was open with no summary yet -- a setState during
-  // render, which React re-entered on every pass. Kicking it off from an
-  // effect keyed on isOpen runs it exactly once per opening.
+  // Kicked off from an effect keyed on isOpen so it runs exactly once per
+  // opening, never during render. A summary already made is shown at once.
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSummary('');
       void generateSummary();
     }
   }, [isOpen, generateSummary]);
-
-  if (!isOpen) return null;
 
   const oldest = thread[0];
   const newest = thread[thread.length - 1];
   const participants = new Set(thread.map((m) => m.fromEmail).filter(Boolean)).size;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-card rounded-lg shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-medium flex items-center">
-            <Hash size={18} className="text-violet-500 mr-2" />
-            Thread Summary
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-          >
-            <X size={20} />
-          </button>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      title="Conversation summary"
+      icon={<Hash size={16} />}
+      width="md"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      {isGenerating ? (
+        <div className="flex flex-col items-center justify-center py-10">
+          <div className="mb-3 h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Reading the conversation…</p>
         </div>
-
-        <div className="p-6">
-          {isGenerating ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <div className="animate-spin h-8 w-8 border-2 border-violet-500 border-t-transparent rounded-full mb-4" />
-              <p className="text-gray-500">Reading the conversation…</p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-8">
-              <p className="text-destructive mb-3">{error}</p>
-              <button
-                onClick={generateSummary}
-                className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-foreground/10"
+      ) : error ? (
+        <div className="py-8 text-center">
+          <p className="mb-3 text-sm text-destructive">{error}</p>
+          <Button onClick={() => void generateSummary()}>Try again</Button>
+        </div>
+      ) : (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-[12.5px] font-semibold">AI-generated summary</h4>
+            <div className="flex gap-1">
+              <IconButton
+                label="Copy to clipboard"
+                size="xs"
+                onClick={() => {
+                  void navigator.clipboard.writeText(summary);
+                  setIsCopied(true);
+                  setTimeout(() => setIsCopied(false), 2000);
+                }}
               >
-                Try again
-              </button>
+                {isCopied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+              </IconButton>
+              <IconButton label="Regenerate" size="xs" onClick={() => void generateSummary(true)}>
+                <RefreshCcw size={13} />
+              </IconButton>
             </div>
-          ) : (
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="text-sm font-medium">AI generated summary</h4>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      void navigator.clipboard.writeText(summary);
-                      setIsCopied(true);
-                      setTimeout(() => setIsCopied(false), 2000);
-                    }}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
-                    title="Copy to clipboard"
-                  >
-                    {isCopied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                  </button>
-                  <button
-                    onClick={generateSummary}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-muted rounded"
-                    title="Regenerate"
-                  >
-                    <RefreshCcw size={16} />
-                  </button>
-                </div>
-              </div>
+          </div>
 
-              <div className="bg-violet-50 dark:bg-violet-900/20 p-4 rounded-lg border border-violet-100 dark:border-violet-800/30">
-                <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{summary}</p>
-              </div>
+          <div className="whitespace-pre-wrap rounded-xl border border-primary/20 bg-primary/[0.05] px-4 py-3 text-sm leading-relaxed">
+            {summary}
+          </div>
 
-              {thread.length > 0 && (
-                <div className="mt-6">
-                  <h4 className="text-sm font-medium mb-3">Conversation</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Messages</span>
-                      <span className="font-medium">{thread.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Started</span>
-                      <span className="font-medium">
-                        {oldest ? formatDateTime(oldest.timestamp) : '—'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Latest</span>
-                      <span className="font-medium">
-                        {newest ? formatDateTime(newest.timestamp) : '—'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">People</span>
-                      <span className="font-medium">{participants}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          {thread.length > 0 && (
+            <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2 text-[12.5px]">
+              <dt className="text-muted-foreground">Messages</dt>
+              <dd className="text-right font-semibold tabular-nums">{thread.length}</dd>
+              <dt className="text-muted-foreground">Started</dt>
+              <dd className="text-right font-semibold">{oldest ? formatDateTime(oldest.timestamp) : '—'}</dd>
+              <dt className="text-muted-foreground">Latest</dt>
+              <dd className="text-right font-semibold">{newest ? formatDateTime(newest.timestamp) : '—'}</dd>
+              <dt className="text-muted-foreground">People</dt>
+              <dd className="text-right font-semibold tabular-nums">{participants}</dd>
+            </dl>
           )}
         </div>
-
-        <div className="flex justify-end px-6 py-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-muted text-gray-700 dark:text-gray-300 rounded-md hover:bg-foreground/10"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </Dialog>
   );
 }

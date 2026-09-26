@@ -1,9 +1,14 @@
+'use client';
+
 import { useEffect, useState } from 'react';
+import Button from '@/components/ui/Button';
+import Dialog from '@/components/ui/Dialog';
+import { Input, Label } from '@/components/ui/Field';
 
 type ConfirmModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   icon: React.ReactNode;
   tone?: 'neutral' | 'danger';
   title: string;
@@ -12,10 +17,12 @@ type ConfirmModalProps = {
   /**
    * When set, the confirm button stays disabled until the user types this
    * exact word. Reserved for genuinely irreversible actions -- PRD SS7.4
-   * allows permanent destruction only from inside Trash, and only behind
-   * this.
+   * allows permanent destruction only from inside Trash, and only behind this.
    */
   typedConfirmation?: string;
+  confirmDisabled?: boolean;
+  /** The caller closes the dialog itself (after an async result). */
+  keepOpenOnConfirm?: boolean;
 };
 
 export default function ConfirmModal({
@@ -28,89 +35,73 @@ export default function ConfirmModal({
   body,
   confirmLabel,
   typedConfirmation,
+  confirmDisabled = false,
+  keepOpenOnConfirm = false,
 }: ConfirmModalProps) {
   const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (isOpen) setTyped('');
+    if (isOpen) {
+      // Reset the typed word each time the dialog opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTyped('');
+    }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const isDanger = tone === 'danger';
-  const canConfirm = !typedConfirmation || typed.trim().toUpperCase() === typedConfirmation.toUpperCase();
+  const canConfirm =
+    !confirmDisabled &&
+    (!typedConfirmation || typed.trim().toUpperCase() === typedConfirmation.toUpperCase());
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fadeIn">
-      <div className="bg-card rounded-lg max-w-md w-full p-6 shadow-xl">
-        <div className="flex items-center justify-center mb-4">
-          <div
-            className={`w-12 h-12 rounded-full flex items-center justify-center ${
-              isDanger
-                ? 'bg-red-100 dark:bg-red-900/30 text-red-500'
-                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'
-            }`}
-          >
-            {icon}
-          </div>
-        </div>
-
-        <h3 className="text-center text-lg font-medium mb-2 text-gray-900 dark:text-gray-100">
-          {title}
-        </h3>
-        <div className="text-center text-gray-500 dark:text-gray-400 mb-6">{body}</div>
-
-        {typedConfirmation && (
-          <div className="mb-6">
-            <label
-              htmlFor="typed-confirmation"
-              className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5"
-            >
-              Type <span className="font-mono font-semibold">{typedConfirmation}</span> to confirm
-            </label>
-            <input
-              id="typed-confirmation"
-              autoFocus
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-400/20"
-            />
-          </div>
-        )}
-
-        <div className="flex gap-3 justify-center">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-border text-gray-700 dark:text-gray-300 rounded-md hover:bg-muted"
-          >
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      title={title}
+      icon={<span className={isDanger ? 'text-destructive' : 'text-primary'}>{icon}</span>}
+      width="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+          </Button>
+          <Button
+            variant={isDanger ? 'danger' : 'primary'}
             disabled={!canConfirm}
-            className={`px-4 py-2 rounded-md inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-              isDanger
-                ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'bg-primary hover:bg-primary/90 text-primary-foreground'
-            }`}
+            busy={busy}
+            className={isDanger ? '!bg-destructive !text-destructive-foreground !border-transparent' : ''}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+              if (!keepOpenOnConfirm) onClose();
+            }}
           >
-            {icon}
             {confirmLabel}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="text-sm leading-relaxed text-muted-foreground">{body}</div>
+
+      {typedConfirmation && (
+        <div className="mt-4">
+          <Label htmlFor="typed-confirmation">
+            Type <span className="font-mono">{typedConfirmation}</span> to confirm
+          </Label>
+          <Input
+            id="typed-confirmation"
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoComplete="off"
+          />
         </div>
-      </div>
-    </div>
+      )}
+    </Dialog>
   );
 }

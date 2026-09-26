@@ -3,31 +3,60 @@
 /**
  * The address book.
  *
- * A front door for CardDAV, which has been running since the calendar shipped
- * with nothing able to see it. Contacts saved here sync to whatever the person
- * has already connected -- iPhone, Android via DAVx5, Apple Contacts -- because
- * they are written through the same server those clients read.
+ * A front door for CardDAV. Contacts saved here sync to whatever the person
+ * has already connected -- iPhone, Android via DAVx5, Apple Contacts --
+ * because they are written through the same server those clients read.
  *
- * Deliberately not the same thing as the addresses Compose suggests. Those are
- * harvested from message headers and cover everyone you have ever written to;
- * these are the people you chose to keep, and only these leave the browser.
+ * Not the same thing as the addresses Compose suggests: those are harvested
+ * from message headers; these are the people you chose to keep.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { BookUser, Mail, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { BookUser, Mail, Menu as MenuIcon, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
+import PageShell, { pageMenuButtonProps, usePageMenu } from '@/components/webmail/shell/PageShell';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
+import Avatar from '@/components/ui/Avatar';
+import Button from '@/components/ui/Button';
+import Dialog from '@/components/ui/Dialog';
+import IconButton from '@/components/ui/IconButton';
+import { Input, Label, Select, Textarea } from '@/components/ui/Field';
+import SelectMenu, { type SelectMenuOption } from '@/components/ui/SelectMenu';
+import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import {
   createContact,
   deleteContact,
   displayName,
-  listAddressBooks,
-  listContacts,
   primaryEmail,
   updateContact,
   type AddressBook,
   type Contact,
   type ContactDraft,
 } from '@/lib/webmail/contacts';
+import { contactKeys, useAddressBooks, useBookContacts } from '@/lib/webmail/query/contactQueries';
+import { qk } from '@/lib/webmail/query/keys';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { ADDRESS_BOOK_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
+
+const NO_BOOKS: AddressBook[] = [];
+const NO_CONTACTS: Contact[] = [];
+
+/** The mailbox's own book. Every server has it, so it is the fallback for everything. */
+const PERSONAL_BOOK = 'default';
+
+/**
+ * The book to open: the one last picked in this mailbox if the server still
+ * lists it, else the personal book. Null while that is unknowable -- storage
+ * not read yet, or a remembered shared book with the list still loading -- so
+ * the screen waits rather than showing the personal book and then swapping.
+ */
+function bookToOpen(remembered: string | null | undefined, books: AddressBook[] | undefined, failed: boolean): string | null {
+  if (remembered === undefined) return null;
+  if (!remembered || remembered === PERSONAL_BOOK) return PERSONAL_BOOK;
+  if (!books) return failed ? PERSONAL_BOOK : null;
+  return books.some((b) => b.uri === remembered) ? remembered : PERSONAL_BOOK;
+}
 
 const EMPTY_DRAFT: ContactDraft = {
   first_name: '',
@@ -56,90 +85,82 @@ function draftFrom(contact: Contact): ContactDraft {
 }
 
 export default function AddressBookPage() {
-  const router = useRouter();
-  const onUnauthorized = useCallback(() => router.replace('/login'), [router]);
+  // Null until the server has answered once; cached after that, so a revisit gates at once.
+  const capabilities = useCapabilities().data;
+  const supported = capabilities ? capabilities.capabilities?.contacts === true : null;
+  return (
+    <PageShell current="contacts">
+      <AddressBookScreen supported={supported} email={capabilities?.email_address ?? null} />
+    </PageShell>
+  );
+}
 
-  const [supported, setSupported] = useState<boolean | null>(null);
-  const [books, setBooks] = useState<AddressBook[]>([]);
-  const [activeBook, setActiveBook] = useState('default');
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState<string | null>(null);
+function AddressBookScreen({ supported, email }: { supported: boolean | null; email: string | null }) {
+  const [menuOpen, openMenu] = usePageMenu();
+  const queryClient = useQueryClient();
+  const onUnauthorized = useUnauthorizedHandler();
+
+  const booksResult = useAddressBooks(supported === true);
+  const books = booksResult.data ?? NO_BOOKS;
+  const [remembered, remember] = useRememberedChoice(ADDRESS_BOOK_CHOICE_KEY, email);
+  const resolved = bookToOpen(remembered, booksResult.data, booksResult.isError);
+  const activeBook = resolved ?? PERSONAL_BOOK;
+  // Held until the book is known, so only that book's contacts are asked for.
+  const contactsResult = useBookContacts(activeBook, supported === true && resolved !== null);
+  const contacts = contactsResult.data ?? NO_CONTACTS;
+  // Only a book never opened before shows "Loading".
+  const loading = contactsResult.isPending;
+  /** What went wrong with the last thing the person did. */
+  const [actionError, setBanner] = useState<string | null>(null);
+  const banner = actionError ?? (contactsResult.isError ? contactsResult.error.message : null);
   const [query, setQuery] = useState('');
 
   const [editing, setEditing] = useState<Contact | null>(null);
   const [draft, setDraft] = useState<ContactDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Contact | null>(null);
 
   const currentBook = books.find((b) => b.uri === activeBook);
   const readOnly = currentBook?.read_only ?? false;
-
-  // Capability first, exactly as the calendar page does: an optional feature
-  // stays hidden until the server says it exists, rather than flashing on and
-  // disappearing.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetch('/api/webmail/capabilities', { cache: 'no-store' });
-      if (res.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as {
-        data?: { capabilities?: Record<string, boolean> };
-      };
-      if (!cancelled) setSupported(Boolean(body.data?.capabilities?.contacts));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [onUnauthorized]);
-
-  useEffect(() => {
-    if (supported !== true) return;
-    (async () => {
-      const res = await listAddressBooks(onUnauthorized);
-      if (res.success) setBooks(res.data);
-    })();
-  }, [supported, onUnauthorized]);
-
-  const load = useCallback(async () => {
-    const res = await listContacts(onUnauthorized, activeBook);
-    if (res.success) {
-      setContacts(res.data);
-      setBanner(null);
-    } else {
-      setBanner(res.message);
-    }
-    setLoading(false);
-  }, [activeBook, onUnauthorized]);
-
-  useEffect(() => {
-    if (supported !== true) return;
-    void load();
-  }, [supported, load]);
+  const bookOptions = useMemo<SelectMenuOption[]>(
+    () =>
+      books.map((b) => ({
+        value: b.uri,
+        label: b.name || b.uri,
+        description: b.description,
+        readOnly: b.read_only,
+        leading: b.read_only ? <Users size={14} /> : <BookUser size={14} />,
+      })),
+    [books],
+  );
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return contacts;
     return contacts.filter((c) => {
-      const haystack = [
-        displayName(c),
-        c.organization ?? '',
-        ...c.emails.map((e) => e.address),
-        ...c.phones.map((p) => p.number),
-      ]
+      const haystack = [displayName(c), c.organization ?? '', ...c.emails.map((e) => e.address), ...c.phones.map((p) => p.number)]
         .join(' ')
         .toLowerCase();
       return haystack.includes(needle);
     });
   }, [contacts, query]);
 
+  /** This book changed: reload it behind the list, and compose's suggestions with it. */
+  const refreshBook = (book: string) => {
+    void queryClient.invalidateQueries({ queryKey: contactKeys.book(book) });
+    void queryClient.invalidateQueries({ queryKey: qk.suggestions });
+  };
+
+  /**
+   * Saving waits for the server, in the dialog: it assigns the id and the
+   * etag, and it can refuse. A refusal is shown in the dialog, where the
+   * person is looking, rather than on the page behind it.
+   */
   async function save() {
     if (!draft) return;
     setSaving(true);
-
+    setFormError(null);
     // Blank rows are how a form with "add another" always ends up; they are
     // not the user saying "save an empty address".
     const cleaned: ContactDraft = {
@@ -147,228 +168,196 @@ export default function AddressBookPage() {
       emails: (draft.emails ?? []).filter((e) => e.address.trim()),
       phones: (draft.phones ?? []).filter((p) => p.number.trim()),
     };
-
     const res = editing
       ? await updateContact(editing.id, editing.etag, cleaned, onUnauthorized, activeBook)
       : await createContact(cleaned, onUnauthorized, activeBook);
-
     setSaving(false);
     if (!res.success) {
-      setBanner(res.message);
+      setFormError(res.message);
       return;
     }
     setDraft(null);
     setEditing(null);
-    await load();
+    setBanner(null);
+    refreshBook(activeBook);
   }
 
-  async function remove(contact: Contact) {
-    const res = await deleteContact(contact.id, contact.etag, onUnauthorized, activeBook);
-    setConfirmDelete(null);
-    if (!res.success) {
-      setBanner(res.message);
-      return;
-    }
-    await load();
+  /** Deleting (after the confirm) takes the card off the list at once; a refusal puts it back. */
+  function remove(contact: Contact) {
+    const book = activeBook;
+    const key = contactKeys.book(book);
+    queryClient.setQueryData<Contact[]>(key, (list) => list?.filter((c) => c.id !== contact.id));
+    void (async () => {
+      const res = await deleteContact(contact.id, contact.etag, onUnauthorized, book);
+      if (!res.success) {
+        // Only this card comes back; anything deleted meanwhile stays deleted.
+        queryClient.setQueryData<Contact[]>(key, (list) =>
+          list && !list.some((c) => c.id === contact.id) ? [...list, contact] : list,
+        );
+        setBanner(`Couldn't delete ${displayName(contact)}: ${res.message}`);
+      }
+      refreshBook(book);
+    })();
   }
 
   if (supported === null) {
-    return <div className="p-8 text-sm text-neutral-500">Loading&hellip;</div>;
+    return <div className="p-8 text-sm text-muted-foreground">Loading&hellip;</div>;
   }
 
   if (supported === false) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-8 text-center">
-        <BookUser size={28} className="text-neutral-400" />
-        <h1 className="text-base font-medium">No address book on this server</h1>
-        <p className="max-w-sm text-sm text-neutral-500 dark:text-neutral-400">
-          This mail server does not run a contacts service, so there is nothing
-          to show here. Mail is unaffected.
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <BookUser size={28} className="text-muted-foreground" />
+        <h1 className="font-display text-base font-semibold">No address book on this server</h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          This mail server does not run a contacts service, so there is nothing to show here. Mail is unaffected.
         </p>
-        <a href="/" className="text-sm text-primary underline">
+        <Link href="/" className="text-sm font-semibold text-primary underline">
           Back to mail
-        </a>
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-      <header className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-        <a
-          href="/"
-          className="flex items-center gap-1.5 rounded px-2 py-1 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-        >
-          <Mail size={16} /> Mail
-        </a>
-
-        <div className="mx-1 h-5 w-px bg-neutral-200 dark:bg-neutral-800" />
-
-        <h1 className="text-sm font-medium">Contacts</h1>
-
-        {books.length > 1 && (
-          <select
-            value={activeBook}
-            onChange={(e) => {
-              setActiveBook(e.target.value);
-              setLoading(true);
-            }}
-            aria-label="Address book"
-            className="ml-2 rounded border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-          >
-            {books.map((book) => (
-              <option key={book.uri} value={book.uri}>
-                {book.name}
-              </option>
-            ))}
-          </select>
+    <div className="flex min-w-0 flex-1 flex-col bg-card">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:px-5">
+        <IconButton label="Menu" size="sm" onClick={openMenu} {...pageMenuButtonProps(menuOpen)} className="md:hidden">
+          <MenuIcon size={15} />
+        </IconButton>
+        {/* With more than one book the title is the picker: "Contacts" next
+            to a picker that also said "Contacts" read twice. The page keeps
+            its level-1 heading for heading navigation. */}
+        {books.length > 1 ? (
+          <>
+            <h1 className="sr-only">Contacts</h1>
+            <SelectMenu
+              appearance="heading"
+              label="Address book"
+              heading="Address books"
+              placeholder="Contacts"
+              options={bookOptions}
+              value={activeBook}
+              onChange={(uri) => {
+                remember(uri);
+                setBanner(null);
+              }}
+            />
+          </>
+        ) : (
+          <h1 className="font-display text-[15px] font-bold tracking-tight">Contacts</h1>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search
-              size={14}
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400"
-            />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search contacts"
-              className="w-44 rounded border border-neutral-200 bg-transparent py-1 pl-7 pr-2 text-sm dark:border-neutral-700"
-            />
-          </div>
-
-          {!readOnly && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(null);
-                setDraft({ ...EMPTY_DRAFT });
-              }}
-              className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus size={15} /> Add contact
-            </button>
-          )}
+        {/* On a phone the search takes a row of its own, full width, and
+            Add shrinks to its icon: side by side they squeezed the search box
+            to a few letters and wrapped awkwardly. */}
+        <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 max-sm:order-last max-sm:w-full sm:ml-auto">
+          <Search size={12} strokeWidth={2.2} className="shrink-0 text-muted-foreground" />
+          <input
+            type="search"
+            enterKeyHint="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search contacts"
+            aria-label="Search contacts"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/70 sm:w-48 sm:flex-none [&::-webkit-search-cancel-button]:hidden"
+          />
         </div>
+        {!readOnly && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus size={13} />}
+            collapseLabel
+            onClick={() => {
+              setEditing(null);
+              setDraft({ ...EMPTY_DRAFT });
+            }}
+            className="max-sm:ml-auto"
+          >
+            Add contact
+          </Button>
+        )}
       </header>
 
-      {banner && (
-        <p className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
-          {banner}
-        </p>
-      )}
+      {banner && <p className="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{banner}</p>}
 
       {readOnly && (
-        <p className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+        <p className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs text-muted-foreground">
           <Users size={13} />
-          {/* The server's own description, not a copy of it. This used to say
-              "Everyone in your organisation", which stopped being true when
-              the directory narrowed to the signed-in domain -- and was
-              already misleading for an organisation holding several. Whose
-              addresses these are is the server's answer to give. */}
-          {currentBook?.description || 'Kept up to date automatically.'} Not
-          editable here.
+          {currentBook?.description || 'Kept up to date automatically.'} Not editable here.
         </p>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="thin-scroll flex-1 overflow-y-auto">
         {loading ? (
-          <p className="p-6 text-sm text-neutral-500">Loading&hellip;</p>
+          <p className="p-6 text-sm text-muted-foreground">Loading&hellip;</p>
         ) : shown.length === 0 ? (
           <div className="flex flex-col items-center gap-2 p-12 text-center">
-            <BookUser size={26} className="text-neutral-300 dark:text-neutral-600" />
-            <p className="text-sm font-medium">
-              {query ? 'Nothing matches that' : 'No contacts yet'}
-            </p>
+            <div className="mb-2 flex h-[72px] w-[72px] items-center justify-center rounded-[20px] bg-primary/10 text-primary">
+              <BookUser size={30} strokeWidth={1.6} />
+            </div>
+            <p className="font-display text-[14.5px] font-bold">{query ? 'Nothing matches that' : 'No contacts yet'}</p>
             {!query && !readOnly && (
-              <p className="max-w-sm text-sm text-neutral-500 dark:text-neutral-400">
-                Contacts you save here appear in Compose and sync to your phone
-                if you have connected it.
+              <p className="max-w-sm text-[12.5px] text-muted-foreground">
+                Contacts you save here appear in Compose and sync to your phone if you have connected it.
               </p>
             )}
           </div>
         ) : (
-          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          <ul className="divide-y divide-border">
             {shown.map((contact) => (
-              <li key={contact.id} className="flex items-start gap-3 px-4 py-3">
+              <li key={contact.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50 sm:px-5">
+                <Avatar name={displayName(contact)} email={primaryEmail(contact) ?? displayName(contact)} size={34} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{displayName(contact)}</p>
+                  <p className="truncate text-[13px] font-semibold">{displayName(contact)}</p>
                   {(contact.title || contact.organization) && (
-                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="truncate text-xs text-muted-foreground">
                       {[contact.title, contact.organization].filter(Boolean).join(' · ')}
                     </p>
                   )}
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-neutral-600 dark:text-neutral-400">
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
                     {contact.emails.map((email) => (
-                      <span key={email.address} className="truncate">
+                      <span key={email.address} className="truncate font-mono">
                         {email.address}
-                        {email.type && (
-                          <span className="ml-1 text-neutral-400">{email.type.toLowerCase()}</span>
-                        )}
+                        {email.type && <span className="ml-1 font-sans text-muted-foreground/70">{email.type.toLowerCase()}</span>}
                       </span>
                     ))}
                     {contact.phones.map((phone) => (
                       <span key={phone.number} className="truncate tabular-nums">
                         {phone.number}
-                        {phone.type && (
-                          <span className="ml-1 text-neutral-400">{phone.type.toLowerCase()}</span>
-                        )}
+                        {phone.type && <span className="ml-1 text-muted-foreground/70">{phone.type.toLowerCase()}</span>}
                       </span>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-0.5">
                   {primaryEmail(contact) && (
-                    <a
+                    <Link
                       href={`/?compose=${encodeURIComponent(primaryEmail(contact) as string)}`}
                       title={`Write to ${displayName(contact)}`}
-                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                      aria-label={`Write to ${displayName(contact)}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/[0.07] hover:text-foreground"
                     >
-                      <Mail size={15} />
-                    </a>
+                      <Mail size={14} />
+                    </Link>
                   )}
                   {!readOnly && (
                     <>
-                      <button
-                        type="button"
+                      <IconButton
+                        label={`Edit ${displayName(contact)}`}
+                        size="sm"
                         onClick={() => {
                           setEditing(contact);
                           setDraft(draftFrom(contact));
                         }}
-                        aria-label={`Edit ${displayName(contact)}`}
-                        className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                       >
-                        <Pencil size={15} />
-                      </button>
-                      {confirmDelete === contact.id ? (
-                        <span className="flex items-center gap-1 text-xs">
-                          <button
-                            type="button"
-                            onClick={() => remove(contact)}
-                            className="rounded bg-rose-600 px-2 py-1 text-white"
-                          >
-                            Delete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDelete(null)}
-                            className="underline"
-                          >
-                            Cancel
-                          </button>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDelete(contact.id)}
-                          aria-label={`Delete ${displayName(contact)}`}
-                          className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
+                        <Pencil size={14} />
+                      </IconButton>
+                      <IconButton label={`Delete ${displayName(contact)}`} size="sm" tone="danger" onClick={() => setConfirmDelete(contact)}>
+                        <Trash2 size={14} />
+                      </IconButton>
                     </>
                   )}
                 </div>
@@ -386,11 +375,31 @@ export default function AddressBookPage() {
           onClose={() => {
             setDraft(null);
             setEditing(null);
+            setFormError(null);
           }}
           saving={saving}
+          error={formError}
           isEdit={Boolean(editing)}
         />
       )}
+
+      <ConfirmModal
+        isOpen={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          if (confirmDelete) remove(confirmDelete);
+        }}
+        icon={<Trash2 size={18} />}
+        tone="danger"
+        title="Delete contact"
+        body={
+          <>
+            <span className="font-semibold text-foreground">{confirmDelete ? displayName(confirmDelete) : ''}</span> will be
+            removed from this address book and from every device that syncs it.
+          </>
+        }
+        confirmLabel="Delete"
+      />
     </div>
   );
 }
@@ -401,6 +410,7 @@ function ContactForm({
   onSave,
   onClose,
   saving,
+  error,
   isEdit,
 }: {
   draft: ContactDraft;
@@ -408,161 +418,163 @@ function ContactForm({
   onSave: () => void;
   onClose: () => void;
   saving: boolean;
+  error: string | null;
   isEdit: boolean;
 }) {
   const emails = draft.emails ?? [];
   const phones = draft.phones ?? [];
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 shadow-xl dark:bg-neutral-900">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium">{isEdit ? 'Edit contact' : 'New contact'}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            <X size={16} />
-          </button>
+    <Dialog
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit contact' : 'New contact'}
+      icon={<BookUser size={16} />}
+      width="md"
+      closeOnBackdrop={false}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" busy={saving} onClick={onSave}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="contact-first">First name</Label>
+            <Input id="contact-first" value={draft.first_name ?? ''} onChange={(e) => setDraft({ ...draft, first_name: e.target.value })} />
+          </div>
+          <div>
+            <Label htmlFor="contact-last">Last name</Label>
+            <Input id="contact-last" value={draft.last_name ?? ''} onChange={(e) => setDraft({ ...draft, last_name: e.target.value })} />
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={draft.first_name ?? ''}
-              onChange={(e) => setDraft({ ...draft, first_name: e.target.value })}
-              placeholder="First name"
-              className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-            />
-            <input
-              value={draft.last_name ?? ''}
-              onChange={(e) => setDraft({ ...draft, last_name: e.target.value })}
-              placeholder="Last name"
-              className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-            />
+        <div>
+          <Label>Email</Label>
+          <div className="space-y-2">
+            {emails.map((email, index) => (
+              <div key={`email-${index}`} className="flex gap-2">
+                <Input
+                  type="email"
+                  value={email.address}
+                  onChange={(e) => {
+                    const next = [...emails];
+                    next[index] = { ...next[index], address: e.target.value };
+                    setDraft({ ...draft, emails: next });
+                  }}
+                  placeholder="name@example.com"
+                  className="font-mono text-[13px]"
+                />
+                <Select
+                  value={email.type ?? 'WORK'}
+                  onChange={(e) => {
+                    const next = [...emails];
+                    next[index] = { ...next[index], type: e.target.value };
+                    setDraft({ ...draft, emails: next });
+                  }}
+                  aria-label="Email type"
+                  className="w-28 shrink-0"
+                >
+                  <option value="WORK">Work</option>
+                  <option value="HOME">Home</option>
+                  <option value="OTHER">Other</option>
+                </Select>
+                {emails.length > 1 && (
+                  <IconButton label="Remove email" size="md" onClick={() => setDraft({ ...draft, emails: emails.filter((_, i) => i !== index) })}>
+                    <X size={13} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
           </div>
-
-          {emails.map((email, index) => (
-            <div key={`email-${index}`} className="flex gap-2">
-              <input
-                type="email"
-                value={email.address}
-                onChange={(e) => {
-                  const next = [...emails];
-                  next[index] = { ...next[index], address: e.target.value };
-                  setDraft({ ...draft, emails: next });
-                }}
-                placeholder="Email"
-                className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-              />
-              <select
-                value={email.type ?? 'WORK'}
-                onChange={(e) => {
-                  const next = [...emails];
-                  next[index] = { ...next[index], type: e.target.value };
-                  setDraft({ ...draft, emails: next });
-                }}
-                aria-label="Email type"
-                className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-              >
-                <option value="WORK">Work</option>
-                <option value="HOME">Home</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-          ))}
           <button
             type="button"
             onClick={() => setDraft({ ...draft, emails: [...emails, { address: '', type: 'WORK' }] })}
-            className="text-xs text-primary underline"
+            className="mt-2 text-xs font-semibold text-primary hover:underline"
           >
             Add another email
           </button>
+        </div>
 
-          {phones.map((phone, index) => (
-            <div key={`phone-${index}`} className="flex gap-2">
-              <input
-                value={phone.number}
-                onChange={(e) => {
-                  const next = [...phones];
-                  next[index] = { ...next[index], number: e.target.value };
-                  setDraft({ ...draft, phones: next });
-                }}
-                placeholder="Phone"
-                className="flex-1 rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-              />
-              <select
-                value={phone.type ?? 'CELL'}
-                onChange={(e) => {
-                  const next = [...phones];
-                  next[index] = { ...next[index], type: e.target.value };
-                  setDraft({ ...draft, phones: next });
-                }}
-                aria-label="Phone type"
-                className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-              >
-                <option value="CELL">Mobile</option>
-                <option value="WORK">Work</option>
-                <option value="HOME">Home</option>
-                <option value="FAX">Fax</option>
-              </select>
-            </div>
-          ))}
+        <div>
+          <Label>Phone</Label>
+          <div className="space-y-2">
+            {phones.map((phone, index) => (
+              <div key={`phone-${index}`} className="flex gap-2">
+                <Input
+                  value={phone.number}
+                  onChange={(e) => {
+                    const next = [...phones];
+                    next[index] = { ...next[index], number: e.target.value };
+                    setDraft({ ...draft, phones: next });
+                  }}
+                  placeholder="+234 …"
+                  className="tabular-nums"
+                />
+                <Select
+                  value={phone.type ?? 'CELL'}
+                  onChange={(e) => {
+                    const next = [...phones];
+                    next[index] = { ...next[index], type: e.target.value };
+                    setDraft({ ...draft, phones: next });
+                  }}
+                  aria-label="Phone type"
+                  className="w-28 shrink-0"
+                >
+                  <option value="CELL">Mobile</option>
+                  <option value="WORK">Work</option>
+                  <option value="HOME">Home</option>
+                  <option value="FAX">Fax</option>
+                </Select>
+                {phones.length > 1 && (
+                  <IconButton label="Remove phone" size="md" onClick={() => setDraft({ ...draft, phones: phones.filter((_, i) => i !== index) })}>
+                    <X size={13} />
+                  </IconButton>
+                )}
+              </div>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setDraft({ ...draft, phones: [...phones, { number: '', type: 'CELL' }] })}
-            className="text-xs text-primary underline"
+            className="mt-2 text-xs font-semibold text-primary hover:underline"
           >
             Add another phone
           </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={draft.organization ?? ''}
-              onChange={(e) => setDraft({ ...draft, organization: e.target.value })}
-              placeholder="Company"
-              className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-            />
-            <input
-              value={draft.title ?? ''}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="Job title"
-              className="rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-            />
-          </div>
-
-          <input
-            value={draft.address ?? ''}
-            onChange={(e) => setDraft({ ...draft, address: e.target.value })}
-            placeholder="Address"
-            className="w-full rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-          />
-
-          <textarea
-            value={draft.note ?? ''}
-            onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-            placeholder="Notes"
-            rows={2}
-            className="w-full rounded border border-neutral-200 bg-transparent px-2 py-1.5 text-sm dark:border-neutral-700"
-          />
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded px-3 py-1.5 text-sm">
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="contact-org">Company</Label>
+            <Input id="contact-org" value={draft.organization ?? ''} onChange={(e) => setDraft({ ...draft, organization: e.target.value })} />
+          </div>
+          <div>
+            <Label htmlFor="contact-title">Job title</Label>
+            <Input id="contact-title" value={draft.title ?? ''} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="contact-address">Address</Label>
+          <Input id="contact-address" value={draft.address ?? ''} onChange={(e) => setDraft({ ...draft, address: e.target.value })} />
+        </div>
+
+        <div>
+          <Label htmlFor="contact-note">Notes</Label>
+          <Textarea id="contact-note" value={draft.note ?? ''} onChange={(e) => setDraft({ ...draft, note: e.target.value })} rows={2} />
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

@@ -11,6 +11,7 @@
 // once, in one place.
 
 import type { ApiResult } from './client';
+import { withAccountHeader } from './query/session';
 
 export type ContactEmail = {
   address: string;
@@ -73,21 +74,21 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
-    return { success: false, message: 'Could not reach the mail server. Check your connection.' };
+    return { success: false, message: 'Could not reach the mail server. Check your connection.', status: 0 };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: 'Not logged in' };
+    return { success: false, message: 'Not logged in', status: 401 };
   }
 
   // 501 is "this deployment has no address book" -- a supported configuration,
   // not a fault. The nav entry is gated on the capability so this should be
   // unreachable, but saying it plainly beats a generic error.
   if (res.status === 501) {
-    return { success: false, message: 'This server does not provide an address book.' };
+    return { success: false, message: 'This server does not provide an address book.', status: 501 };
   }
 
   const data = (await res.json().catch(() => ({}))) as {
@@ -103,6 +104,7 @@ async function call<T>(
     return {
       success: false,
       message: data.message ?? data.msg ?? 'Something went wrong. Please try again.',
+      status: res.status,
     };
   }
   return { success: true, data: data.data as T };

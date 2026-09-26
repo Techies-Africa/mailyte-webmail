@@ -10,9 +10,24 @@ import type {
   ApiMessageSummary,
   ApiSettings,
 } from "./adapters";
+import {
+  abortSessionChange,
+  announceAccountChange,
+  prepareSessionChange,
+  withAccountHeader,
+} from "./query/session";
+
+/**
+ * `status` on a failure is the HTTP status, or 0 when the server was never
+ * reached. The query layer uses it to decide what is worth retrying: a 4xx
+ * will say the same thing again, a dropped connection may not.
+ */
+/** Fired on the window when the proxy refuses a request made for another mailbox. */
+export const ACCOUNT_MISMATCH_EVENT = "mailyte:account-mismatch";
 
 export type ApiResult<T> =
-  { success: true; data: T } | { success: false; message: string };
+  | { success: true; data: T }
+  | { success: false; message: string; status?: number };
 
 async function call<T>(
   input: string,
@@ -21,17 +36,18 @@ async function call<T>(
 ): Promise<ApiResult<T>> {
   let res: Response;
   try {
-    res = await fetch(input, init);
+    res = await fetch(input, withAccountHeader(input, init));
   } catch {
     return {
       success: false,
       message: "Could not reach the mail server. Check your connection.",
+      status: 0,
     };
   }
 
   if (res.status === 401) {
     onUnauthorized();
-    return { success: false, message: "Not logged in" };
+    return { success: false, message: "Not logged in", status: 401 };
   }
 
   const data = await res.json().catch(() => ({}) as Record<string, unknown>);
@@ -55,8 +71,20 @@ async function call<T>(
       if (window.location.pathname !== "/change-password") {
         window.location.assign("/change-password");
       }
-      return { success: false, message: "Set a new password to continue" };
+      return { success: false, message: "Set a new password to continue", status: 403 };
     }
+  }
+
+  // The proxy refused this request: it named a mailbox the session no longer
+  // has active (another tab switched, or a token expired and the next account
+  // took over). Tell the page, which checks whose mailbox this is and starts
+  // over on the right one.
+  if (
+    res.status === 409 &&
+    (data as { error_code?: string })?.error_code === "account_mismatch" &&
+    typeof window !== "undefined"
+  ) {
+    window.dispatchEvent(new Event(ACCOUNT_MISMATCH_EVENT));
   }
 
   // Two envelopes are accepted on purpose.
@@ -80,6 +108,7 @@ async function call<T>(
     return {
       success: false,
       message: body.message ?? body.msg ?? "Request failed",
+      status: res.status,
     };
   }
 
@@ -100,6 +129,11 @@ export interface ListOptions {
   search?: string;
   offset?: number;
   limit?: number;
+  /** Server-side filters: IMAP SEARCH UNSEEN / FLAGGED. */
+  unread?: boolean;
+  starred?: boolean;
+  /** A label (IMAP keyword). With no folder, searched across every folder. */
+  label?: string;
 }
 
 /**
@@ -116,6 +150,9 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.search) qs.set("search", options.search);
   if (options.offset) qs.set("offset", String(options.offset));
   if (options.limit) qs.set("limit", String(options.limit));
+  if (options.unread) qs.set("unread", "true");
+  if (options.starred) qs.set("starred", "true");
+  if (options.label) qs.set("label", options.label);
 
   const query = qs.toString();
   return call<MessagePage>(
@@ -167,7 +204,26 @@ export interface ApiCapabilities {
      * the worst kind of wrong.
      */
     scheduled_send?: boolean;
+    /**
+     * The server takes one action on many messages in one request
+     * (POST /mailbox/messages/bulk). Optional: an older server does not have
+     * it, and the client then sends one request per message.
+     */
+    bulk_actions?: boolean;
   };
+  /**
+   * Shared mailboxes this person is a member of, with what they may do there.
+   * `can_send` is true for full_access, send_as and send_on_behalf -- the
+   * three permissions POST /messages/send accepts a `from` for.
+   */
+  shared_mailboxes?: SharedMailbox[];
+}
+
+export interface SharedMailbox {
+  address: string;
+  name: string;
+  permission: string;
+  can_send: boolean;
 }
 
 export function getCapabilities(onUnauthorized: () => void) {
@@ -195,6 +251,82 @@ export function createFolder(name: string, onUnauthorized: () => void) {
   );
 }
 
+/**
+ * Rename a folder. `id` is the folder's id from GET /folders and `name` the
+ * new LAST path segment; IMAP RENAME carries subfolders along. The server
+ * refuses INBOX and the special-use folders with 409.
+ */
+export function renameFolder(id: string, name: string, onUnauthorized: () => void) {
+  return call<{ id: string; name: string; folders: ApiFolder[] }>(
+    `/api/webmail/folders/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    onUnauthorized,
+  );
+}
+
+/** Delete an EMPTY folder. The server refuses one that still holds mail. */
+export function deleteFolder(id: string, onUnauthorized: () => void) {
+  return call<null>(
+    `/api/webmail/folders/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    onUnauthorized,
+  );
+}
+
+// --- Blocked senders ------------------------------------------------------
+
+export interface ApiBlockedSenders {
+  addresses: string[];
+  /** False when a blocked-senders script exists that this UI did not write. */
+  managed: boolean;
+  /** Where blocked mail goes. Always Junk; reported so the UI never guesses. */
+  folder: string;
+  limit: number;
+}
+
+export function getBlockedSenders(onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>("/api/webmail/blocked-senders", undefined, onUnauthorized);
+}
+
+export function blockSender(address: string, onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>(
+    "/api/webmail/blocked-senders",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    },
+    onUnauthorized,
+  );
+}
+
+export function unblockSender(address: string, onUnauthorized: () => void) {
+  return call<ApiBlockedSenders>(
+    `/api/webmail/blocked-senders/${encodeURIComponent(address)}`,
+    { method: "DELETE" },
+    onUnauthorized,
+  );
+}
+
+/** The original message as stored (.eml), same-origin through the BFF. */
+export function rawMessageUrl(messageId: string): string {
+  return `/api/webmail/messages/${encodeURIComponent(messageId)}/raw`;
+}
+
+/** The same bytes as plain text, for the "Show original" page. */
+export function rawMessageTextUrl(messageId: string): string {
+  return `${rawMessageUrl(messageId)}?format=text`;
+}
+
+/** The "Show original" page for a message. Opens in its own tab. */
+export function originalPageUrl(messageId: string): string {
+  return `/original?id=${encodeURIComponent(messageId)}`;
+}
+
 /** The rest of a message's conversation, oldest first; empty if it stands alone. */
 export function getThread(id: string, onUnauthorized: () => void) {
   return call<ApiMessageSummary[]>(
@@ -210,6 +342,28 @@ export function getThread(id: string, onUnauthorized: () => void) {
  */
 export function attachmentUrl(messageId: string, index: number): string {
   return `/api/webmail/messages/${encodeURIComponent(messageId)}/attachments/${index}`;
+}
+
+/**
+ * The same bytes, asked to render in the browser rather than download. The
+ * proxy honours it only for types a browser shows without executing anything
+ * (images, PDF, plain text, audio, video); anything else downloads regardless.
+ */
+export function attachmentPreviewUrl(messageId: string, index: number): string {
+  return `${attachmentUrl(messageId, index)}?disposition=inline`;
+}
+
+/** Whether the browser can show this type on its own, matching the proxy's allowlist. */
+export function isPreviewableAttachment(type: string): boolean {
+  const t = type.split(";")[0].trim().toLowerCase();
+  return (
+    /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(t) ||
+    t === "application/pdf" ||
+    t === "text/plain" ||
+    t === "text/csv" ||
+    /^audio\/(mpeg|mp4|ogg|wav|webm)$/.test(t) ||
+    /^video\/(mp4|webm|ogg)$/.test(t)
+  );
 }
 
 export function getMessage(id: string, onUnauthorized: () => void) {
@@ -252,6 +406,69 @@ export const moveMessage = (
 ) => messageAction(id, "move", { folder }, onUnauthorized);
 
 /**
+ * Add and remove labels on one message. Labels are IMAP keywords: the server
+ * stores them beside \Seen and \Flagged, every client sees them, and a
+ * filter rule can set them at delivery. Names are normalised to lowercase
+ * slugs on the server ("Action needed" -> "action_needed").
+ */
+export const setLabels = (
+  id: string,
+  add: string[],
+  remove: string[],
+  onUnauthorized: () => void,
+) => messageAction(id, "labels", { add, remove }, onUnauthorized);
+
+export type BulkAction =
+  | "mark_read"
+  | "mark_unread"
+  | "star"
+  | "unstar"
+  | "move"
+  | "trash"
+  | "delete"
+  | "labels";
+
+export interface BulkRequest {
+  ids: string[];
+  action: BulkAction;
+  /** The destination, for `move`. */
+  folder?: string;
+  /** Label names to add and remove, for `labels`. */
+  add?: string[];
+  remove?: string[];
+}
+
+/** One message's outcome. `new_id` is its id after a move; `error_code` says why it failed. */
+export interface BulkItemResult {
+  id: string;
+  ok: boolean;
+  new_id?: string | null;
+  error_code?: string | null;
+  message?: string | null;
+}
+
+/**
+ * One action on many messages at once. Answers 200 with a result per message
+ * even when some fail; a whole-request failure means none were attempted.
+ */
+export function bulkMessageAction(body: BulkRequest, onUnauthorized: () => void) {
+  return call<{ results: BulkItemResult[]; succeeded?: number; failed?: number }>(
+    "/api/webmail/messages/bulk",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    onUnauthorized,
+  );
+}
+
+/** Every label in use in the mailbox, as slugs. */
+export function listLabels(onUnauthorized: () => void) {
+  return call<{ labels: string[] }>("/api/webmail/labels", undefined, onUnauthorized);
+}
+
+/**
  * Move to Trash -- recoverable, and what the delete button does everywhere
  * outside Trash itself. The old client called DELETE straight from a hover
  * icon, which expunged the message off the mail server with no confirmation
@@ -288,6 +505,12 @@ export interface SendPayload {
    * is set to.
    */
   send_at?: string;
+  /**
+   * Send as a shared mailbox. Only honoured when the session holds a sending
+   * permission on that address (see SharedMailbox.can_send); the server
+   * refuses otherwise, so the client only offers addresses it was told about.
+   */
+  from?: string;
 }
 
 export interface SendResult {
@@ -334,6 +557,7 @@ export function sendMessage(
   if (payload.in_reply_to) form.append("in_reply_to", payload.in_reply_to);
   if (payload.references) form.append("references", payload.references);
   if (payload.send_at) form.append("send_at", payload.send_at);
+  if (payload.from) form.append("from", payload.from);
   for (const file of attachments) form.append("attachments[]", file, file.name);
 
   return call<SendResult>(
@@ -665,6 +889,85 @@ export function aiSummarize(id: string, onUnauthorized: () => void) {
   );
 }
 
+// --- Accounts on this browser --------------------------------------------
+
+export interface AccountSummary {
+  email: string;
+  active: boolean;
+  expires_at: string | null;
+}
+
+/** Every mailbox signed in on this browser. 200 with an empty list when none. */
+export function listAccounts() {
+  return call<{ accounts: AccountSummary[] }>(
+    "/api/webmail-auth/accounts",
+    { cache: "no-store" },
+    () => {
+      // The accounts endpoint never answers 401; nothing to redirect for.
+    },
+  );
+}
+
+/**
+ * Make another signed-in mailbox the active one, then start over on the
+ * inbox. A reload, not a state reset: every piece of mailbox state on the
+ * page belongs to the previous account, and the compose windows' own
+ * unload guard gets its say before anything is lost.
+ */
+export async function switchAccount(email: string): Promise<string | null> {
+  await prepareSessionChange();
+  const result = await call<{ accounts: AccountSummary[] }>(
+    "/api/webmail-auth/accounts",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    () => {},
+  );
+  if (!result.success) {
+    abortSessionChange();
+    return result.message;
+  }
+  forgetDisplayAddress();
+  announceAccountChange();
+  window.location.assign("/");
+  return null;
+}
+
+/**
+ * Sign out of the active mailbox, or of every mailbox on this browser.
+ * Lands on the next account's inbox when one remains, else on the login page.
+ */
+export async function signOut(all = false): Promise<void> {
+  await prepareSessionChange();
+  const res = await fetch("/api/webmail-auth/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ all }),
+  }).catch(() => null);
+  const body = (await res?.json().catch(() => ({}))) as {
+    data?: { remaining?: number };
+  };
+  forgetDisplayAddress();
+  announceAccountChange();
+  window.location.assign(body?.data?.remaining ? "/" : "/login");
+}
+
+/** The cached "whose mailbox is this" placeholder; must not outlive the account it describes. */
+export function forgetDisplayAddress(): void {
+  try {
+    sessionStorage.removeItem("mailyte_mailbox_display");
+  } catch {
+    // Storage unavailable; nothing cached to forget.
+  }
+}
+
+/** @deprecated Use signOut(); kept for callers that manage their own redirect. */
 export async function logout() {
-  await fetch("/api/webmail-auth/logout", { method: "POST" });
+  await fetch("/api/webmail-auth/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ all: false }),
+  });
 }

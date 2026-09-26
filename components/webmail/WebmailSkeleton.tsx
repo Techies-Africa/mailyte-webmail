@@ -1,115 +1,78 @@
 /**
  * What the mailbox looks like before it has anything to show.
  *
- * This was a centred line of text on an empty screen, which had two problems.
- * It gave no sense of progress -- an empty page reads the same whether the app
- * is working or hung -- and the entire interface then appeared at once,
- * shifting everything the moment data arrived.
+ * A skeleton of the real layout: the dark rail, the list column and the
+ * reading pane are already in place, so nothing jumps when the mailbox
+ * paints, and the shapes say what is coming. Deliberately not a spinner.
  *
- * A skeleton of the real layout fixes both: the frame is already in place, so
- * nothing jumps when the mailbox paints, and the shapes tell the reader what
- * is coming. Dimensions here are copied from the live components (header
- * py-2/px-4 with a lg:w-56 brand block, sidebar w-56, list rows px-4 py-3) --
- * if those change, these should follow, or the layout will shift again.
- *
- * Deliberately not a spinner. A spinner says "wait"; this says what for.
+ * The rail and list take their widths from the same CSS variables as the real
+ * panes (pane-rail, pane-list in globals.css), which the <head> script has set
+ * before this first paint -- a remembered width or a collapsed rail is drawn
+ * right from the start. On a phone the list is the full width.
  */
 export default function WebmailSkeleton() {
   return (
-    <div
-      className="h-screen flex flex-col bg-background"
-      role="status"
-      aria-busy="true"
-      aria-label="Loading your mailbox"
-    >
-      {/* Screen readers get the sentence; sighted readers get the shapes. */}
+    <div className="flex h-dvh overflow-hidden bg-pane" role="status" aria-busy="true" aria-label="Loading your mailbox">
       <span className="sr-only">Loading your mailbox…</span>
 
-      {/* Header — mirrors WebmailHeader */}
-      <div className="border-b border-border py-2 px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 lg:w-56 shrink-0">
-            <Block className="h-7 w-7 rounded" />
-            <Block className="h-4 w-20 rounded hidden sm:block" />
-          </div>
-          <div className="flex-1 min-w-0 flex justify-center">
-            <Block className="hidden sm:block h-9 w-full max-w-2xl rounded-full" />
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Block className="h-8 w-8 rounded-full" />
-            <Block className="h-8 w-8 rounded-full" />
-          </div>
+      <div className="pane-rail hidden h-full shrink-0 flex-col overflow-hidden bg-sidebar px-2.5 pb-3.5 md:flex">
+        <div className="flex items-center justify-between px-0.5 pb-2.5 pt-3.5">
+          <Block dark className="rail-open-only h-6 w-24 rounded" />
+          <Block dark className="h-[30px] w-[30px] rounded-md" />
         </div>
-      </div>
-
-      <div className="flex-1 flex min-h-0">
-        {/* Sidebar — mirrors WebmailSidebar's w-56 */}
-        <div className="w-56 border-r border-border bg-muted shrink-0 hidden md:flex flex-col">
-          <div className="p-4">
-            <Block className="h-12 w-full rounded-lg" />
-          </div>
-          <div className="mt-2 px-3 flex flex-col gap-1">
-            {/* Six system folders, at the widths real folder names sit at. */}
-            {[64, 56, 44, 60, 46, 48].map((w, i) => (
-              <div key={i} className="flex items-center gap-3 py-2">
-                <Block className="h-[18px] w-[18px] rounded shrink-0" />
-                <Block className="h-3 rounded" style={{ width: w }} />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Message list — mirrors WebmailList rows */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="border-b border-border px-4 py-2 flex items-center gap-3">
-            <Block className="h-4 w-4 rounded" />
-            <Block className="h-4 w-4 rounded" />
-          </div>
-
-          {/* Staggered so the eye reads it as loading rather than as content.
-              Rows fade down the list, which also stops eight identical bars
-              looking like a rendering fault. */}
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800"
-              // Rows fade down the list so it reads as loading rather than as
-              // content, and so eight identical bars don't look like a fault.
-              style={{ opacity: 1 - i * 0.09 }}
-            >
-              {/* Same widths as WebmailList's own loading rows (w-4, w-4,
-                  w-44, flex-1, w-12) so this hands over to that skeleton
-                  without a visible change when the session resolves. */}
-              <Block className="h-4 w-4 rounded shrink-0" />
-              <Block className="h-4 w-4 rounded shrink-0" />
-              <Block className="h-3.5 w-44 rounded shrink-0" />
-              <Block className="h-3.5 rounded flex-1" />
-              <Block className="h-3.5 w-12 rounded shrink-0" />
+        <Block dark className="mb-3 h-10 w-full rounded-xl" />
+        <div className="space-y-1">
+          {[72, 58, 46, 62, 50, 52, 60].map((w, i) => (
+            <div key={i} className="flex items-center gap-2 px-2.5 py-[7px]">
+              <Block dark className="h-[14px] w-[14px] rounded" />
+              <Block dark className="rail-open-only h-3 rounded" style={{ width: w }} />
             </div>
           ))}
         </div>
+        <div className="mt-auto">
+          <Block dark className="h-11 w-full rounded-[9px]" />
+        </div>
       </div>
+
+      <div className="pane-list flex h-full shrink-0 flex-col border-r border-border bg-card">
+        <div className="border-b border-border px-3.5 pb-2.5 pt-3">
+          <div className="mb-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {/* The phone's Menu button. */}
+              <Block className="h-7 w-7 rounded-md md:hidden" />
+              <Block className="h-4 w-16 rounded" />
+            </div>
+            <div className="flex gap-1">
+              <Block className="h-7 w-7 rounded-md" />
+              <Block className="h-7 w-7 rounded-md" />
+              <Block className="h-7 w-7 rounded-md" />
+            </div>
+          </div>
+          <div className="flex gap-1.5">
+            <Block className="h-6 w-12 rounded-md" />
+            <Block className="h-6 w-10 rounded-full" />
+            <Block className="h-6 w-14 rounded-full" />
+            <Block className="h-6 w-14 rounded-full" />
+          </div>
+        </div>
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="flex items-start gap-2 border-b border-border/70 px-3 py-2.5" style={{ opacity: 1 - i * 0.08 }}>
+            <Block className="mt-0.5 h-[13px] w-[13px] rounded" />
+            <Block className="h-[26px] w-[26px] rounded-full" />
+            <div className="flex-1 space-y-1.5">
+              <Block className="h-3 w-2/5 rounded" />
+              <Block className="h-3 w-4/5 rounded" />
+              <Block className="h-2.5 w-3/5 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden flex-1 md:block" />
     </div>
   );
 }
 
-/**
- * One shimmering placeholder.
- *
- * `animate-pulse` is Tailwind's own, so this needs no keyframes of its own and
- * respects prefers-reduced-motion through Tailwind's motion-safe handling.
- */
-function Block({
-  className = '',
-  style,
-}: {
-  className?: string;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div
-      style={style}
-      className={`bg-muted animate-pulse ${className}`}
-    />
-  );
+function Block({ className = '', style, dark = false }: { className?: string; style?: React.CSSProperties; dark?: boolean }) {
+  return <div style={style} className={`animate-pulse ${dark ? 'bg-white/10' : 'bg-muted'} ${className}`} />;
 }

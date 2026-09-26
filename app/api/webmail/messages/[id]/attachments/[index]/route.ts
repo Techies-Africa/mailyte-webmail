@@ -1,17 +1,44 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { apiBaseUrl, mailboxToken } from '@/lib/webmail/server';
 
 /**
  * Stream one attachment's bytes through to the browser (PRD P6).
  *
- * The body is passed through untouched rather than buffered, and the safety
- * headers the mail server sets are forwarded verbatim rather than rebuilt here:
- * Content-Disposition (always `attachment`, never inline), the allowlisted
- * or downgraded Content-Type, and nosniff. Re-deriving them in this tier
- * would mean two places that have to agree about what is safe to render.
+ * Two modes. The default is a DOWNLOAD: the mail server's own headers pass
+ * through verbatim -- Content-Disposition: attachment, the allowlisted or
+ * downgraded type, nosniff.
+ *
+ * `?disposition=inline` asks for a PREVIEW in the browser instead, and is
+ * honoured only for types a browser renders without executing anything:
+ * raster images, PDF, plain text, audio and video. Everything else -- HTML,
+ * SVG, Office files, archives -- still downloads, because a sender-supplied
+ * document rendered on this origin is stored XSS. Even the allowed previews
+ * carry a sandboxing CSP, so a mislabelled file cannot run script or reach
+ * the session cookie.
  */
+const PREVIEWABLE = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/ogg',
+  'audio/wav',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+]);
+
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string; index: string }> },
 ) {
   const token = await mailboxToken();
@@ -20,6 +47,7 @@ export async function GET(
   }
 
   const { id, index } = await params;
+  const wantsPreview = request.nextUrl.searchParams.get('disposition') === 'inline';
 
   const upstream = await fetch(
     `${apiBaseUrl()}/mailbox/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(index)}`,
@@ -43,6 +71,22 @@ export async function GET(
     if (value) headers.set(header, value);
   }
   headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+
+  const type = (upstream.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (wantsPreview && PREVIEWABLE.has(type)) {
+    // Keep the server's filename (the filename*= part) so "Save" in the
+    // browser's viewer still names the file properly; only the disposition
+    // word changes.
+    const disposition = upstream.headers.get('content-disposition') ?? '';
+    const filenamePart = disposition.replace(/^\s*attachment\s*;?\s*/i, '').trim();
+    headers.set('Content-Disposition', filenamePart ? `inline; ${filenamePart}` : 'inline');
+    // Opaque origin, no script, no network: a preview can only be looked at.
+    // Chrome's PDF viewer and the built-in image/media viewers all work under
+    // this. `frame-ancestors 'none'` keeps the preview out of anyone's iframe.
+    headers.set('Content-Security-Policy', "default-src 'none'; media-src 'self'; img-src 'self'; sandbox; frame-ancestors 'none'");
+    headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  }
 
   return new NextResponse(upstream.body, { status: 200, headers });
 }
