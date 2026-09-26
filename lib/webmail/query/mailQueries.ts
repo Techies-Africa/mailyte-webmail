@@ -49,6 +49,7 @@ export function listQuery(params: ListParams, onUnauthorized: () => void) {
             unread: params.unread || undefined,
             starred: params.starred || undefined,
             label: params.label ?? undefined,
+            attachments: params.attachments || undefined,
           },
           onUnauthorized,
         ),

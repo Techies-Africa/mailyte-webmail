@@ -380,7 +380,16 @@ export default function MessageListPane({
       {activeSearch && (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-pane px-3.5 py-1.5 text-[11.5px] text-muted-foreground">
           <span className="min-w-0 flex-1 truncate">
-            {total} result{total === 1 ? '' : 's'} for &ldquo;{activeSearch}&rdquo;{' '}
+            {/* "0 results" used to show while the search was still running --
+                a body search reads every message and can take many seconds,
+                so the count said "nothing found" before anything was asked. */}
+            {loadingList || (refreshing && isPlaceholderPage) ? (
+              <>Searching for &ldquo;{activeSearch}&rdquo;&hellip;</>
+            ) : (
+              <>
+                {total} result{total === 1 ? '' : 's'} for &ldquo;{activeSearch}&rdquo;{' '}
+              </>
+            )}
             {searchScope === 'all' ? 'across all mail' : `in ${title}`}
           </span>
           <button type="button" onClick={closeSearch} className="shrink-0 font-semibold text-primary hover:underline">
@@ -391,7 +400,7 @@ export default function MessageListPane({
 
       {filter === 'attachments' && (
         <div className="shrink-0 border-b border-border bg-pane px-3.5 py-1 text-[11px] text-muted-foreground">
-          Showing messages on this page that have attachments.
+          Messages with attachments in {title}.
         </div>
       )}
 

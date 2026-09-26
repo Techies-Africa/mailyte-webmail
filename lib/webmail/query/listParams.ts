@@ -34,6 +34,8 @@ export interface ListParams {
   unread: boolean;
   starred: boolean;
   label: string | null;
+  /** Only messages with attachments -- asked of the SERVER, across the whole folder. */
+  attachments: boolean;
   offset: number;
 }
 
@@ -48,9 +50,9 @@ export interface ListView {
 
 /**
  * The server question a view asks. Starred is SEARCH FLAGGED on the inbox; a
- * label is a KEYWORD search everywhere. The "attachments" pill has no server
- * counterpart -- it filters the page it is given -- so it asks the same
- * question as "all" and shares its cache entry.
+ * label is a KEYWORD search everywhere. The "attachments" pill is a server
+ * search too (2026-09-26): it used to filter only the 50 messages on the
+ * current page, so a mailbox full of attachments showed a handful.
  */
 export function listParamsFor(view: ListView): ListParams {
   const isStarredView = view.folder === STARRED_VIEW;
@@ -62,6 +64,7 @@ export function listParamsFor(view: ListView): ListParams {
     unread: view.filter === 'unread',
     starred: isStarredView || view.filter === 'starred',
     label,
+    attachments: view.filter === 'attachments',
     offset: view.offset,
   };
 }
@@ -73,6 +76,7 @@ export function sameListOtherPage(a: ListParams, b: ListParams): boolean {
     a.search === b.search &&
     a.unread === b.unread &&
     a.starred === b.starred &&
-    a.label === b.label
+    a.label === b.label &&
+    a.attachments === b.attachments
   );
 }
