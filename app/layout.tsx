@@ -47,12 +47,16 @@ export const metadata: Metadata = {
   // The icons live in public/ only -- an app/favicon.ico or app/apple-icon.png
   // gets emitted as well and drifts from these. ?v= is the cache-buster:
   // browsers keep favicons by URL, so bump it whenever an icon is replaced.
+  // v=2026b: the favicon was a 32x28 bare mark whose indigo loops vanished on
+  // dark tabs; every icon is now rendered from public/icon.svg (white M on an
+  // indigo tile), and the SVG is offered first so modern browsers stay crisp.
   icons: {
     icon: [
-      { url: '/favicon.ico?v=2026', sizes: 'any' },
-      { url: '/logo-192.png?v=2026', type: 'image/png', sizes: '192x192' },
+      { url: '/icon.svg?v=2026b', type: 'image/svg+xml' },
+      { url: '/favicon.ico?v=2026b', sizes: '16x16 32x32 48x48' },
+      { url: '/logo-192.png?v=2026b', type: 'image/png', sizes: '192x192' },
     ],
-    apple: '/apple-touch-icon.png?v=2026',
+    apple: '/apple-touch-icon.png?v=2026b',
   },
 };
 

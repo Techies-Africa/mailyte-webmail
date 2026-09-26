@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!--
+    Webmail's tab icon: the Mailyte "M" reversed to white on an indigo tile,
+    matching logo-192.png / apple-touch-icon.png. Square and vector, so it
+    stays crisp at 16px and reads on light AND dark browser tabs (the old
+    favicon.ico was a 32x28 bare mark whose indigo loops vanished on dark tabs).
+    Indigo, not the console's ink chip, so the two apps' tabs stay distinct.
+  -->
+  <defs>
+    <linearGradient id="fold" x1="18.75" y1="0" x2="45.25" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.3" stop-color="#4C8DFF"/>
+      <stop offset="0.5" stop-color="#9B6BE0"/>
+      <stop offset="0.72" stop-color="#BE2AAC"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#3730A3"/>
+  <g transform="translate(9.6 14.85) scale(0.7)" fill="none" stroke-width="7"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18.75 3 L32 19.2 L45.25 3" stroke="url(#fold)"/>
+    <rect x="3" y="3" width="15.75" height="43" rx="7.875" stroke="#FFFFFF"/>
+    <rect x="45.25" y="3" width="15.75" height="43" rx="7.875" stroke="#FFFFFF"/>
+  </g>
+</svg>
