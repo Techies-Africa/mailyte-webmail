@@ -60,6 +60,8 @@ type SidebarProps = {
   onHome?: () => void;
   /** Asked before leaving for another page from the account menu; false stays. */
   onLeave?: () => boolean;
+  /** Unread Inbox mail per signed-in address (the new-mail poll); absent where it does not run. */
+  unreadByAccount?: Record<string, number | null>;
 };
 
 /**
@@ -98,6 +100,7 @@ export default function Sidebar({
   onCloseMobile,
   onHome,
   onLeave,
+  unreadByAccount,
 }: SidebarProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -127,6 +130,9 @@ export default function Sidebar({
   }, [profileOpen]);
 
   const others = accounts.filter((a) => !a.active && a.email !== email.toLowerCase());
+  const unreadOf = (address: string) => unreadByAccount?.[address] ?? 0;
+  /** Another signed-in mailbox has unread Inbox mail: the chip's +N shows it. */
+  const othersHaveMail = others.some((a) => unreadOf(a.email) > 0);
 
   const isMobile = useIsMobile();
   // Read when the menu renders -- only ever after a click -- so no hydration question arises.
@@ -304,7 +310,10 @@ export default function Sidebar({
               {others.length > 0 && (
                 <span
                   aria-hidden
-                  className="absolute -bottom-0.5 -right-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-sidebar px-0.5 text-[9px] font-bold text-white/80 ring-1 ring-white/20"
+                  className={[
+                    'absolute -bottom-0.5 -right-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full px-0.5 text-[9px] font-bold ring-1',
+                    othersHaveMail ? 'bg-primary text-primary-foreground ring-sidebar' : 'bg-sidebar text-white/80 ring-white/20',
+                  ].join(' ')}
                 >
                   +{others.length}
                 </span>
@@ -367,6 +376,14 @@ export default function Sidebar({
                         >
                           <Avatar name={account.email} email={account.email} size={28} />
                           <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">{account.email}</span>
+                          {unreadOf(account.email) > 0 && switching !== account.email && (
+                            <span
+                              title={`${unreadOf(account.email)} unread in Inbox`}
+                              className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[11px] font-semibold tabular-nums text-primary"
+                            >
+                              {unreadOf(account.email)}
+                            </span>
+                          )}
                           {switching === account.email && (
                             <LoaderCircle size={14} aria-hidden className="shrink-0 animate-spin text-muted-foreground" />
                           )}

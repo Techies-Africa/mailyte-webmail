@@ -911,13 +911,38 @@ export function listAccounts() {
   );
 }
 
+export interface AccountInbox {
+  email: string;
+  active: boolean;
+  /** Unread messages in INBOX, or null when the mailbox could not be asked. */
+  unread: number | null;
+  /** The newest unread INBOX messages, newest first -- the same rows the list shows. */
+  latest: ApiMessageSummary[];
+  /** Why `unread` is null: the session ended, or the mail server did not answer. */
+  error?: "signed_out" | "unavailable";
+}
+
+/** The newest unread inbox mail of every mailbox signed in here (the new-mail notifier's poll). */
+export function listAccountInboxes() {
+  return call<{ accounts: AccountInbox[] }>(
+    "/api/webmail-auth/accounts/inboxes",
+    { cache: "no-store" },
+    () => {
+      // Never 401s: a signed-out account is reported inside the list.
+    },
+  );
+}
+
 /**
  * Make another signed-in mailbox the active one, then start over on the
  * inbox. A reload, not a state reset: every piece of mailbox state on the
  * page belongs to the previous account, and the compose windows' own
  * unload guard gets its say before anything is lost.
+ *
+ * `landing` is where the reload goes -- a new-mail notification lands on the
+ * message itself (`/?folder=INBOX&id=...`, the deep link useMailbox opens).
  */
-export async function switchAccount(email: string): Promise<string | null> {
+export async function switchAccount(email: string, landing = "/"): Promise<string | null> {
   await prepareSessionChange();
   const result = await call<{ accounts: AccountSummary[] }>(
     "/api/webmail-auth/accounts",
@@ -934,7 +959,7 @@ export async function switchAccount(email: string): Promise<string | null> {
   }
   forgetDisplayAddress();
   announceAccountChange();
-  window.location.assign("/");
+  window.location.assign(landing);
   return null;
 }
 

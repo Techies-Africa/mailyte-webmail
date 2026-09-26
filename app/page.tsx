@@ -23,6 +23,8 @@ import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
 import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
+import { useNewMailNotifier } from '@/lib/webmail/useNewMailNotifier';
+import { toListItem } from '@/lib/webmail/adapters';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
 
@@ -219,6 +221,17 @@ export default function WebmailInboxPage() {
 
   useUnreadTitle(unreadCount);
 
+  // --- New mail, in this mailbox and every other one signed in here ------------------
+
+  const { unreadByAccount } = useNewMailNotifier({
+    currentEmail: displayEmail,
+    onOpenHere: (message) => {
+      setPanel(null);
+      if (!message || activeFolder !== message.folder) mailbox.setFolder(message?.folder ?? 'INBOX');
+      if (message) void handleOpen(toListItem(message));
+    },
+  });
+
   const selectedIndex = openMessage ? messages.findIndex((m) => m.id === openMessage.id) : -1;
   const step = useCallback(
     (delta: number) => {
@@ -286,6 +299,7 @@ export default function WebmailInboxPage() {
         email={displayEmail}
         name={settings?.name ?? null}
         unreadCount={unreadCount}
+        unreadByAccount={unreadByAccount}
         onOpenSettings={() => confirmLeave() && router.push('/settings')}
         onOpenSecurity={() => confirmLeave() && router.push('/settings/security')}
         onShowShortcuts={() => setHelpOpen(true)}

@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter, Bell } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
 import RulesSettings from './RulesSettings';
@@ -9,6 +9,7 @@ import BlockedSendersSettings from './BlockedSendersSettings';
 import SecuritySettings from './SecuritySettings';
 import AppearanceSettings from './AppearanceSettings';
 import CalendarSettings from './CalendarSettings';
+import NotificationSettings from './NotificationSettings';
 import type { SettingsSectionProps } from './types';
 
 /**
@@ -54,6 +55,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'How writing and sending behave, including undo send.',
     icon: PenSquare,
     component: ComposingSettings,
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'A desktop notification when new mail arrives.',
+    icon: Bell,
+    component: NotificationSettings,
   },
   {
     id: 'rules',
