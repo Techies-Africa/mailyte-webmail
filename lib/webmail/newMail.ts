@@ -93,6 +93,48 @@ export function storeNotifyPref(value: 'on' | 'off'): void {
   }
 }
 
+const SOUND_KEY = 'mailyte:new-mail-sound';
+
+/** Whether new mail plays the chime on this device. On unless turned off. */
+export function soundOn(): boolean {
+  try {
+    return window.localStorage.getItem(SOUND_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function storeSound(on: boolean): void {
+  try {
+    window.localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+  } catch {
+    // As with the notification switch: lasts this visit only.
+  }
+}
+
+const CHIMED_KEY = 'mailyte:new-mail-chimed';
+const MAX_CHIMED = 100;
+
+/**
+ * Claim the chime for these arrivals, across every Mailyte tab on this
+ * device. Each open tab polls on its own clock and would otherwise chime for
+ * the same email once per tab; a notification de-duplicates by its tag, a
+ * sound cannot. True when at least one of `keys` had not chimed anywhere yet.
+ */
+export function claimChime(keys: string[]): boolean {
+  try {
+    const raw = window.localStorage.getItem(CHIMED_KEY);
+    const chimed: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+    const fresh = keys.filter((key) => !chimed.includes(key));
+    if (fresh.length === 0) return false;
+    window.localStorage.setItem(CHIMED_KEY, JSON.stringify([...chimed, ...fresh].slice(-MAX_CHIMED)));
+    return true;
+  } catch {
+    // No storage to coordinate through: chime, a double chime beats none.
+    return true;
+  }
+}
+
 export function notificationsSupported(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window;
 }
