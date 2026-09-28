@@ -9,6 +9,7 @@ import {
   getSecurity,
   getVacation,
   listSessions,
+  type ApiSession,
 } from '@/lib/webmail/client';
 import { listSubscriptions } from '@/lib/webmail/calendar';
 import { ApiError, unwrap } from './errors';
@@ -82,7 +83,14 @@ export function useSecurity(onUnauthorized: () => void) {
 export function useSessions(onUnauthorized: () => void) {
   return useQuery({
     queryKey: settingsKeys.sessions,
-    queryFn: async () => unwrap(await listSessions(onUnauthorized))?.sessions ?? [],
+    // The mail server answers with the list itself; this read `.sessions`
+    // off it and so showed "No sign-ins recorded yet" to everyone, though
+    // every webmail sign-in is recorded (2026-09-28). Both shapes accepted.
+    queryFn: async () => {
+      const data = unwrap(await listSessions(onUnauthorized)) as unknown;
+      if (Array.isArray(data)) return data as ApiSession[];
+      return (data as { sessions?: ApiSession[] } | null)?.sessions ?? [];
+    },
     staleTime: 60_000,
   });
 }
