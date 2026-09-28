@@ -11,9 +11,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Pass on who is really signing in. This server makes the call, so without
+  // these the mail server recorded the webmail container itself -- every
+  // sign-in under Settings > Security read "172.25.0.x · node" -- and its
+  // per-IP failed-login limit counted every webmail user as one address, so
+  // one person's wrong passwords could lock everyone out. X-Forwarded-For
+  // comes from the proxy in front of this app (which replaces any value a
+  // client sent), so it is passed through, not built from the body.
+  const forwardedFor = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
+  const userAgent = request.headers.get('user-agent');
   const backendRes = await fetch(`${apiBaseUrl()}/mailbox-auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(forwardedFor ? { 'X-Forwarded-For': forwardedFor } : {}),
+      ...(userAgent ? { 'User-Agent': userAgent } : {}),
+    },
     body: JSON.stringify({
       email_address: body.email_address,
       password: body.password,
