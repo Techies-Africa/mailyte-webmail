@@ -7,8 +7,8 @@ import { extractEmail, namePart, splitRecipients } from './recipients';
 /**
  * @mentions in the message body (plans/21-mentions, phase M1).
  *
- * Typing `@` at the start of a word and one more character opens a list of
- * contacts; picking one inserts a pill and tells the window, which adds the
+ * Typing `@` at the start of a word opens a list -- the people on the email
+ * first, then contacts -- which narrows as you type; picking one inserts a pill and tells the window, which adds the
  * person to Cc (decision D2). The pill is written out with INLINE styles:
  * recipients' mail clients drop stylesheets, and a mention that arrives as
  * plain text in Outlook has lost the point.
@@ -34,7 +34,21 @@ const MAX_SUGGESTIONS = 8;
 /** Name or address contains the query, name-start matches first (D8). */
 export function matchContacts(contacts: WebmailContact[], query: string): WebmailContact[] {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
+  // A bare "@" opens the list straight away, so the person can arrow down
+  // and pick without typing a letter first. The candidates arrive with the
+  // people on the email first (mentionCandidates), which is who a bare "@"
+  // is usually for.
+  if (!q) {
+    const seen = new Set<string>();
+    return contacts
+      .filter((c) => {
+        const key = c.email.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, MAX_SUGGESTIONS);
+  }
   const scored = contacts
     .map((c) => {
       const name = (c.name ?? '').toLowerCase();
