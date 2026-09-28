@@ -8,7 +8,7 @@ import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
 import { AttachButton, AttachmentChips, useAttachments } from '../compose/attachments';
-import { ccWithMention } from '../mentions';
+import { ccWithMention, mentionCandidates } from '../mentions';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useRevealInView } from './useRevealInView';
 
@@ -184,7 +184,7 @@ export default function QuickReply({
         toolbarPosition="bottom"
         onReady={handleReady}
         mentions={{
-          contacts,
+          contacts: mentionCandidates({ message, recipients: { to: recipients.to, cc }, selfAddress, contacts }),
           onMention: (contact) => {
             const next = ccWithMention({ to: recipients.to, cc, bcc: '' }, contact);
             if (next === null) return;
