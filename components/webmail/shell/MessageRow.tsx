@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Archive, CornerUpLeft, Paperclip, Star, Trash2, X } from 'lucide-react';
+import { Archive, AtSign, CornerUpLeft, Paperclip, Star, Trash2, X } from 'lucide-react';
 import { differenceInCalendarDays, format, isThisYear, isToday, isValid } from 'date-fns';
 import type { WebmailListItem } from '../types';
 import Avatar from '@/components/ui/Avatar';
@@ -155,6 +155,15 @@ export default function MessageRow({
           <div className={`truncate text-[12px] ${unread ? 'font-bold text-foreground' : 'font-medium text-foreground/80'}`}>
             {email.isAnswered && (
               <CornerUpLeft size={12} className="-mt-0.5 mr-1 inline-block text-muted-foreground" aria-label="Replied" />
+            )}
+            {email.mentioned && (
+              <span
+                className="-mt-0.5 mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/15 align-middle text-primary"
+                title="You were mentioned"
+                aria-label="You were mentioned"
+              >
+                <AtSign size={10} strokeWidth={2.6} />
+              </span>
             )}
             {email.subject}
           </div>

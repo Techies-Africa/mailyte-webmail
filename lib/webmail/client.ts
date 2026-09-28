@@ -136,6 +136,8 @@ export interface ListOptions {
   label?: string;
   /** Only messages with attachments, searched server-side across the folder. */
   attachments?: boolean;
+  /** Only messages this person was @mentioned in. */
+  mentioned?: boolean;
 }
 
 /**
@@ -156,6 +158,7 @@ export function listMessages(options: ListOptions, onUnauthorized: () => void) {
   if (options.starred) qs.set("starred", "true");
   if (options.label) qs.set("label", options.label);
   if (options.attachments) qs.set("attachments", "true");
+  if (options.mentioned) qs.set("mentioned", "true");
 
   const query = qs.toString();
   return call<MessagePage>(
