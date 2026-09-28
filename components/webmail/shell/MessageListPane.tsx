@@ -30,6 +30,7 @@ import Button from '@/components/ui/Button';
 import Menu from '@/components/ui/Menu';
 import { FilterPill } from '@/components/ui/Pill';
 import MessageRow from './MessageRow';
+import StorageBanner from './StorageBanner';
 import WebmailEmptyState from '../WebmailEmptyState';
 import { LIST_PANE_ID, SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
@@ -411,6 +412,8 @@ export default function MessageListPane({
           Messages with attachments in {title}.
         </div>
       )}
+
+      <StorageBanner />
 
       {error && (
         <div className="flex shrink-0 items-center justify-between gap-3 bg-destructive/10 px-3.5 py-2 text-[12px] text-destructive">
