@@ -1,8 +1,8 @@
 import Mention from '@tiptap/extension-mention';
 import { NodeSelection } from '@tiptap/pm/state';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
-import type { WebmailContact } from './types';
-import { extractEmail, splitRecipients } from './recipients';
+import type { WebmailContact, WebmailListItem, WebmailParticipant } from './types';
+import { extractEmail, namePart, splitRecipients } from './recipients';
 
 /**
  * @mentions in the message body (plans/21-mentions, phase M1).
@@ -47,7 +47,9 @@ export function matchContacts(contacts: WebmailContact[], query: string): Webmai
           : name.includes(q) || email.includes(q)
             ? 2
             : -1;
-      return { c, rank };
+      // Anyone on the email outranks every contact: the person being
+      // replied to must never sit below a namesake from the address book.
+      return { c, rank: rank < 0 ? -1 : c.onThread ? rank : rank + 3 };
     })
     .filter((s) => s.rank >= 0)
     .sort((a, b) => a.rank - b.rank);
@@ -224,4 +226,51 @@ export function ccWithMention(
 export function mentionedOnBcc(body: string, bcc: string): string[] {
   const hidden = listed(bcc);
   return mentionedAddresses(body).filter((email) => hidden.has(email));
+}
+
+/**
+ * Who the @ list offers, in order: the people on this email first, then
+ * contacts.
+ *
+ * It used to offer contacts only, so replying to someone who was not a saved
+ * contact -- the sender of the very message on screen -- found nobody at
+ * "@Oluwatoyin" (2026-09-28). The sender, Reply-To, To and Cc of the message
+ * being answered, plus whoever is in the draft's own To/Cc/Bcc, come first;
+ * a thread person without a display name borrows their contact card's name.
+ * The writer is left out: nobody mentions themselves.
+ */
+export function mentionCandidates({
+  message,
+  recipients,
+  selfAddress,
+  contacts,
+}: {
+  message?: Pick<WebmailListItem, 'from' | 'fromEmail' | 'to' | 'cc'> & { replyTo?: WebmailParticipant[] } | null;
+  recipients?: { to?: string; cc?: string; bcc?: string };
+  selfAddress?: string;
+  contacts: WebmailContact[];
+}): WebmailContact[] {
+  const self = (selfAddress ?? '').trim().toLowerCase();
+  const cardName = new Map(contacts.map((c) => [c.email.toLowerCase(), c.name]));
+  const people = new Map<string, WebmailContact>();
+
+  const add = (name: string | null | undefined, email: string | null | undefined) => {
+    const address = (email ?? '').trim();
+    const key = address.toLowerCase();
+    if (!key.includes('@') || key === self || people.has(key)) return;
+    const shown = name?.trim() && name.trim().toLowerCase() !== key ? name.trim() : cardName.get(key) ?? null;
+    people.set(key, { name: shown, email: address, onThread: true });
+  };
+
+  if (message) {
+    add(message.from, message.fromEmail);
+    for (const p of message.replyTo ?? []) add(p.name, p.email);
+    for (const p of message.to) add(p.name, p.email);
+    for (const p of message.cc) add(p.name, p.email);
+  }
+  for (const field of [recipients?.to, recipients?.cc, recipients?.bcc]) {
+    for (const entry of splitRecipients(field ?? '')) add(namePart(entry), extractEmail(entry));
+  }
+
+  return [...people.values(), ...contacts];
 }

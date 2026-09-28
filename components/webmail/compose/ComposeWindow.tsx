@@ -10,7 +10,7 @@ import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
 import ConfirmModal from '../modals/ConfirmModal';
-import { ccWithMention, mentionedOnBcc } from '../mentions';
+import { ccWithMention, mentionCandidates, mentionedOnBcc } from '../mentions';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
@@ -585,7 +585,7 @@ export default function ComposeWindow({
         minHeightClass={fullscreen ? 'min-h-[40dvh]' : 'min-h-[180px]'}
         onChange={(html) => touch({ body: html })}
         mentions={{
-          contacts,
+          contacts: mentionCandidates({ message: replyTo, recipients: draft, selfAddress, contacts }),
           // D2/D5: onto Cc unless already on To, Cc or Bcc.
           // Shown, not tucked away: someone added behind a collapsed Cc row
           // is a recipient the sender never saw added.

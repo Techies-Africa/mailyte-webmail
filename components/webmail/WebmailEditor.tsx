@@ -455,7 +455,12 @@ function MentionMenu({ popup }: { popup: MentionPopup }) {
           }}
           className={`cursor-pointer px-3 py-1.5 text-[13px] ${i === popup.index ? 'bg-primary/10' : 'hover:bg-muted'}`}
         >
-          <div className="truncate font-medium text-foreground">{contact.name || contact.email}</div>
+          <div className="flex items-center gap-2">
+            <span className="truncate font-medium text-foreground">{contact.name || contact.email}</span>
+            {contact.onThread && (
+              <span className="shrink-0 rounded bg-primary/10 px-1 text-[10px] font-semibold text-primary">On this email</span>
+            )}
+          </div>
           {contact.name && <div className="truncate text-[11.5px] text-muted-foreground">{contact.email}</div>}
         </li>
       ))}

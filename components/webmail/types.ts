@@ -108,6 +108,12 @@ export interface WebmailContact {
    * two independent flags would let a contact claim to be both.
    */
   source?: 'saved' | 'directory';
+  /**
+   * Already on the email being written or replied to (sender, To, Cc, or the
+   * draft's own recipient fields). Set only for @mention suggestions, which
+   * list these people first.
+   */
+  onThread?: boolean;
 }
 
 export interface WebmailSettings {
