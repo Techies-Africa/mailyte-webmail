@@ -24,7 +24,7 @@ export function labelOfView(folder: string): string | null {
   return folder.startsWith(LABEL_VIEW_PREFIX) ? folder.slice(LABEL_VIEW_PREFIX.length) : null;
 }
 
-export type ListFilter = 'all' | 'unread' | 'starred' | 'attachments';
+export type ListFilter = 'all' | 'unread' | 'starred' | 'attachments' | 'mentions';
 export type SearchScope = 'folder' | 'all';
 
 export interface ListParams {
@@ -36,6 +36,8 @@ export interface ListParams {
   label: string | null;
   /** Only messages with attachments -- asked of the SERVER, across the whole folder. */
   attachments: boolean;
+  /** Only messages this person was @mentioned in -- a server search. */
+  mentioned: boolean;
   offset: number;
 }
 
@@ -65,6 +67,7 @@ export function listParamsFor(view: ListView): ListParams {
     starred: isStarredView || view.filter === 'starred',
     label,
     attachments: view.filter === 'attachments',
+    mentioned: view.filter === 'mentions',
     offset: view.offset,
   };
 }
@@ -77,6 +80,7 @@ export function sameListOtherPage(a: ListParams, b: ListParams): boolean {
     a.unread === b.unread &&
     a.starred === b.starred &&
     a.label === b.label &&
-    a.attachments === b.attachments
+    a.attachments === b.attachments &&
+    a.mentioned === b.mentioned
   );
 }

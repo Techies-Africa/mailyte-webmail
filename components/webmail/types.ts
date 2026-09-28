@@ -36,6 +36,8 @@ export interface WebmailListItem {
   /** Labels the message carries, as the server's lowercase slugs. */
   labels: string[];
   hasAttachment: boolean;
+  /** This person was @mentioned in it (the $Mentioned keyword; plans/21-mentions). */
+  mentioned?: boolean;
   /**
    * The date to DISPLAY. Never null -- a message whose header carried no date
    * falls back to now, so every row has something to print.

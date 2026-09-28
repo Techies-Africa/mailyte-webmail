@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
-import { Maximize2, Send } from 'lucide-react';
-import type { ComposeMode, SendResult, WebmailMessage } from '../types';
+import { Maximize2, Paperclip, Send, X } from 'lucide-react';
+import type { ComposeMode, SendResult, WebmailContact, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
+import IconButton from '@/components/ui/IconButton';
+import { attachmentProblem, formatBytes } from '../compose/attachmentLimits';
+import { ccWithMention } from '../mentions';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useRevealInView } from './useRevealInView';
 
@@ -18,14 +21,16 @@ type QuickReplyProps = {
   signatureSeed: string;
   onSend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   onCancel: () => void;
-  /** Move what has been typed into a full compose window. */
-  onExpand: (body: string) => void;
+  /** Move what has been typed, and any files attached, into a full compose window. */
+  onExpand: (body: string, attachments: File[]) => void;
   /**
    * Bumped each time the person asks to reply while this card is already
    * open in the same mode. Nothing else about the card changes then, so this
    * is what brings it back into view and the caret back into it.
    */
   revealSignal?: number;
+  /** For @mentions; people mentioned here are added to Cc (D2, D7). */
+  contacts?: WebmailContact[];
 };
 
 /**
@@ -52,16 +57,35 @@ export default function QuickReply({
   onCancel,
   onExpand,
   revealSignal,
+  contacts = [],
 }: QuickReplyProps) {
   const recipients = useMemo(() => {
     if (mode === 'replyAll') return replyAllRecipients(message, selfAddress);
     return { to: replyRecipients(message), cc: '' };
   }, [message, mode, selfAddress]);
 
+  // People an @mention added (D7). The card's recipients are otherwise
+  // fixed, so these are kept apart, shown on the Cc line, and each can be
+  // taken off again with its ×.
+  const [mentionCc, setMentionCc] = useState<string[]>([]);
+  const cc = [recipients.cc, ...mentionCc].filter(Boolean).join(', ');
+
   const [body, setBody] = useState(signatureSeed);
   const bodyRef = useRef(signatureSeed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Attaching used to need "Open in full editor" -- the most common reason
+  // to leave a quick reply. Same limits as the compose window.
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const incoming = Array.from(files);
+    const problem = attachmentProblem(attachments, incoming);
+    setError(problem);
+    if (!problem) setAttachments((prev) => [...prev, ...incoming]);
+  };
 
   const [rootRef, reveal] = useRevealInView<HTMLDivElement>();
   const editorRef = useRef<Editor | null>(null);
@@ -99,12 +123,13 @@ export default function QuickReply({
       const result = await onSend(
         {
           to: recipients.to,
-          cc: recipients.cc,
+          cc,
           bcc: '',
           subject: replySubject(message.subject),
           body: bodyRef.current + quotedBody(mode, message),
           inReplyTo: message.messageIdHeader ?? undefined,
           references: message.references ?? undefined,
+          attachments,
         },
         mode,
       );
@@ -136,6 +161,25 @@ export default function QuickReply({
               <span className="font-mono text-[10.5px] uppercase">Cc</span> {recipients.cc}
             </div>
           )}
+          {mentionCc.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
+              <span className="font-mono text-[10.5px] uppercase">{recipients.cc ? '+Cc' : 'Cc'}</span>
+              {mentionCc.map((entry) => (
+                <span key={entry} className="inline-flex items-center gap-0.5 rounded bg-muted py-px pl-1.5 pr-0.5 text-foreground">
+                  {entry}
+                  <button
+                    type="button"
+                    onClick={() => setMentionCc((prev) => prev.filter((e) => e !== entry))}
+                    className="rounded p-0.5 hover:bg-foreground/10"
+                    aria-label={`Remove ${entry} from Cc`}
+                    title="Remove from Cc"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -149,11 +193,44 @@ export default function QuickReply({
         compact
         toolbarPosition="bottom"
         onReady={handleReady}
+        mentions={{
+          contacts,
+          onMention: (contact) => {
+            const next = ccWithMention({ to: recipients.to, cc, bcc: '' }, contact);
+            if (next === null) return;
+            const entry = contact.name?.trim() ? `${contact.name.trim()} <${contact.email}>` : contact.email;
+            setMentionCc((prev) => [...prev, entry]);
+          },
+        }}
         onChange={(html) => {
           bodyRef.current = html;
           setBody(html);
         }}
       />
+
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-pane px-3 py-2">
+          {attachments.map((file, index) => (
+            <span
+              key={`${file.name}-${index}`}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted py-1 pl-2 pr-1 text-[12px] text-foreground"
+            >
+              <Paperclip size={12} className="shrink-0 text-muted-foreground" />
+              <span className="truncate">{file.name}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(file.size)}</span>
+              <button
+                type="button"
+                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
+                className="shrink-0 rounded p-0.5 hover:bg-foreground/10"
+                title={`Remove ${file.name}`}
+                aria-label={`Remove ${file.name}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 border-t border-border bg-pane px-3 py-2">
         <Button variant="primary" icon={<Send size={13} />} busy={sending} disabled={!hasText} onClick={() => void send()}>
@@ -162,14 +239,27 @@ export default function QuickReply({
         <Button variant="ghost" onClick={onCancel} disabled={sending}>
           Discard
         </Button>
+        <IconButton label="Attach files" size="md" onClick={() => fileInputRef.current?.click()} disabled={sending}>
+          <Paperclip size={14} />
+        </IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
         <span className="flex-1" />
         {/* Words from sm up: at 360px they pushed this past the card's edge. */}
         <Button
           variant="ghost"
           icon={<Maximize2 size={12} />}
           collapseLabel
-          onClick={() => onExpand(bodyRef.current)}
-          title="Attach files, change recipients or schedule"
+          onClick={() => onExpand(bodyRef.current, attachments)}
+          title="Change recipients or schedule"
         >
           Open in full editor
         </Button>

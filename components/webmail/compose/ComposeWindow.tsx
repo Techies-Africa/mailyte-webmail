@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, Minus, Paperclip, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
+import { AtSign, Maximize2, Minus, Paperclip, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
@@ -10,6 +10,7 @@ import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
 import ConfirmModal from '../modals/ConfirmModal';
+import { ccWithMention, mentionedOnBcc } from '../mentions';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
@@ -17,19 +18,12 @@ import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, formatBytes } from './attachmentLimits';
 
-/** Matches SendMailboxMessageRequest's own limits. */
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const MAX_ATTACHMENTS = 20;
 
 /** PRD F6: autosave every 30s + on close. */
 const AUTOSAVE_MS = 30_000;
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const MODE_TITLE: Record<ComposeMode, string> = {
   compose: 'New message',
@@ -169,6 +163,10 @@ export default function ComposeWindow({
   const [attachments, setAttachments] = useState<File[]>(model.attachments ?? []);
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // D1: a mention names the person to everyone, so mentioning someone who is
+  // on Bcc gets a warning before it goes. Holds the send time (undefined =
+  // now) while the warning is open.
+  const [bccWarning, setBccWarning] = useState<{ people: string[]; sendAt?: Date } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // The whole window moves with a drag of its title bar. Never in full
@@ -394,6 +392,15 @@ export default function ComposeWindow({
 
   const sendDisabled = isSending || !draft.to.trim();
 
+  const requestSend = (sendAt?: Date) => {
+    const exposed = mentionedOnBcc(draft.body, draft.bcc);
+    if (exposed.length > 0) {
+      setBccWarning({ people: exposed, sendAt });
+      return;
+    }
+    void handleSend(sendAt);
+  };
+
   const handleSend = async (sendAt?: Date) => {
     setSendError(null);
     setScheduling(!!sendAt);
@@ -598,6 +605,18 @@ export default function ComposeWindow({
         autoFocus={mode !== 'compose' || !!resumed?.to}
         minHeightClass={fullscreen ? 'min-h-[40dvh]' : 'min-h-[180px]'}
         onChange={(html) => touch({ body: html })}
+        mentions={{
+          contacts,
+          // D2/D5: onto Cc unless already on To, Cc or Bcc.
+          // Shown, not tucked away: someone added behind a collapsed Cc row
+          // is a recipient the sender never saw added.
+          onMention: (contact) => {
+            const cc = ccWithMention(draft, contact);
+            if (cc === null) return;
+            touch({ cc });
+            setShowCc(true);
+          },
+        }}
         toolbarExtra={
           onAiWrite ? (
             <Button variant="ghost" size="xs" icon={<Sparkles size={12} />} onClick={() => setShowAi(true)}>
@@ -642,7 +661,7 @@ export default function ComposeWindow({
         >
           <button
             type="button"
-            onClick={() => void handleSend()}
+            onClick={() => requestSend()}
             disabled={sendDisabled}
             className={`flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-black/10 disabled:cursor-not-allowed ${
               canSchedule ? 'rounded-l-lg' : 'rounded-lg'
@@ -655,7 +674,7 @@ export default function ComposeWindow({
             )}
             {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : 'Send'}
           </button>
-          {canSchedule && <ScheduleSendMenu disabled={sendDisabled} onSchedule={(at) => void handleSend(at)} />}
+          {canSchedule && <ScheduleSendMenu disabled={sendDisabled} onSchedule={(at) => requestSend(at)} />}
         </div>
 
         <IconButton label="Attach files" size="md" onClick={() => fileInputRef.current?.click()}>
@@ -701,6 +720,21 @@ export default function ComposeWindow({
           }}
         />
       )}
+      <ConfirmModal
+        isOpen={!!bccWarning}
+        onClose={() => setBccWarning(null)}
+        onConfirm={() => {
+          const sendAt = bccWarning?.sendAt;
+          setBccWarning(null);
+          void handleSend(sendAt);
+        }}
+        icon={<AtSign size={18} />}
+        title="You mentioned someone on Bcc"
+        body={`${bccWarning?.people.join(', ') ?? ''} ${
+          (bccWarning?.people.length ?? 0) === 1 ? 'is' : 'are'
+        } on Bcc but mentioned in the message, so everyone who receives it will see they were included.`}
+        confirmLabel="Send anyway"
+      />
       <ConfirmModal
         isOpen={confirmDiscard}
         onClose={() => setConfirmDiscard(false)}

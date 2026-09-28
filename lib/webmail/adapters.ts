@@ -33,6 +33,8 @@ export interface ApiMessageSummary {
   received_at: string | null;
   size: number;
   has_attachment: boolean;
+  /** Set at delivery when this mailbox was @mentioned. */
+  mentioned?: boolean;
   is_read: boolean;
   is_starred: boolean;
   is_answered?: boolean;
@@ -140,6 +142,7 @@ export function toListItem(m: ApiMessageSummary): WebmailListItem {
     isDraft: m.is_draft ?? false,
     labels: Array.isArray(m.keywords) ? m.keywords : [],
     hasAttachment: m.has_attachment,
+    mentioned: m.mentioned === true,
     timestamp: m.received_at ? new Date(m.received_at) : new Date(),
     // The real header date, kept separate from `timestamp` because the two
     // answer different questions: `timestamp` is "what do I print", and falls

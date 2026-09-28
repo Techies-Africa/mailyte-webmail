@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { ACCEPTED_IMAGE_TYPES, imageFileToDataUrl, isAcceptedImage } from '@/lib/webmail/images';
 import EmojiPicker from './EmojiPicker';
+import { mentionExtension, type MentionPopup } from './mentions';
+import type { WebmailContact } from './types';
 
 /**
  * The compose editor (PRD C1), on TipTap.
@@ -61,6 +63,14 @@ type WebmailEditorProps = {
    * passes it; the compose window and the signature editor are untouched.
    */
   onReady?: (editor: Editor) => void;
+  /**
+   * Turns on @mentions (plans/21-mentions). Only the compose window and the
+   * inline reply pass it; the signature editor has nobody to mention.
+   */
+  mentions?: {
+    contacts: WebmailContact[];
+    onMention: (contact: WebmailContact) => void;
+  };
 };
 
 export default function WebmailEditor({
@@ -73,7 +83,16 @@ export default function WebmailEditor({
   autoFocus = true,
   minHeightClass,
   onReady,
+  mentions,
 }: WebmailEditorProps) {
+  const [mentionPopup, setMentionPopup] = useState<MentionPopup | null>(null);
+  // Read through refs: the extension is built once, and the contact list and
+  // callback change after mount (contacts load late).
+  const mentionsRef = useRef(mentions);
+  useEffect(() => {
+    mentionsRef.current = mentions;
+  }, [mentions]);
+  const mentionsEnabled = useRef(!!mentions).current;
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -128,6 +147,15 @@ export default function WebmailEditor({
         allowBase64: true,
       }),
       Placeholder.configure({ placeholder }),
+      ...(mentionsEnabled
+        ? [
+            mentionExtension({
+              getContacts: () => mentionsRef.current?.contacts ?? [],
+              onMention: (contact) => mentionsRef.current?.onMention(contact),
+              onPopup: setMentionPopup,
+            }),
+          ]
+        : []),
     ],
     content: initialHtml,
     editorProps: {
@@ -386,6 +414,7 @@ export default function WebmailEditor({
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
         <EditorContent editor={editor} />
       </div>
+      {mentionPopup && <MentionMenu popup={mentionPopup} />}
       {toolbarPosition === 'bottom' && (
         <>
           {errorRow}
@@ -394,6 +423,43 @@ export default function WebmailEditor({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The @mention list, pinned under the caret. Fixed-position, so the compose
+ * window's own scrolling and overflow clipping cannot hide it. mouseDown,
+ * not click: a click would take focus from the editor first and close the
+ * suggestion before the choice landed.
+ */
+function MentionMenu({ popup }: { popup: MentionPopup }) {
+  const rect = popup.rect;
+  const style: React.CSSProperties = rect
+    ? { position: 'fixed', left: rect.left, top: rect.bottom + 4, zIndex: 80 }
+    : { display: 'none' };
+  return (
+    <ul
+      role="listbox"
+      aria-label="Mention someone"
+      style={style}
+      className="max-h-64 w-72 overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-lg"
+    >
+      {popup.items.map((contact, i) => (
+        <li
+          key={contact.email}
+          role="option"
+          aria-selected={i === popup.index}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            popup.select(contact);
+          }}
+          className={`cursor-pointer px-3 py-1.5 text-[13px] ${i === popup.index ? 'bg-primary/10' : 'hover:bg-muted'}`}
+        >
+          <div className="truncate font-medium text-foreground">{contact.name || contact.email}</div>
+          {contact.name && <div className="truncate text-[11.5px] text-muted-foreground">{contact.email}</div>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
