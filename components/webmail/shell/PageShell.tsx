@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
@@ -38,6 +38,9 @@ export const pageMenuButtonProps = (open: boolean) => ({ 'aria-expanded': open, 
  */
 export default function PageShell({ current, children }: PageShellProps) {
   const router = useRouter();
+  // Settings' back link returns here (Calendar, Contacts) instead of always
+  // to the inbox. See RETURN_TO in app/settings.
+  const from = `?from=${encodeURIComponent(usePathname() ?? '/')}`;
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const [menuOpen, setMenuOpen] = useState(false);
   // Shared with the inbox and every other screen: a revisit paints at once.
@@ -65,8 +68,8 @@ export default function PageShell({ current, children }: PageShellProps) {
         onCompose={() => router.push('/?compose=new')}
         email={email}
         name={name}
-        onOpenSettings={() => router.push('/settings')}
-        onOpenSecurity={() => router.push('/settings/security')}
+        onOpenSettings={() => router.push(`/settings${from}`)}
+        onOpenSecurity={() => router.push(`/settings/security${from}`)}
         mobileOpen={menuOpen}
         onCloseMobile={closeMenu}
       >
@@ -79,7 +82,7 @@ export default function PageShell({ current, children }: PageShellProps) {
           <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={collapsed} as="a" href="/address-book" />
         )}
         <SidebarDivider />
-        <SidebarItem icon={<Settings />} label="Settings" collapsed={collapsed} as="a" href="/settings" />
+        <SidebarItem icon={<Settings />} label="Settings" collapsed={collapsed} as="a" href={`/settings${from}`} />
       </Sidebar>
 
       <PageMenuContext.Provider value={menu}>{children}</PageMenuContext.Provider>

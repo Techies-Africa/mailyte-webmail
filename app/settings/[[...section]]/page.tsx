@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Menu as MenuIcon } from 'lucide-react';
 import { SETTINGS_SECTIONS } from '@/components/webmail/settings/sections';
@@ -20,8 +20,23 @@ import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
  * settings does not read as leaving the product. Each section gets a real
  * URL (/settings/forwarding); an unknown one falls back to the first.
  */
+/**
+ * Where "Back" goes. Settings opened from the calendar used to offer only
+ * "Back to mail", so getting back to the calendar took two clicks and a
+ * detour through the inbox. Only these destinations are honoured -- `from`
+ * is a URL parameter, and an arbitrary one would make this an open redirect.
+ */
+const RETURN_TO: Record<string, string> = {
+  '/calendar': 'Back to calendar',
+  '/address-book': 'Back to contacts',
+};
+
 export default function WebmailSettingsPage() {
   const router = useRouter();
+  // Read once: moving between sections keeps where settings was opened from.
+  const fromParam = useSearchParams()?.get('from') ?? '';
+  const [returnTo] = useState(() => (fromParam in RETURN_TO ? fromParam : '/'));
+  const fromQuery = returnTo === '/' ? '' : `?from=${encodeURIComponent(returnTo)}`;
   const params = useParams<{ section?: string[] }>();
   const requested = params?.section?.[0];
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
@@ -51,7 +66,7 @@ export default function WebmailSettingsPage() {
     if (!confirmLeave()) return;
     setDirty({});
     setMenuOpen(false);
-    router.push(id === SETTINGS_SECTIONS[0].id ? '/settings' : `/settings/${id}`);
+    router.push((id === SETTINGS_SECTIONS[0].id ? '/settings' : `/settings/${id}`) + fromQuery);
   };
 
   const leave = (href: string) => {
@@ -73,7 +88,12 @@ export default function WebmailSettingsPage() {
         mobileOpen={menuOpen}
         onCloseMobile={closeMenu}
       >
-        <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} onClick={() => leave('/')} />
+        <SidebarItem
+          icon={<ArrowLeft />}
+          label={RETURN_TO[returnTo] ?? 'Back to mail'}
+          collapsed={collapsed}
+          onClick={() => leave(returnTo)}
+        />
         <SidebarDivider />
         <SidebarEyebrow collapsed={collapsed}>Settings</SidebarEyebrow>
         {SETTINGS_SECTIONS.map((section) => {

@@ -356,7 +356,7 @@ function CalendarScreen({ supported, email }: { supported: boolean | null; email
           <IconButton
             label="Subscription links"
             size="sm"
-            onClick={() => router.push('/settings/calendar')}
+            onClick={() => router.push('/settings/calendar?from=%2Fcalendar')}
             className="hidden sm:inline-flex"
           >
             <Link2 size={14} />
