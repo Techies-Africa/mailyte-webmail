@@ -10,7 +10,14 @@ import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
 import ConfirmModal from '../modals/ConfirmModal';
-import { ccWithMention, mentionCandidates, mentionedOnBcc } from '../mentions';
+import {
+  ccWithMention,
+  mentionCandidates,
+  mentionEntry,
+  mentionTransitions,
+  mentionedOnBcc,
+  withoutRecipients,
+} from '../mentions';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
@@ -168,6 +175,12 @@ export default function ComposeWindow({
   // on Bcc gets a warning before it goes. Holds the send time (undefined =
   // now) while the warning is open.
   const [bccWarning, setBccWarning] = useState<{ people: string[]; sendAt?: Date } | null>(null);
+  // People a mention ADDED to Cc (email -> the Cc entry written), and the
+  // mentions last seen in the body. Deleting a pill takes its person off Cc
+  // again; Undo that restores the pill puts them back. People who were
+  // already recipients are never in this map, so their pills never touch Cc.
+  const mentionAddedRef = useRef(new Map<string, string>());
+  const mentionsSeenRef = useRef(new Set<string>());
 
   // The whole window moves with a drag of its title bar. Never in full
   // screen: it covers the row, and its slot waits for it underneath.
@@ -583,16 +596,41 @@ export default function ComposeWindow({
         toolbarPosition="bottom"
         autoFocus={mode !== 'compose' || !!resumed?.to}
         minHeightClass={fullscreen ? 'min-h-[40dvh]' : 'min-h-[180px]'}
-        onChange={(html) => touch({ body: html })}
+        onChange={(html) => {
+          touch({ body: html });
+          const { present, removed, restored } = mentionTransitions(mentionsSeenRef.current, html);
+          mentionsSeenRef.current = present;
+          const added = mentionAddedRef.current;
+          const drop = new Set(removed.filter((email) => added.has(email)));
+          const back = restored.filter((email) => added.has(email));
+          if (drop.size === 0 && back.length === 0) return;
+          setDraft((prev) => {
+            let cc = drop.size ? withoutRecipients(prev.cc, drop) : prev.cc;
+            for (const email of back) {
+              const next = ccWithMention({ ...prev, cc }, { name: null, email });
+              if (next !== null) cc = cc ? `${cc}, ${added.get(email)}` : (added.get(email) ?? email);
+            }
+            return { ...prev, cc };
+          });
+        }}
         mentions={{
           contacts: mentionCandidates({ message: replyTo, recipients: draft, selfAddress, contacts }),
           // D2/D5: onto Cc unless already on To, Cc or Bcc.
           // Shown, not tucked away: someone added behind a collapsed Cc row
           // is a recipient the sender never saw added.
           onMention: (contact) => {
-            const cc = ccWithMention(draft, contact);
-            if (cc === null) return;
-            touch({ cc });
+            const email = contact.email.toLowerCase();
+            // Already a recipient in their own right: the pill never owns them.
+            if (!mentionAddedRef.current.has(email) && ccWithMention(draft, contact) === null) return;
+            mentionAddedRef.current.set(email, mentionEntry(contact));
+            dirtyRef.current = true;
+            // Decided against the LATEST Cc, inside the update: the restore in
+            // onChange above may have just put them back, and `draft` here is
+            // one render behind -- deciding outside added them twice.
+            setDraft((prev) => {
+              const cc = ccWithMention(prev, contact);
+              return cc === null ? prev : { ...prev, cc };
+            });
             setShowCc(true);
           },
         }}

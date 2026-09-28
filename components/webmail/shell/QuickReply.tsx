@@ -8,7 +8,8 @@ import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
 import { AttachButton, AttachmentChips, useAttachments } from '../compose/attachments';
-import { ccWithMention, mentionCandidates } from '../mentions';
+import { ccWithMention, mentionCandidates, mentionEntry, mentionTransitions } from '../mentions';
+import { extractEmail } from '../recipients';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useRevealInView } from './useRevealInView';
 
@@ -67,6 +68,10 @@ export default function QuickReply({
   // fixed, so these are kept apart, shown on the Cc line, and each can be
   // taken off again with its ×.
   const [mentionCc, setMentionCc] = useState<string[]>([]);
+  // Who a mention added (email -> entry) and the mentions last seen: deleting
+  // a pill takes its person off Cc, Undo restoring it puts them back.
+  const mentionAddedRef = useRef(new Map<string, string>());
+  const mentionsSeenRef = useRef(new Set<string>());
   const cc = [recipients.cc, ...mentionCc].filter(Boolean).join(', ');
 
   const [body, setBody] = useState(signatureSeed);
@@ -186,15 +191,33 @@ export default function QuickReply({
         mentions={{
           contacts: mentionCandidates({ message, recipients: { to: recipients.to, cc }, selfAddress, contacts }),
           onMention: (contact) => {
-            const next = ccWithMention({ to: recipients.to, cc, bcc: '' }, contact);
-            if (next === null) return;
-            const entry = contact.name?.trim() ? `${contact.name.trim()} <${contact.email}>` : contact.email;
-            setMentionCc((prev) => [...prev, entry]);
+            const email = contact.email.toLowerCase();
+            // Already on the reply's own To/Cc: the pill never owns them.
+            if (ccWithMention({ to: recipients.to, cc: recipients.cc, bcc: '' }, contact) === null) return;
+            const entry = mentionEntry(contact);
+            mentionAddedRef.current.set(email, entry);
+            // Against the latest list: onChange may have just restored them.
+            setMentionCc((prev) =>
+              prev.some((e) => extractEmail(e).toLowerCase() === email) ? prev : [...prev, entry],
+            );
           },
         }}
         onChange={(html) => {
           bodyRef.current = html;
           setBody(html);
+          const { present, removed, restored } = mentionTransitions(mentionsSeenRef.current, html);
+          mentionsSeenRef.current = present;
+          const added = mentionAddedRef.current;
+          const drop = new Set(removed.filter((email) => added.has(email)));
+          const back = restored.filter((email) => added.has(email));
+          if (drop.size === 0 && back.length === 0) return;
+          setMentionCc((prev) => {
+            const kept = prev.filter((e) => !drop.has(extractEmail(e).toLowerCase()));
+            for (const email of back) {
+              if (!kept.some((e) => extractEmail(e).toLowerCase() === email)) kept.push(added.get(email) ?? email);
+            }
+            return kept;
+          });
         }}
       />
 
