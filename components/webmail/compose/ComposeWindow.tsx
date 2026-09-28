@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, Maximize2, Minus, Paperclip, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
+import { AtSign, Maximize2, Minus, Send, Sparkles, Square, Trash2, X } from 'lucide-react';
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
@@ -18,7 +18,7 @@ import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, formatBytes } from './attachmentLimits';
+import { AttachButton, AttachmentChips, useAttachments } from './attachments';
 
 
 /** PRD F6: autosave every 30s + on close. */
@@ -160,14 +160,14 @@ export default function ComposeWindow({
   const [isSending, setIsSending] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<File[]>(model.attachments ?? []);
+  // Picker, limits and chips shared with the inline reply (compose/attachments).
+  const { attachments, attachedBytes, addFiles, removeAt } = useAttachments(model.attachments ?? [], setSendError);
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // D1: a mention names the person to everyone, so mentioning someone who is
   // on Bcc gets a warning before it goes. Holds the send time (undefined =
   // now) while the warning is open.
   const [bccWarning, setBccWarning] = useState<{ people: string[]; sendAt?: Date } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // The whole window moves with a drag of its title bar. Never in full
   // screen: it covers the row, and its slot waits for it underneath.
@@ -368,27 +368,6 @@ export default function ComposeWindow({
     setDraft((prev) => ({ ...prev, ...patch }));
   };
 
-  const attachedBytes = attachments.reduce((sum, file) => sum + file.size, 0);
-
-  const addFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setSendError(null);
-    const incoming = Array.from(files);
-    const tooBig = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES);
-    if (tooBig) {
-      setSendError(`"${tooBig.name}" is ${formatBytes(tooBig.size)} — the limit is 25 MB per file.`);
-      return;
-    }
-    if (attachments.length + incoming.length > MAX_ATTACHMENTS) {
-      setSendError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
-      return;
-    }
-    if (attachedBytes + incoming.reduce((s, f) => s + f.size, 0) > MAX_ATTACHMENT_BYTES) {
-      setSendError('Attachments total more than 25 MB.');
-      return;
-    }
-    setAttachments((prev) => [...prev, ...incoming]);
-  };
 
   const sendDisabled = isSending || !draft.to.trim();
 
@@ -626,30 +605,7 @@ export default function ComposeWindow({
         }
       />
 
-      {attachments.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border bg-pane px-3 py-2">
-          {attachments.map((file, index) => (
-            <span
-              key={`${file.name}-${index}`}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted py-1 pl-2 pr-1 text-[12px] text-foreground"
-            >
-              <Paperclip size={12} className="shrink-0 text-muted-foreground" />
-              <span className="truncate">{file.name}</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(file.size)}</span>
-              <button
-                type="button"
-                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
-                className="shrink-0 rounded p-0.5 hover:bg-foreground/10"
-                title={`Remove ${file.name}`}
-                aria-label={`Remove ${file.name}`}
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-          <span className="self-center text-[11px] text-muted-foreground">{formatBytes(attachedBytes)} of 25 MB</span>
-        </div>
-      )}
+      <AttachmentChips files={attachments} totalBytes={attachedBytes} onRemove={removeAt} />
 
       <div className="flex shrink-0 items-center gap-2 border-t border-border bg-pane px-3 py-2.5">
         {/* One surface, two halves: the colour and rounding live on the
@@ -677,19 +633,7 @@ export default function ComposeWindow({
           {canSchedule && <ScheduleSendMenu disabled={sendDisabled} onSchedule={(at) => requestSend(at)} />}
         </div>
 
-        <IconButton label="Attach files" size="md" onClick={() => fileInputRef.current?.click()}>
-          <Paperclip size={14} />
-        </IconButton>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            addFiles(e.target.files);
-            e.target.value = '';
-          }}
-        />
+        <AttachButton onFiles={addFiles} />
 
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
           {savingDraft ? 'Saving…' : draftSavedAt ? `Draft saved ${formatTime(draftSavedAt)}` : ''}
