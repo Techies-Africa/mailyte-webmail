@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Maximize2, Paperclip, Send, X } from 'lucide-react';
-import type { ComposeMode, SendResult, WebmailMessage } from '../types';
+import type { ComposeMode, SendResult, WebmailContact, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
 import { attachmentProblem, formatBytes } from '../compose/attachmentLimits';
+import { ccWithMention } from '../mentions';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useRevealInView } from './useRevealInView';
 
@@ -28,6 +29,8 @@ type QuickReplyProps = {
    * is what brings it back into view and the caret back into it.
    */
   revealSignal?: number;
+  /** For @mentions; people mentioned here are added to Cc (D2, D7). */
+  contacts?: WebmailContact[];
 };
 
 /**
@@ -54,11 +57,18 @@ export default function QuickReply({
   onCancel,
   onExpand,
   revealSignal,
+  contacts = [],
 }: QuickReplyProps) {
   const recipients = useMemo(() => {
     if (mode === 'replyAll') return replyAllRecipients(message, selfAddress);
     return { to: replyRecipients(message), cc: '' };
   }, [message, mode, selfAddress]);
+
+  // People an @mention added (D7). The card's recipients are otherwise
+  // fixed, so these are kept apart, shown on the Cc line, and each can be
+  // taken off again with its ×.
+  const [mentionCc, setMentionCc] = useState<string[]>([]);
+  const cc = [recipients.cc, ...mentionCc].filter(Boolean).join(', ');
 
   const [body, setBody] = useState(signatureSeed);
   const bodyRef = useRef(signatureSeed);
@@ -113,7 +123,7 @@ export default function QuickReply({
       const result = await onSend(
         {
           to: recipients.to,
-          cc: recipients.cc,
+          cc,
           bcc: '',
           subject: replySubject(message.subject),
           body: bodyRef.current + quotedBody(mode, message),
@@ -151,6 +161,25 @@ export default function QuickReply({
               <span className="font-mono text-[10.5px] uppercase">Cc</span> {recipients.cc}
             </div>
           )}
+          {mentionCc.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
+              <span className="font-mono text-[10.5px] uppercase">{recipients.cc ? '+Cc' : 'Cc'}</span>
+              {mentionCc.map((entry) => (
+                <span key={entry} className="inline-flex items-center gap-0.5 rounded bg-muted py-px pl-1.5 pr-0.5 text-foreground">
+                  {entry}
+                  <button
+                    type="button"
+                    onClick={() => setMentionCc((prev) => prev.filter((e) => e !== entry))}
+                    className="rounded p-0.5 hover:bg-foreground/10"
+                    aria-label={`Remove ${entry} from Cc`}
+                    title="Remove from Cc"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -164,6 +193,15 @@ export default function QuickReply({
         compact
         toolbarPosition="bottom"
         onReady={handleReady}
+        mentions={{
+          contacts,
+          onMention: (contact) => {
+            const next = ccWithMention({ to: recipients.to, cc, bcc: '' }, contact);
+            if (next === null) return;
+            const entry = contact.name?.trim() ? `${contact.name.trim()} <${contact.email}>` : contact.email;
+            setMentionCc((prev) => [...prev, entry]);
+          },
+        }}
         onChange={(html) => {
           bodyRef.current = html;
           setBody(html);

@@ -14,6 +14,7 @@ import { formatSendAt } from '@/lib/webmail/scheduleTimes';
 import { qk } from '@/lib/webmail/query/keys';
 import { invalidateFolderLists } from '@/lib/webmail/query/messageCache';
 import { discardDraftNow, folderNameByRole, loadScheduled, refreshFolders } from '@/lib/webmail/query/removals';
+import { mentionedAddresses } from '@/components/webmail/mentions';
 import {
   addBeforeSessionChange,
   addSessionDropHandler,
@@ -119,6 +120,10 @@ export default function OutboxProvider({ children }: { children: React.ReactNode
             references: payload.references,
             send_at: payload.sendAt,
             from: payload.from,
+            // Read from the body at the moment of sending, so no compose
+            // surface can forget to pass them and a pill deleted before
+            // sending is not announced.
+            mentions: mentionedAddresses(payload.body),
           },
           payload.attachments ?? [],
           onUnauthorized,

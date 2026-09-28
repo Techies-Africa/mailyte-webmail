@@ -514,6 +514,8 @@ export interface SendPayload {
    * refuses otherwise, so the client only offers addresses it was told about.
    */
   from?: string;
+  /** Addresses @mentioned in the body; the server writes X-Mailyte-Mentions. */
+  mentions?: string[];
 }
 
 export interface SendResult {
@@ -561,6 +563,7 @@ export function sendMessage(
   if (payload.references) form.append("references", payload.references);
   if (payload.send_at) form.append("send_at", payload.send_at);
   if (payload.from) form.append("from", payload.from);
+  for (const address of payload.mentions ?? []) form.append("mentions[]", address);
   for (const file of attachments) form.append("attachments[]", file, file.name);
 
   return call<SendResult>(

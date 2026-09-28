@@ -728,6 +728,7 @@ function MessageReader({
                 onCancel={() => onQuickReplyChange(null)}
                 onExpand={(body, attachments) => onOpenInComposer(quickReply, body, attachments)}
                 revealSignal={replySignal}
+                contacts={mailbox.contacts}
               />
             ) : (
               <div className="flex gap-2">{replyButtons('dashed')}</div>
