@@ -288,3 +288,36 @@ export function mentionCandidates({
 
   return [...people.values(), ...contacts];
 }
+
+/**
+ * Which mentions appeared or disappeared since the body was last seen.
+ *
+ * A mention that ADDED someone to Cc now takes them off again when its pill
+ * is deleted, and puts them back if Undo restores it (2026-09-28: mention
+ * Kanu, delete, mention Joel used to leave both on Cc). Only transitions are
+ * acted on -- never the steady state -- so hand-editing the Cc field is not
+ * fought over on every keystroke.
+ */
+export function mentionTransitions(
+  previous: Set<string>,
+  html: string,
+): { present: Set<string>; removed: string[]; restored: string[] } {
+  const present = new Set(mentionedAddresses(html));
+  return {
+    present,
+    removed: [...previous].filter((email) => !present.has(email)),
+    restored: [...present].filter((email) => !previous.has(email)),
+  };
+}
+
+/** `value` without the entries whose address is in `emails` (lowercase). */
+export function withoutRecipients(value: string, emails: Set<string>): string {
+  return splitRecipients(value)
+    .filter((entry) => !emails.has(extractEmail(entry).toLowerCase()))
+    .join(', ');
+}
+
+/** The Cc entry a mention writes: "Name <email>" or the bare address. */
+export function mentionEntry(contact: WebmailContact): string {
+  return contact.name?.trim() ? `${contact.name.trim()} <${contact.email}>` : contact.email;
+}
