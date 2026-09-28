@@ -11,6 +11,10 @@ import { AlertTriangle, Check, Info } from 'lucide-react';
  * redesign uses a dark pill that says its piece and goes. Warnings and errors
  * stay longer and can be dismissed, because "the Sent copy is still being
  * filed" is worth reading and "that did not send" is worth acting on.
+ *
+ * A toast asked to stay (`duration: 0`) is dismissible whatever its tone. It
+ * sits over the bottom of the reading pane, which is where the reply card's
+ * Send button is, so one that cannot be closed is one that blocks sending.
  */
 
 export type ToastTone = 'success' | 'info' | 'warning' | 'error';
@@ -34,6 +38,8 @@ interface ToastEntry extends Required<Pick<ToastOptions, 'tone'>> {
   id: number;
   text: string;
   action?: ToastOptions['action'];
+  /** Whether it draws the × -- see the rule in `show`. */
+  dismissible: boolean;
 }
 
 type ToastApi = {
@@ -90,12 +96,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const show = useCallback(
     (id: number, text: string, options: ToastOptions) => {
       const tone = options.tone ?? 'success';
+      const duration = options.duration ?? DEFAULT_DURATION[tone];
       // One at a time: a stack of confirmations reads as a fault. Whatever
       // was showing is closed first, so its onClose hears that it was replaced.
       for (const previous of [...closers.current.keys()]) close(previous, 'replaced');
       if (options.onClose) closers.current.set(id, options.onClose);
-      setToasts([{ id, text, tone, action: options.action }]);
-      const duration = options.duration ?? DEFAULT_DURATION[tone];
+      // Anything that will not close itself has to offer a way out, whatever
+      // its tone: a toast that sits there forever is in the way of whatever it
+      // covers. Warnings and errors get the × as well -- they are worth acting
+      // on rather than waiting out.
+      const dismissible = duration === 0 || tone === 'warning' || tone === 'error';
+      setToasts([{ id, text, tone, action: options.action, dismissible }]);
       if (duration > 0) {
         timers.current.set(
           id,
@@ -154,7 +165,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 {entry.action.label}
               </button>
             )}
-            {(entry.tone === 'warning' || entry.tone === 'error') && (
+            {entry.dismissible && (
               <button
                 type="button"
                 onClick={() => dismiss(entry.id)}

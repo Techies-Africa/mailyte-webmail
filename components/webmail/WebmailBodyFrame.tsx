@@ -188,6 +188,49 @@ export default function WebmailBodyFrame({
     fitRef.current = { scale, pan };
   }, []);
 
+  /**
+   * Size the frame to the message.
+   *
+   * Measure the BODY, not documentElement. documentElement.scrollHeight is
+   * never less than the frame's own viewport, so measuring it while sizing the
+   * frame to the result is a feedback loop: set the height, the viewport grows,
+   * scrollHeight reports that larger viewport back, and the next measurement
+   * adds another 24px. It compounds once per animation frame, so every message
+   * grew without limit and the page scrolled forever. The body's height is
+   * content-driven and does not follow the viewport (the reset above keeps it
+   * that way), so the same +24 is a one-off rather than a per-frame increment.
+   */
+  const measure = useCallback(() => {
+    const body = iframeRef.current?.contentDocument?.body;
+    if (!body) return;
+    const next = body.scrollHeight + 24;
+    // Sub-pixel jitter must not ping-pong between two values forever.
+    setHeight((prev) => (Math.abs(prev - next) > 1 ? next : prev));
+  }, []);
+
+  /**
+   * Fit, measure and start watching the message. False while its document is
+   * not there yet, so the caller can come back next frame.
+   */
+  const attach = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    // The wrapper is ours: finding it means this is the message's document and
+    // not the empty one the frame holds until srcDoc has been parsed.
+    if (!doc?.body || !doc.querySelector(FIT_TAG)) return false;
+    // A new document (Show images, a theme change): nothing is scaled yet.
+    fitRef.current = { scale: 1, pan: false };
+    fit();
+    measure();
+    // scrollHeight does not account for images still downloading -- routine in
+    // HTML mail, and it left long messages visibly cut off. ResizeObserver
+    // re-measures on real size changes.
+    resizeObserverRef.current?.disconnect();
+    const observer = new ResizeObserver(measure);
+    observer.observe(doc.body);
+    resizeObserverRef.current = observer;
+    return true;
+  }, [fit, measure]);
+
   // The frame's width changes -- a phone rotated, a pane dragged, the window
   // resized: fit again. Not while a pane edge is being dragged (every frame of
   // the drag would reflow the whole message); once when it is let go.
@@ -233,6 +276,39 @@ export default function WebmailBodyFrame({
     onBlockedCount?.(sanitized.blockedCount);
   }, [sanitized.blockedCount, onBlockedCount]);
 
+  // The sender's head styles are inside the wrapper; they still apply.
+  // DOMPurify returns balanced markup, so nothing in the message can close the
+  // wrapper early.
+  const srcDoc = useMemo(
+    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG}>${sanitized.html}</${FIT_TAG}>`,
+    [darkPlainText, sanitized.html],
+  );
+
+  /*
+   * Measure as soon as the body exists, rather than waiting for `load`.
+   *
+   * A frame's load event waits for every image in the message. Sizing only
+   * there meant the frame sat at its opening height for as long as the
+   * pictures took -- a small box with a scrollbar over a mostly empty card,
+   * then a jump to full size -- and because the reading pane mounts a fresh
+   * frame per message, every open started over at that height. The document is
+   * parsed and its body measurable well before its images land, so take the
+   * first measurement then. onLoad still fires and re-fits, which is what
+   * accounts for the images once they have their real dimensions.
+   */
+  useEffect(() => {
+    if (attach()) return;
+    let raf = 0;
+    let frames = 0;
+    const poll = () => {
+      // ~2s at 60fps. Giving up is safe: onLoad is the backstop.
+      if (attach() || ++frames > 120) return;
+      raf = requestAnimationFrame(poll);
+    };
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
+  }, [srcDoc, attach]);
+
   useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
 
   return (
@@ -242,43 +318,10 @@ export default function WebmailBodyFrame({
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
-      // The sender's head styles are inside the wrapper; they still apply.
-      // DOMPurify returns balanced markup, so nothing in the message can
-      // close the wrapper early.
-      srcDoc={`${emailSafeReset(darkPlainText)}<${FIT_TAG}>${sanitized.html}</${FIT_TAG}>`}
-      onLoad={() => {
-        const doc = iframeRef.current?.contentWindow?.document;
-        if (!doc?.documentElement) return;
-
-        // Measure the BODY, not documentElement. documentElement.scrollHeight
-        // is never less than the frame's own viewport, so measuring it while
-        // sizing the frame to the result is a feedback loop: set the height,
-        // the viewport grows, scrollHeight reports that larger viewport back,
-        // and the next measurement adds another 24px. It compounds once per
-        // animation frame, so every message grew without limit and the page
-        // scrolled forever. The body's height is content-driven and does not
-        // follow the viewport (the reset above keeps it that way), so the
-        // same +24 is now a one-off rather than a per-frame increment.
-        const measure = () => {
-          const body = doc.body;
-          if (!body) return;
-          const next = body.scrollHeight + 24;
-          // Sub-pixel jitter must not ping-pong between two values forever.
-          setHeight((prev) => (Math.abs(prev - next) > 1 ? next : prev));
-        };
-        // A new document (Show images, a theme change): nothing is scaled yet.
-        fitRef.current = { scale: 1, pan: false };
-        fit();
-        measure();
-
-        // scrollHeight at `load` doesn't account for images still
-        // downloading -- routine in HTML mail, and it left long messages
-        // visibly cut off. ResizeObserver re-measures on real size changes.
-        resizeObserverRef.current?.disconnect();
-        const observer = new ResizeObserver(measure);
-        observer.observe(doc.body);
-        resizeObserverRef.current = observer;
-      }}
+      srcDoc={srcDoc}
+      // Everything is already measured and watched by then; this re-fits with
+      // the images at their real dimensions.
+      onLoad={() => void attach()}
       // No filter. A brightness() pass used to dim the whole frame in dark
       // mode; it took the sender's brand colours and photographs down with
       // the background and made designed templates look broken. See

@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/react';
 import { Maximize2, Send } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
+import { AttachButton, AttachmentChips, useAttachments } from '../compose/attachments';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
@@ -18,8 +19,8 @@ type QuickReplyProps = {
   signatureSeed: string;
   onSend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   onCancel: () => void;
-  /** Move what has been typed into a full compose window. */
-  onExpand: (body: string) => void;
+  /** Move what has been typed, and anything attached, into a full compose window. */
+  onExpand: (body: string, attachments: File[]) => void;
   /**
    * Bumped each time the person asks to reply while this card is already
    * open in the same mode. Nothing else about the card changes then, so this
@@ -62,6 +63,9 @@ export default function QuickReply({
   const bodyRef = useRef(signatureSeed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Same picker, limits and chips as the full window; the card's own error bar
+  // shows what it rejects.
+  const { attachments, attachedBytes, addFiles, removeAt } = useAttachments([], setError);
 
   const [rootRef, reveal] = useRevealInView<HTMLDivElement>();
   const editorRef = useRef<Editor | null>(null);
@@ -105,6 +109,7 @@ export default function QuickReply({
           body: bodyRef.current + quotedBody(mode, message),
           inReplyTo: message.messageIdHeader ?? undefined,
           references: message.references ?? undefined,
+          attachments,
         },
         mode,
       );
@@ -155,21 +160,32 @@ export default function QuickReply({
         }}
       />
 
+      <AttachmentChips files={attachments} totalBytes={attachedBytes} onRemove={removeAt} />
+
       <div className="flex items-center gap-2 border-t border-border bg-pane px-3 py-2">
-        <Button variant="primary" icon={<Send size={13} />} busy={sending} disabled={!hasText} onClick={() => void send()}>
+        {/* A file on its own is a reply worth sending: forwarding a document
+            back with nothing to add is normal. */}
+        <Button
+          variant="primary"
+          icon={<Send size={13} />}
+          busy={sending}
+          disabled={!hasText && attachments.length === 0}
+          onClick={() => void send()}
+        >
           Send
         </Button>
         <Button variant="ghost" onClick={onCancel} disabled={sending}>
           Discard
         </Button>
+        <AttachButton onFiles={addFiles} />
         <span className="flex-1" />
         {/* Words from sm up: at 360px they pushed this past the card's edge. */}
         <Button
           variant="ghost"
           icon={<Maximize2 size={12} />}
           collapseLabel
-          onClick={() => onExpand(bodyRef.current)}
-          title="Attach files, change recipients or schedule"
+          onClick={() => onExpand(bodyRef.current, attachments)}
+          title="Change recipients, schedule or save as a draft"
         >
           Open in full editor
         </Button>

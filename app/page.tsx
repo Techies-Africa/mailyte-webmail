@@ -123,12 +123,14 @@ export default function WebmailInboxPage() {
   );
 
   const openReplyInComposer = useCallback(
-    (mode: ComposeMode, body?: string) => {
+    (mode: ComposeMode, body?: string, attachments?: File[]) => {
       if (!openMessage) return;
       compose.openCompose({
         mode,
         replyTo: openMessage,
         initialBody: body ?? signatureSeed(mode) ?? undefined,
+        // Whatever was attached inline comes along; the card is about to go.
+        attachments,
       });
       setQuickReply(null);
     },

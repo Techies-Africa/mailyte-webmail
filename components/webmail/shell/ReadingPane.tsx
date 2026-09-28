@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailAttachment, WebmailListItem, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
+import { formatBytes } from '../compose/attachments';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
 import { attachmentPreviewUrl, attachmentUrl, isPreviewableAttachment, originalPageUrl, rawMessageUrl } from '@/lib/webmail/client';
 import { allowImageSender, isImageSenderAllowed, remoteImagePolicy } from '@/lib/webmail/sanitize';
@@ -56,7 +57,7 @@ type ReadingPaneProps = {
   onQuickReplyChange: (mode: QuickReplyMode) => void;
   onForward: () => void;
   /** Move an inline reply into a full compose window with what was typed. */
-  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string) => void;
+  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string, attachments: File[]) => void;
   onQuickReplySend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   /** The AI writer's "Use this": a new message starting with that body. */
   onComposeWithBody: (body: string) => void;
@@ -78,12 +79,6 @@ export function byNewestFirst(a: WebmailListItem, b: WebmailListItem): number {
   if (!a.receivedAt) return 1;
   if (!b.receivedAt) return -1;
   return b.receivedAt.getTime() - a.receivedAt.getTime();
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
@@ -726,7 +721,7 @@ function MessageReader({
                 signatureSeed={signatureSeed(quickReply)}
                 onSend={onQuickReplySend}
                 onCancel={() => onQuickReplyChange(null)}
-                onExpand={(body) => onOpenInComposer(quickReply, body)}
+                onExpand={(body, attachments) => onOpenInComposer(quickReply, body, attachments)}
                 revealSignal={replySignal}
               />
             ) : (
