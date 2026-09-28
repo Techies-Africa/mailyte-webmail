@@ -8,11 +8,7 @@ import { remoteImagePolicy, setRemoteImagePolicy, type RemoteImagePolicy } from 
 import Button from '@/components/ui/Button';
 import { Hint, Input, Label, Switch } from '@/components/ui/Field';
 import type { SettingsSectionProps } from './types';
-
-function formatMb(mb: number): string {
-  if (mb < 1024) return `${mb} MB`;
-  return `${(mb / 1024).toFixed(1)} GB`;
-}
+import { formatMb } from '@/lib/webmail/storage';
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
