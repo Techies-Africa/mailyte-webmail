@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
-import { Maximize2, Send } from 'lucide-react';
+import { Maximize2, Paperclip, Send, X } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
 import Button from '@/components/ui/Button';
+import IconButton from '@/components/ui/IconButton';
+import { attachmentProblem, formatBytes } from '../compose/attachmentLimits';
 import { quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useRevealInView } from './useRevealInView';
 
@@ -18,8 +20,8 @@ type QuickReplyProps = {
   signatureSeed: string;
   onSend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   onCancel: () => void;
-  /** Move what has been typed into a full compose window. */
-  onExpand: (body: string) => void;
+  /** Move what has been typed, and any files attached, into a full compose window. */
+  onExpand: (body: string, attachments: File[]) => void;
   /**
    * Bumped each time the person asks to reply while this card is already
    * open in the same mode. Nothing else about the card changes then, so this
@@ -62,6 +64,18 @@ export default function QuickReply({
   const bodyRef = useRef(signatureSeed);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Attaching used to need "Open in full editor" -- the most common reason
+  // to leave a quick reply. Same limits as the compose window.
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const incoming = Array.from(files);
+    const problem = attachmentProblem(attachments, incoming);
+    setError(problem);
+    if (!problem) setAttachments((prev) => [...prev, ...incoming]);
+  };
 
   const [rootRef, reveal] = useRevealInView<HTMLDivElement>();
   const editorRef = useRef<Editor | null>(null);
@@ -105,6 +119,7 @@ export default function QuickReply({
           body: bodyRef.current + quotedBody(mode, message),
           inReplyTo: message.messageIdHeader ?? undefined,
           references: message.references ?? undefined,
+          attachments,
         },
         mode,
       );
@@ -155,6 +170,30 @@ export default function QuickReply({
         }}
       />
 
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-pane px-3 py-2">
+          {attachments.map((file, index) => (
+            <span
+              key={`${file.name}-${index}`}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted py-1 pl-2 pr-1 text-[12px] text-foreground"
+            >
+              <Paperclip size={12} className="shrink-0 text-muted-foreground" />
+              <span className="truncate">{file.name}</span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{formatBytes(file.size)}</span>
+              <button
+                type="button"
+                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
+                className="shrink-0 rounded p-0.5 hover:bg-foreground/10"
+                title={`Remove ${file.name}`}
+                aria-label={`Remove ${file.name}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 border-t border-border bg-pane px-3 py-2">
         <Button variant="primary" icon={<Send size={13} />} busy={sending} disabled={!hasText} onClick={() => void send()}>
           Send
@@ -162,14 +201,27 @@ export default function QuickReply({
         <Button variant="ghost" onClick={onCancel} disabled={sending}>
           Discard
         </Button>
+        <IconButton label="Attach files" size="md" onClick={() => fileInputRef.current?.click()} disabled={sending}>
+          <Paperclip size={14} />
+        </IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
         <span className="flex-1" />
         {/* Words from sm up: at 360px they pushed this past the card's edge. */}
         <Button
           variant="ghost"
           icon={<Maximize2 size={12} />}
           collapseLabel
-          onClick={() => onExpand(bodyRef.current)}
-          title="Attach files, change recipients or schedule"
+          onClick={() => onExpand(bodyRef.current, attachments)}
+          title="Change recipients or schedule"
         >
           Open in full editor
         </Button>

@@ -17,19 +17,12 @@ import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, formatBytes } from './attachmentLimits';
 
-/** Matches SendMailboxMessageRequest's own limits. */
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const MAX_ATTACHMENTS = 20;
 
 /** PRD F6: autosave every 30s + on close. */
 const AUTOSAVE_MS = 30_000;
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const MODE_TITLE: Record<ComposeMode, string> = {
   compose: 'New message',

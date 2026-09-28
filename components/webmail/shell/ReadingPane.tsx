@@ -56,7 +56,7 @@ type ReadingPaneProps = {
   onQuickReplyChange: (mode: QuickReplyMode) => void;
   onForward: () => void;
   /** Move an inline reply into a full compose window with what was typed. */
-  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string) => void;
+  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string, attachments?: File[]) => void;
   onQuickReplySend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   /** The AI writer's "Use this": a new message starting with that body. */
   onComposeWithBody: (body: string) => void;
@@ -726,7 +726,7 @@ function MessageReader({
                 signatureSeed={signatureSeed(quickReply)}
                 onSend={onQuickReplySend}
                 onCancel={() => onQuickReplyChange(null)}
-                onExpand={(body) => onOpenInComposer(quickReply, body)}
+                onExpand={(body, attachments) => onOpenInComposer(quickReply, body, attachments)}
                 revealSignal={replySignal}
               />
             ) : (
