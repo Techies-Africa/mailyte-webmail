@@ -19,6 +19,7 @@ import {
   Tag,
   Trash2,
   X,
+  AtSign,
 } from 'lucide-react';
 import type { WebmailListItem } from '../types';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
@@ -332,6 +333,13 @@ export default function MessageListPane({
             title="Messages on this page with attachments"
           >
             <Paperclip size={11} />
+          </FilterPill>
+          <FilterPill
+            active={filter === 'mentions'}
+            onClick={() => setFilter('mentions')}
+            title="Emails that mention you"
+          >
+            <AtSign size={11} />
           </FilterPill>
         </div>
       </div>

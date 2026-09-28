@@ -1,4 +1,5 @@
 import {
+  AtSign,
   Inbox,
   Send,
   FileEdit,
@@ -18,7 +19,7 @@ type WebmailEmptyStateProps = {
   folder: string;
   role: string | null;
   searchQuery?: string;
-  filter?: 'all' | 'unread' | 'starred' | 'attachments';
+  filter?: 'all' | 'unread' | 'starred' | 'attachments' | 'mentions';
   /** The label's title when the list is a label view. */
   labelView?: string;
 };
@@ -66,6 +67,11 @@ const FILTER_COPY: Record<string, { icon: React.ReactNode; title: string; body: 
     icon: <Paperclip />,
     title: 'No attachments on this page',
     body: 'Try the next page, or search for a file name.',
+  },
+  mentions: {
+    icon: <AtSign />,
+    title: 'No mentions here',
+    body: 'When someone @mentions you in an email, it shows up here.',
   },
 };
 

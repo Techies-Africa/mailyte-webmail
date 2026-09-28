@@ -129,8 +129,8 @@ export default function WebmailInboxPage() {
         mode,
         replyTo: openMessage,
         initialBody: body ?? signatureSeed(mode) ?? undefined,
-        // Whatever was attached inline comes along; the card is about to go.
-        attachments,
+        // Files attached in the inline reply travel with it.
+        attachments: attachments?.length ? attachments : undefined,
       });
       setQuickReply(null);
     },
@@ -387,7 +387,7 @@ export default function WebmailInboxPage() {
           onQuickReplyChange={changeQuickReply}
           replySignal={replySignal}
           onForward={() => openReplyInComposer('forward')}
-          onOpenInComposer={(mode, body) => openReplyInComposer(mode, body)}
+          onOpenInComposer={(mode, body, attachments) => openReplyInComposer(mode, body, attachments)}
           onQuickReplySend={(payload, mode) =>
             send(payload, { mode, replyTo: openMessage ?? undefined })
           }
