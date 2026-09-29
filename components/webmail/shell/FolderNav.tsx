@@ -302,32 +302,28 @@ export default function FolderNav({
         collapsed={collapsed}
         onClick={() => onFolderChange(STARRED_VIEW)}
       />
+
+      <SidebarDivider />
+      {calendar && (
+        <SidebarItem
+          icon={<CalendarDays />}
+          label="Calendar"
+          active={calendar.active}
+          collapsed={collapsed}
+          onClick={calendar.onToggle}
+        />
+      )}
+      {contacts && (
+        <SidebarItem
+          icon={<BookUser />}
+          label="Contacts"
+          active={contacts.active}
+          collapsed={collapsed}
+          onClick={contacts.onToggle}
+        />
+      )}
       {/* Every attachment in the mailbox, each linking to its email. */}
       <SidebarItem icon={<Paperclip />} label="Files" collapsed={collapsed} as="a" href="/files" />
-
-      {(calendar || contacts) && (
-        <>
-          <SidebarDivider />
-          {calendar && (
-            <SidebarItem
-              icon={<CalendarDays />}
-              label="Calendar"
-              active={calendar.active}
-              collapsed={collapsed}
-              onClick={calendar.onToggle}
-            />
-          )}
-          {contacts && (
-            <SidebarItem
-              icon={<BookUser />}
-              label="Contacts"
-              active={contacts.active}
-              collapsed={collapsed}
-              onClick={contacts.onToggle}
-            />
-          )}
-        </>
-      )}
 
       {categoryFolders.length > 0 && (
         <>

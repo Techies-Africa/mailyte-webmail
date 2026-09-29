@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from 'react';
 export const CALENDAR_CHOICE_KEY = 'mailyte.webmail.calendar';
 /** Which address book the contacts screen last showed, per mailbox. */
 export const ADDRESS_BOOK_CHOICE_KEY = 'mailyte.webmail.addressBook';
+/** List or Preview on the Files screen, per mailbox. */
+export const FILES_VIEW_KEY = 'mailyte.webmail.filesView';
 
 /**
  * A choice remembered per mailbox: the calendar or address book this person

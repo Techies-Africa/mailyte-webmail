@@ -75,13 +75,14 @@ export default function PageShell({ current, children }: PageShellProps) {
       >
         <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} as="a" href="/" />
         <SidebarDivider />
-        <SidebarItem icon={<Paperclip />} label="Files" active={current === 'files'} collapsed={collapsed} as="a" href="/files" />
         {(caps?.calendar ?? current === 'calendar') && (
           <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={collapsed} as="a" href="/calendar" />
         )}
         {(caps?.contacts ?? current === 'contacts') && (
           <SidebarItem icon={<BookUser />} label="Contacts" active={current === 'contacts'} collapsed={collapsed} as="a" href="/address-book" />
         )}
+        <SidebarItem icon={<Paperclip />} label="Files" active={current === 'files'} collapsed={collapsed} as="a" href="/files" />
+
         <SidebarDivider />
         <SidebarItem icon={<Settings />} label="Settings" collapsed={collapsed} as="a" href={`/settings${from}`} />
       </Sidebar>
