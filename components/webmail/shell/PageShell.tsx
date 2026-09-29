@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ArrowLeft, BookUser, CalendarDays, Settings } from 'lucide-react';
+import { ArrowLeft, BookUser, CalendarDays, Paperclip, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
@@ -11,7 +11,7 @@ import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
 type PageShellProps = {
   /** Which rail row is lit. */
-  current: 'calendar' | 'contacts';
+  current: 'calendar' | 'contacts' | 'files';
   children: React.ReactNode;
 };
 
@@ -29,7 +29,7 @@ export function usePageMenu(): [boolean, () => void] {
 export const pageMenuButtonProps = (open: boolean) => ({ 'aria-expanded': open, 'aria-controls': SIDEBAR_ID });
 
 /**
- * The rail around the calendar and address-book screens.
+ * The rail around the calendar, address-book and files screens.
  *
  * They are separate routes with their own data, but they belong to the same
  * product as the inbox, so they keep the same dark rail: Compose still
@@ -75,6 +75,7 @@ export default function PageShell({ current, children }: PageShellProps) {
       >
         <SidebarItem icon={<ArrowLeft />} label="Back to mail" collapsed={collapsed} as="a" href="/" />
         <SidebarDivider />
+        <SidebarItem icon={<Paperclip />} label="Files" active={current === 'files'} collapsed={collapsed} as="a" href="/files" />
         {(caps?.calendar ?? current === 'calendar') && (
           <SidebarItem icon={<CalendarDays />} label="Calendar" active={current === 'calendar'} collapsed={collapsed} as="a" href="/calendar" />
         )}

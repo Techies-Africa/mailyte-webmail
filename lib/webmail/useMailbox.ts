@@ -573,7 +573,7 @@ export function useMailbox() {
    */
   const open = useCallback(
     async (
-      item: WebmailListItem,
+      item: Pick<WebmailListItem, 'id' | 'folder' | 'isDraft'>,
     ): Promise<{ kind: 'message' } | { kind: 'draft'; message: WebmailMessage } | { kind: 'error' }> => {
       const ticket = ++openTicket.current;
       const isDraft = item.isDraft || item.folder === 'Drafts';
@@ -660,16 +660,28 @@ export function useMailbox() {
   const restoredDeepLink = useRef(false);
   useEffect(() => {
     if (restoredDeepLink.current || openId) return;
-    const { id } = readUrlState();
+    const { folder, id } = readUrlState();
+    // Arriving by a client-side link (the Files library's "open email"),
+    // this page rendered before Next wrote the new address, so the folder
+    // read at mount can be the previous page's. Effects see the real one.
+    const urlFolder = folder ?? 'INBOX';
+    if (urlFolder !== activeFolderRef.current) {
+      activeFolderRef.current = urlFolder;
+      setActiveFolder(urlFolder);
+      setOffset(0);
+      return;
+    }
     if (!id) {
       restoredDeepLink.current = true;
       return;
     }
     const item = messages.find((m) => m.id === id);
-    if (!item) return;
+    if (!item && (loadingList || isPlaceholderPage)) return;
     restoredDeepLink.current = true;
-    void open(item);
-  }, [messages, openId, open]);
+    // Not on the folder's first page -- an old email, reached from Files.
+    // The reading pane loads a message by its id, not from the list.
+    void open(item ?? { id, folder: urlFolder, isDraft: false });
+  }, [messages, openId, open, loadingList, isPlaceholderPage]);
 
   /**
    * The open message is being taken away. On a desktop the next message in
