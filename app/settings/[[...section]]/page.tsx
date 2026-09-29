@@ -29,6 +29,7 @@ import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 const RETURN_TO: Record<string, string> = {
   '/calendar': 'Back to calendar',
   '/address-book': 'Back to contacts',
+  '/files': 'Back to files',
 };
 
 export default function WebmailSettingsPage() {

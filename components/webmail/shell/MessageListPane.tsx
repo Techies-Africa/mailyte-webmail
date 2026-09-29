@@ -331,7 +331,7 @@ export default function MessageListPane({
           <FilterPill
             active={filter === 'attachments'}
             onClick={() => setFilter('attachments')}
-            title="Messages on this page with attachments"
+            title="Emails with attachments"
           >
             <Paperclip size={11} />
           </FilterPill>

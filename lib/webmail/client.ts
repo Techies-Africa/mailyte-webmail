@@ -359,6 +359,59 @@ export function attachmentPreviewUrl(messageId: string, index: number): string {
   return `${attachmentUrl(messageId, index)}?disposition=inline`;
 }
 
+export type FileKind =
+  | "images"
+  | "pdfs"
+  | "documents"
+  | "spreadsheets"
+  | "presentations"
+  | "archives"
+  | "media"
+  | "other";
+
+/** One file in the Files library, and the email it came in. */
+export interface ApiFile {
+  /** `<message_id>#<index>`: unique across the mailbox. */
+  id: string;
+  message_id: string;
+  folder: string;
+  /** What attachmentUrl() downloads it by. */
+  index: number;
+  name: string;
+  type: string;
+  kind: FileKind;
+  size: number;
+  subject: string;
+  from: { name: string | null; email: string | null };
+  received_at: string | null;
+}
+
+export interface FilePage {
+  files: ApiFile[];
+  /** Where the next page starts; null at the end of the mailbox. */
+  next_cursor: number | null;
+  /** Emails with attachments in the mailbox, and how many this page read. */
+  total_messages: number;
+  scanned: number;
+}
+
+/**
+ * One page of the Files library. The mail server reads a few hundred emails
+ * per request at most, so a narrow search can come back with few files and a
+ * `next_cursor` -- it has simply not reached the rest of the mailbox yet.
+ */
+export function listFiles(
+  options: { q?: string; kind?: FileKind | null; cursor?: number },
+  onUnauthorized: () => void,
+) {
+  const qs = new URLSearchParams();
+  if (options.q) qs.set("q", options.q);
+  if (options.kind) qs.set("kind", options.kind);
+  if (options.cursor) qs.set("cursor", String(options.cursor));
+  const query = qs.toString();
+  return call<FilePage>(`/api/webmail/files${query ? `?${query}` : ""}`, undefined, onUnauthorized);
+}
+
 /** Whether the browser can show this type on its own, matching the proxy's allowlist. */
 export function isPreviewableAttachment(type: string): boolean {
   const t = type.split(";")[0].trim().toLowerCase();

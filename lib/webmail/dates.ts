@@ -36,6 +36,16 @@ export function formatShortDateTime(date: Date): string {
   return safe(date, 'MMM d, h:mm a');
 }
 
+/** "Aug 25, 2026" -- a file's row in the Files library. */
+export function formatDate(date: Date): string {
+  return safe(date, 'MMM d, yyyy');
+}
+
+/** "August 2026" -- the Files library's month headings. */
+export function formatMonth(date: Date): string {
+  return safe(date, 'MMMM yyyy');
+}
+
 /** "8:24 AM" -- the "Draft saved" footer. */
 export function formatTime(date: Date): string {
   return safe(date, 'h:mm a');

@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Inbox,
   MoreHorizontal,
+  Paperclip,
   Pencil,
   Send,
   Star,
@@ -301,6 +302,8 @@ export default function FolderNav({
         collapsed={collapsed}
         onClick={() => onFolderChange(STARRED_VIEW)}
       />
+      {/* Every attachment in the mailbox, each linking to its email. */}
+      <SidebarItem icon={<Paperclip />} label="Files" collapsed={collapsed} as="a" href="/files" />
 
       {(calendar || contacts) && (
         <>
