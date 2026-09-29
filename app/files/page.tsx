@@ -22,6 +22,8 @@ import {
   FileSpreadsheet,
   FileText,
   FileVideo,
+  LayoutGrid,
+  List,
   Mail,
   Menu as MenuIcon,
   Paperclip,
@@ -43,7 +45,22 @@ import {
   type FileKind,
 } from '@/lib/webmail/client';
 import { formatDate, formatMonth } from '@/lib/webmail/dates';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
 import { useFiles } from '@/lib/webmail/query/fileQueries';
+import { FILES_VIEW_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
+
+type FilesView = 'list' | 'preview';
+
+const VIEWS: { view: FilesView; label: string; icon: React.ReactNode }[] = [
+  { view: 'list', label: 'List', icon: <List size={13} /> },
+  { view: 'preview', label: 'Preview', icon: <LayoutGrid size={13} /> },
+];
+
+/**
+ * Pictures the Preview view draws from the file itself: the raster types the
+ * attachment proxy will serve inline. Never SVG, which can carry script.
+ */
+const THUMBNAIL_TYPE = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/;
 
 const KINDS: { kind: FileKind | null; label: string }[] = [
   { kind: null, label: 'All' },
@@ -93,6 +110,10 @@ function FilesScreen() {
   const [typed, setTyped] = useState('');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<FileKind | null>(null);
+  // List or Preview, remembered per mailbox. List until storage is read.
+  const email = useCapabilities().data?.email_address ?? null;
+  const [rememberedView, rememberView] = useRememberedChoice(FILES_VIEW_KEY, email);
+  const view: FilesView = rememberedView === 'preview' ? 'preview' : 'list';
 
   // Every search reads the mailbox on the server, so it waits for a pause
   // in typing rather than going out on every key.
@@ -164,7 +185,25 @@ function FilesScreen() {
               </button>
             )}
           </div>
-          <IconButton label="Refresh" size="sm" onClick={() => void result.refetch()} className="max-sm:ml-auto">
+          <div role="group" aria-label="View" className="flex items-center rounded-lg bg-muted p-0.5 max-sm:ml-auto">
+            {VIEWS.map((v) => (
+              <button
+                key={v.view}
+                type="button"
+                aria-pressed={view === v.view}
+                onClick={() => rememberView(v.view)}
+                title={`${v.label} view`}
+                className={[
+                  'flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold transition-colors',
+                  view === v.view ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                ].join(' ')}
+              >
+                {v.icon}
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <IconButton label="Refresh" size="sm" onClick={() => void result.refetch()}>
             <RefreshCw size={13} strokeWidth={2.2} className={result.isRefetching && !isFetchingNextPage ? 'animate-spin' : ''} />
           </IconButton>
         </div>
@@ -201,7 +240,7 @@ function FilesScreen() {
             </p>
           </div>
         ) : (
-          <FileList files={files} />
+          <FileList files={files} view={view} />
         )}
 
         {!result.isPending && !result.isError && (
@@ -232,7 +271,7 @@ function FilesScreen() {
 }
 
 /** The files under month headings, the way people remember when something came. */
-function FileList({ files }: { files: ApiFile[] }) {
+function FileList({ files, view }: { files: ApiFile[]; view: FilesView }) {
   const groups = useMemo(() => {
     const out: { month: string; files: ApiFile[] }[] = [];
     for (const file of files) {
@@ -251,11 +290,19 @@ function FileList({ files }: { files: ApiFile[] }) {
           <h2 className="sticky top-0 z-[1] border-b border-border bg-pane/95 px-4 py-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground backdrop-blur sm:px-5">
             {group.month}
           </h2>
-          <ul className="divide-y divide-border">
-            {group.files.map((file) => (
-              <FileRow key={file.id} file={file} />
-            ))}
-          </ul>
+          {view === 'preview' ? (
+            <ul className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-4 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {group.files.map((file) => (
+                <FileCard key={file.id} file={file} />
+              ))}
+            </ul>
+          ) : (
+            <ul className="divide-y divide-border">
+              {group.files.map((file) => (
+                <FileRow key={file.id} file={file} />
+              ))}
+            </ul>
+          )}
         </section>
       ))}
     </div>
@@ -263,14 +310,37 @@ function FileList({ files }: { files: ApiFile[] }) {
 }
 
 /**
- * One file. The name opens it -- a preview in a new tab when the browser can
- * show the type itself, otherwise a download (the same rule as the chips
- * under a message: a sender's HTML or Office file is never rendered here).
- * The subject line opens the email it came in.
+ * What opening a file does: a preview in a new tab when the browser can show
+ * the type itself, otherwise a download (the same rule as the chips under a
+ * message: a sender's HTML or Office file is never rendered here).
  */
-function FileRow({ file }: { file: ApiFile }) {
-  const href = attachmentUrl(file.message_id, file.index);
+function openProps(file: ApiFile): React.AnchorHTMLAttributes<HTMLAnchorElement> {
   const previewable = isPreviewableAttachment(file.type);
+  return previewable
+    ? {
+        href: attachmentPreviewUrl(file.message_id, file.index),
+        target: '_blank',
+        rel: 'noopener',
+        title: `Open ${file.name} in a new tab`,
+      }
+    : { href: attachmentUrl(file.message_id, file.index), download: file.name, title: `Download ${file.name}` };
+}
+
+function EmailLink({ file }: { file: ApiFile }) {
+  return (
+    <Link
+      href={emailHref(file)}
+      title="Open the email this file came in"
+      className="mt-0.5 flex min-w-0 items-center gap-1 text-[11.5px] text-primary hover:underline"
+    >
+      <Mail size={11} className="shrink-0" />
+      <span className="truncate">{file.subject || '(no subject)'}</span>
+    </Link>
+  );
+}
+
+/** One file in the List view. The name opens it; the subject line opens its email. */
+function FileRow({ file }: { file: ApiFile }) {
   const style = KIND_STYLE[file.kind] ?? KIND_STYLE.other;
   const date = file.received_at ? formatDate(new Date(file.received_at)) : null;
 
@@ -283,30 +353,16 @@ function FileRow({ file }: { file: ApiFile }) {
         {style.icon}
       </span>
       <div className="min-w-0 flex-1">
-        <a
-          href={previewable ? attachmentPreviewUrl(file.message_id, file.index) : href}
-          target={previewable ? '_blank' : undefined}
-          rel={previewable ? 'noopener' : undefined}
-          download={previewable ? undefined : file.name}
-          title={previewable ? `Open ${file.name} in a new tab` : `Download ${file.name}`}
-          className="block truncate text-[13px] font-semibold text-foreground hover:underline"
-        >
+        <a {...openProps(file)} className="block truncate text-[13px] font-semibold text-foreground hover:underline">
           {file.name}
         </a>
         <p className="truncate text-[11.5px] text-muted-foreground">
           {[formatBytes(file.size), senderOf(file), date].filter(Boolean).join(' · ')}
         </p>
-        <Link
-          href={emailHref(file)}
-          title="Open the email this file came in"
-          className="mt-0.5 flex min-w-0 items-center gap-1 text-[11.5px] text-primary hover:underline"
-        >
-          <Mail size={11} className="shrink-0" />
-          <span className="truncate">{file.subject || '(no subject)'}</span>
-        </Link>
+        <EmailLink file={file} />
       </div>
       <a
-        href={href}
+        href={attachmentUrl(file.message_id, file.index)}
         download={file.name}
         title={`Download ${file.name}`}
         aria-label={`Download ${file.name}`}
@@ -314,6 +370,63 @@ function FileRow({ file }: { file: ApiFile }) {
       >
         <Download size={14} />
       </a>
+    </li>
+  );
+}
+
+/**
+ * One file in the Preview view: the picture itself for an image, a large
+ * type tile for anything else. Pictures load only as they scroll into view
+ * -- they are the full-size originals, not thumbnails.
+ */
+function FileCard({ file }: { file: ApiFile }) {
+  const style = KIND_STYLE[file.kind] ?? KIND_STYLE.other;
+  const date = file.received_at ? formatDate(new Date(file.received_at)) : null;
+  const [broken, setBroken] = useState(false);
+  const picture = THUMBNAIL_TYPE.test(file.type.toLowerCase()) && !broken;
+  const extension = file.name.includes('.') ? file.name.split('.').pop()!.slice(0, 5).toUpperCase() : null;
+
+  return (
+    <li className="group relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition-shadow hover:shadow-panel">
+      {/* The name below is the link a screen reader hears; this is the big target for a pointer. */}
+      <a {...openProps(file)} tabIndex={-1} aria-hidden className="relative block aspect-[4/3] overflow-hidden bg-muted">
+        {picture ? (
+          // eslint-disable-next-line @next/next/no-img-element -- a same-origin attachment, not a static asset
+          <img
+            src={attachmentPreviewUrl(file.message_id, file.index)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setBroken(true)}
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <span className={`flex h-full w-full flex-col items-center justify-center gap-1.5 [&>svg]:h-9 [&>svg]:w-9 ${style.tint}`}>
+            {style.icon}
+            {extension && <span className="font-mono text-[10.5px] font-semibold tracking-wider">{extension}</span>}
+          </span>
+        )}
+      </a>
+      {/* Revealed on hover with a mouse; always there on touch. */}
+      <a
+        href={attachmentUrl(file.message_id, file.index)}
+        download={file.name}
+        title={`Download ${file.name}`}
+        aria-label={`Download ${file.name}`}
+        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-card/90 text-foreground shadow-sm backdrop-blur transition-opacity hover:bg-card focus:opacity-100 can-hover:opacity-0 can-hover:group-hover:opacity-100"
+      >
+        <Download size={14} />
+      </a>
+      <div className="min-w-0 px-2.5 pb-2.5 pt-2">
+        <a {...openProps(file)} className="block truncate text-[12.5px] font-semibold text-foreground hover:underline">
+          {file.name}
+        </a>
+        <p className="truncate text-[11px] text-muted-foreground">
+          {[formatBytes(file.size), date].filter(Boolean).join(' · ')}
+        </p>
+        <p className="truncate text-[11px] text-muted-foreground">{senderOf(file)}</p>
+        <EmailLink file={file} />
+      </div>
     </li>
   );
 }
