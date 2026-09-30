@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { ImageOff } from 'lucide-react';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
+import { splitQuotedHistory } from '@/lib/webmail/quotedHistory';
 import { DRAGGING_ATTR, PANE_RESIZE_END_EVENT } from '@/lib/webmail/paneLayout';
 import type { WebmailAttachment } from './types';
 
@@ -84,13 +85,41 @@ import type { WebmailAttachment } from './types';
  *   too small to read.
  * - Mail that is already responsive never scales: its `@media` rules see
  *   the frame's own width and lay it out to fit, so it is never too wide.
+ *
+ * **A long reply chain must not squeeze itself to nothing.** Each reply wraps
+ * the one before it in a `<blockquote>`, and the browser's default for that is
+ * `margin: 1em 40px` -- 80px of width gone per level. A dozen replies deep (a
+ * support thread, a forwarded chain) the text was down to a couple of
+ * characters, breaking one per line, and eventually to zero width.
+ *
+ * Note that fit() cannot rescue this, which is why the reset has to prevent it:
+ * `overflow-wrap: anywhere` below lets text wrap mid-word, so a starved column
+ * reports no overflow -- scrollWidth stays equal to clientWidth and the message
+ * measures as fitting perfectly while being unreadable. Wide mail announces
+ * itself; a strangled quote chain does not.
+ *
+ * **The thread underneath is collapsed, not shown.** Capping the indent stops
+ * a reply chain destroying itself, but it is still there: open a long support
+ * thread and the two new sentences sit above several screens of history every
+ * reader has already read. So splitQuotedHistory() finds where the new writing
+ * stops, and everything after it goes behind a small button, the way Gmail
+ * does it.
+ *
+ * The switch is a checkbox and a `<label>`, which looks archaic until you
+ * remember this frame has no `allow-scripts`: nothing in it can run, so
+ * `:checked` is the only state a reader can change from inside. Doing it this
+ * way keeps the button where it belongs, in the flow of the message and above
+ * the quote -- a React control outside the frame would sit under the whole
+ * thing once expanded -- and it costs no second frame, so the sender's own
+ * stylesheet still reaches the quoted half. Expanding changes the body's
+ * height, which the ResizeObserver in attach() already watches.
  */
 function emailSafeReset(darkPlainText: boolean) {
   const surface = darkPlainText
     // The app's own dark tokens, so the frame is continuous with the page
     // behind it rather than a near-miss shade floating on top of it.
-    ? { scheme: 'dark', bg: 'hsl(240 10% 4%)', fg: 'hsl(0 0% 98%)', link: '#8b84ff' }
-    : { scheme: 'light', bg: 'white', fg: '#111827', link: '#3730a3' };
+    ? { scheme: 'dark', bg: 'hsl(240 10% 4%)', fg: 'hsl(0 0% 98%)', link: '#8b84ff', chip: 'hsl(240 5% 20%)', chipInk: 'hsl(0 0% 72%)' }
+    : { scheme: 'light', bg: 'white', fg: '#111827', link: '#3730a3', chip: '#e8eaed', chipInk: '#5f6368' };
 
   return `<style>
   :root { color-scheme: ${surface.scheme}; }
@@ -109,6 +138,43 @@ function emailSafeReset(darkPlainText: boolean) {
   /* One long line in a <pre> would otherwise shrink the whole message to its
      width. Wrapped, it reads at full size, as other mail clients show it. */
   pre { white-space: pre-wrap !important; }
+  /* Quoted replies; see "A long reply chain" above. The browser's default is
+     "margin: 1em 40px", so every level of quoting costs 80px of width. Indent
+     the left only, by about what Gmail uses, and !important because senders
+     inline their own margins (a bare 40px is common, and beats a plain rule). */
+  blockquote { margin-left: 0.8ex !important; margin-right: 0 !important; padding-left: 1ex !important; }
+  /* Past the fourth level, stop indenting altogether: a fifth blockquote adds
+     nothing a reader can still follow, and without a stop the text runs out of
+     width no matter how small each step is. Matching "five deep" bounds the
+     total indent rather than slowing its growth. */
+  blockquote blockquote blockquote blockquote blockquote {
+    margin-left: 0 !important; padding-left: 0 !important; border-left: 0 !important;
+  }
+  /* The collapsed thread; see "The thread underneath" above. A custom element
+     and deliberately unlikely class names, so no rule a sender wrote for div
+     or label can reach them, and !important for the ones that would break the
+     control rather than merely restyle it. */
+  mailyte-quote { display: none; }
+  .mailyte-quote-switch:checked ~ mailyte-quote { display: block; }
+  /* Hidden from view but NOT from the keyboard: display:none would take the
+     checkbox out of the tab order, and since it is the only switch there is,
+     the thread would become impossible to open without a mouse. */
+  .mailyte-quote-switch {
+    position: absolute !important; width: 1px !important; height: 1px !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important;
+    clip-path: inset(50%) !important; overflow: hidden !important; white-space: nowrap !important;
+  }
+  .mailyte-quote-switch:focus-visible ~ .mailyte-quote-btn {
+    outline: 2px solid ${surface.link} !important; outline-offset: 2px !important;
+  }
+  .mailyte-quote-btn {
+    display: inline-block !important; margin: 10px 0 !important; padding: 0 7px !important;
+    background: ${surface.chip} !important; color: ${surface.chipInk} !important;
+    border-radius: 11px !important; line-height: 19px !important; font-size: 15px !important;
+    letter-spacing: 1.5px !important; font-family: ui-sans-serif, system-ui, sans-serif !important;
+    cursor: pointer; user-select: none; -webkit-user-select: none; white-space: nowrap !important;
+  }
+  .mailyte-quote-btn:hover { filter: brightness(0.94); }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
   img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
@@ -120,6 +186,8 @@ const MIN_FIT_SCALE = 0.45;
 /** A widening smaller than this keeps the current scale: it still fits, and a pane dragged a few pixels need not reflow the message. */
 const FIT_STEP = 0.01;
 const FIT_TAG = 'mailyte-fit';
+const QUOTE_TAG = 'mailyte-quote';
+const QUOTE_SWITCH_ID = 'mailyte-quote-switch';
 
 type WebmailBodyFrameProps = {
   html: string;
@@ -224,8 +292,19 @@ export default function WebmailBodyFrame({
     // scrollHeight does not account for images still downloading -- routine in
     // HTML mail, and it left long messages visibly cut off. ResizeObserver
     // re-measures on real size changes.
+    //
+    // It re-fits on them too, because the content itself can change size after
+    // the first pass: expanding the quoted thread reveals markup nothing has
+    // measured yet, and if that half is wider than the frame, fitting only at
+    // open would clip it -- the very thing fit() exists to prevent. This
+    // settles rather than oscillates: fit() strips the previous zoom before
+    // measuring, so an unchanged message produces an unchanged scale, and an
+    // unchanged scale is not a resize.
     resizeObserverRef.current?.disconnect();
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(() => {
+      fit();
+      measure();
+    });
     observer.observe(doc.body);
     resizeObserverRef.current = observer;
     return true;
@@ -276,12 +355,29 @@ export default function WebmailBodyFrame({
     onBlockedCount?.(sanitized.blockedCount);
   }, [sanitized.blockedCount, onBlockedCount]);
 
+  // Split off the quoted thread, if there is one worth hiding. The switch has
+  // to precede the quote for the sibling selector in the reset to reach it, and
+  // all three are children of the fit wrapper so the combinator holds.
+  const body = useMemo(() => {
+    const { visible, quoted } = splitQuotedHistory(sanitized.html);
+    if (!quoted) return sanitized.html;
+    return (
+      // The checkbox carries the accessible name, because the checkbox is the
+      // control; the label is the thing you see and click.
+      `${visible}<input type="checkbox" class="mailyte-quote-switch" id="${QUOTE_SWITCH_ID}"` +
+      ` aria-label="Show trimmed content">` +
+      `<label class="mailyte-quote-btn" for="${QUOTE_SWITCH_ID}" title="Show trimmed content">` +
+      `&#183;&#183;&#183;</label>` +
+      `<${QUOTE_TAG}>${quoted}</${QUOTE_TAG}>`
+    );
+  }, [sanitized.html]);
+
   // The sender's head styles are inside the wrapper; they still apply.
   // DOMPurify returns balanced markup, so nothing in the message can close the
   // wrapper early.
   const srcDoc = useMemo(
-    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG}>${sanitized.html}</${FIT_TAG}>`,
-    [darkPlainText, sanitized.html],
+    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG}>${body}</${FIT_TAG}>`,
+    [darkPlainText, body],
   );
 
   /*
