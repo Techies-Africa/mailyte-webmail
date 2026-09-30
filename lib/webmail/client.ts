@@ -959,10 +959,15 @@ export interface AccountSummary {
   expires_at: string | null;
 }
 
-/** Every mailbox signed in on this browser. 200 with an empty list when none. */
-export function listAccounts() {
-  return call<{ accounts: AccountSummary[] }>(
-    "/api/webmail-auth/accounts",
+/**
+ * Every mailbox signed in on this browser. 200 with an empty list when none.
+ * `check` asks the mail server about each session first and drops the ones
+ * it has ended, naming them in `ended` -- the sign-in page offers only
+ * mailboxes that will actually open.
+ */
+export function listAccounts(check = false) {
+  return call<{ accounts: AccountSummary[]; ended?: string[] }>(
+    `/api/webmail-auth/accounts${check ? "?check=1" : ""}`,
     { cache: "no-store" },
     () => {
       // The accounts endpoint never answers 401; nothing to redirect for.

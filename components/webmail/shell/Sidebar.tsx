@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import {
   ChevronDown,
@@ -26,6 +27,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useKeepOnScreen } from '@/components/ui/useKeepOnScreen';
 import { signOut, switchAccount } from '@/lib/webmail/client';
 import { useAccounts } from '@/lib/webmail/query/accountQueries';
+import { qk } from '@/lib/webmail/query/keys';
 import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 import { isTypingTarget } from '@/lib/webmail/useKeyboardShortcuts';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
@@ -104,6 +106,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [profileOpen, setProfileOpen] = useState(false);
   /** The mailbox being switched to: its row shows a spinner until the page reloads into it. */
   const [switching, setSwitching] = useState<string | null>(null);
@@ -191,6 +194,8 @@ export default function Sidebar({
     if (error) {
       setSwitching(null);
       toast(error, { tone: 'error' });
+      // A mailbox whose session had ended has just been dropped: re-read the list.
+      void queryClient.invalidateQueries({ queryKey: qk.accounts });
     }
   };
 
