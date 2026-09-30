@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
@@ -26,7 +26,10 @@ export default function WebmailLoginPage() {
   const [twoFactor, setTwoFactor] = useState(false);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** Not a failure: a mailbox whose session ended, now waiting for its password. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   // `/login?add=1` is the rail's "Add another account": same form, and the
   // accounts already here stay signed in. Without it, this page is where a
@@ -49,11 +52,29 @@ export default function WebmailLoginPage() {
     resetSessionState();
   }, [queryClient]);
 
+  /**
+   * A mailbox whose session has ended: its address goes into the form and
+   * the password field takes focus, so signing back in is one field away.
+   */
+  const askForPassword = (email: string) => {
+    setEmailAddress(email);
+    setPassword('');
+    setError(null);
+    setNotice(`You were signed out of ${email}. Enter your password to open it again.`);
+    window.setTimeout(() => passwordRef.current?.focus(), 0);
+  };
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdding(new URLSearchParams(window.location.search).get('add') === '1');
-    void listAccounts().then((result) => {
-      if (result.success && Array.isArray(result.data?.accounts)) setExisting(result.data.accounts);
+    // Checked with the mail server: only mailboxes that will open are offered.
+    void listAccounts(true).then((result) => {
+      if (!result.success || !Array.isArray(result.data?.accounts)) return;
+      setExisting(result.data.accounts);
+      // Sent here because the open mailbox's session ended: say which, and
+      // have its address ready.
+      const ended = result.data.ended ?? [];
+      if (ended.length === 1) askForPassword(ended[0]);
     });
   }, []);
 
@@ -125,11 +146,17 @@ export default function WebmailLoginPage() {
 
   const continueAs = async (email: string) => {
     setSwitching(email);
+    setNotice(null);
     const message = await switchAccount(email);
-    if (message) {
-      setSwitching(null);
-      setError(message);
-    }
+    if (!message) return; // on its way to the inbox
+    setSwitching(null);
+    // The server drops a mailbox whose session has ended; if this one is gone
+    // from the list, it needs its password rather than an error.
+    const result = await listAccounts();
+    const accounts = result.success ? (result.data?.accounts ?? []) : existing;
+    setExisting(accounts);
+    if (!accounts.some((a) => a.email === email)) askForPassword(email);
+    else setError(message);
   };
 
   const title = twoFactor ? 'Enter your code' : adding ? 'Add another account' : 'Sign in to your mail';
@@ -145,6 +172,11 @@ export default function WebmailLoginPage() {
         {error && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
             {error}
+          </div>
+        )}
+        {notice && !error && (
+          <div className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground" role="status">
+            {notice}
           </div>
         )}
 
@@ -198,6 +230,7 @@ export default function WebmailLoginPage() {
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Input
+                    ref={passwordRef}
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     required
