@@ -118,8 +118,14 @@ function emailSafeReset(darkPlainText: boolean) {
   const surface = darkPlainText
     // The app's own dark tokens, so the frame is continuous with the page
     // behind it rather than a near-miss shade floating on top of it.
-    ? { scheme: 'dark', bg: 'hsl(240 10% 4%)', fg: 'hsl(0 0% 98%)', link: '#8b84ff', chip: 'hsl(240 5% 20%)', chipInk: 'hsl(0 0% 72%)' }
-    : { scheme: 'light', bg: 'white', fg: '#111827', link: '#3730a3', chip: '#e8eaed', chipInk: '#5f6368' };
+    ? {
+        scheme: 'dark', bg: 'hsl(240 10% 4%)', fg: 'hsl(0 0% 98%)', link: '#8b84ff',
+        chip: 'hsl(240 5% 16%)', chipBorder: 'hsl(240 5% 32%)', chipHover: 'hsl(240 5% 22%)',
+      }
+    : {
+        scheme: 'light', bg: 'white', fg: '#111827', link: '#3730a3',
+        chip: '#f1f3f5', chipBorder: '#d0d7de', chipHover: '#e3e6ea',
+      };
 
   return `<style>
   :root { color-scheme: ${surface.scheme}; }
@@ -167,14 +173,36 @@ function emailSafeReset(darkPlainText: boolean) {
   .mailyte-quote-switch:focus-visible ~ .mailyte-quote-btn {
     outline: 2px solid ${surface.link} !important; outline-offset: 2px !important;
   }
+  /* It says what it does. Gmail's bare "..." only reads as a control if you
+     already know Gmail; here the button carries its own label and a caret, so
+     there is nothing to recognise or guess at. */
   .mailyte-quote-btn {
-    display: inline-block !important; margin: 10px 0 !important; padding: 0 7px !important;
-    background: ${surface.chip} !important; color: ${surface.chipInk} !important;
-    border-radius: 11px !important; line-height: 19px !important; font-size: 15px !important;
-    letter-spacing: 1.5px !important; font-family: ui-sans-serif, system-ui, sans-serif !important;
+    display: inline-flex !important; align-items: center !important; gap: 7px !important;
+    margin: 14px 0 !important; padding: 7px 13px !important;
+    background: ${surface.chip} !important; color: ${surface.link} !important;
+    border: 1px solid ${surface.chipBorder} !important; border-radius: 7px !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+    font-size: 13px !important; font-weight: 600 !important; font-style: normal !important;
+    line-height: 1.3 !important; letter-spacing: 0 !important; text-align: left !important;
+    text-decoration: none !important; text-transform: none !important;
     cursor: pointer; user-select: none; -webkit-user-select: none; white-space: nowrap !important;
   }
-  .mailyte-quote-btn:hover { filter: brightness(0.94); }
+  .mailyte-quote-btn:hover { background: ${surface.chipHover} !important; }
+  /* A caret, drawn rather than typed: a glyph would depend on a font the
+     sender may have replaced. It points down to open and up to close. */
+  .mailyte-quote-btn::after {
+    content: "" !important; width: 0 !important; height: 0 !important; flex: none !important;
+    border-left: 4px solid transparent !important; border-right: 4px solid transparent !important;
+    border-top: 5px solid currentColor !important;
+  }
+  .mailyte-quote-switch:checked ~ .mailyte-quote-btn::after {
+    border-top: 0 !important; border-bottom: 5px solid currentColor !important;
+  }
+  /* Only one of the two labels is ever shown, which is how the button changes
+     its wording without a line of script. */
+  .mailyte-quote-btn .mailyte-quote-less { display: none !important; }
+  .mailyte-quote-switch:checked ~ .mailyte-quote-btn .mailyte-quote-more { display: none !important; }
+  .mailyte-quote-switch:checked ~ .mailyte-quote-btn .mailyte-quote-less { display: inline !important; }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
   img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
@@ -363,11 +391,13 @@ export default function WebmailBodyFrame({
     if (!quoted) return sanitized.html;
     return (
       // The checkbox carries the accessible name, because the checkbox is the
-      // control; the label is the thing you see and click.
+      // control; the label is the thing you see and click. Both wordings are
+      // always in the markup -- the stylesheet shows whichever one applies.
       `${visible}<input type="checkbox" class="mailyte-quote-switch" id="${QUOTE_SWITCH_ID}"` +
-      ` aria-label="Show trimmed content">` +
-      `<label class="mailyte-quote-btn" for="${QUOTE_SWITCH_ID}" title="Show trimmed content">` +
-      `&#183;&#183;&#183;</label>` +
+      ` aria-label="Show earlier messages in this conversation">` +
+      `<label class="mailyte-quote-btn" for="${QUOTE_SWITCH_ID}">` +
+      `<span class="mailyte-quote-more">Show earlier messages</span>` +
+      `<span class="mailyte-quote-less">Hide earlier messages</span></label>` +
       `<${QUOTE_TAG}>${quoted}</${QUOTE_TAG}>`
     );
   }, [sanitized.html]);
