@@ -13,3 +13,6 @@ next-env.d.ts
 
 .DS_Store
 *.log
+
+# Copied from pdfjs-dist by scripts/copy-pdf-worker.mjs
+/public/pdfjs/

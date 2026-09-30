@@ -4,9 +4,11 @@ import { apiBaseUrl, mailboxToken } from '@/lib/webmail/server';
 /**
  * The Files library: every attachment in the mailbox, newest first.
  *
- * `q` narrows by file name, subject or sender; `kind` by type (images, pdfs,
- * documents, ...); `cursor` is the mail server's own position, handed back
- * as `next_cursor` on each page.
+ * `q` narrows by file name, subject, sender or recipient; `kind` by type
+ * (images, pdfs, documents, ...); `person` by who it came from or went to;
+ * `direction` received or sent; `since`/`until` by date; `min_size`/`max_size`
+ * by bytes; `sort` newest, oldest, largest, smallest or name. `cursor` is
+ * handed back as `next_cursor` on each page.
  */
 export async function GET(request: NextRequest) {
   const token = await mailboxToken();
@@ -16,7 +18,7 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const url = new URL(`${apiBaseUrl()}/mailbox/files`);
-  for (const key of ['q', 'kind', 'cursor', 'limit'] as const) {
+  for (const key of ['q', 'kind', 'person', 'direction', 'since', 'until', 'min_size', 'max_size', 'sort', 'cursor', 'limit'] as const) {
     const value = params.get(key);
     if (value !== null && value !== '') {
       url.searchParams.set(key, value);

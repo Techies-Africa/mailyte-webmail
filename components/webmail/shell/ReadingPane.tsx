@@ -30,7 +30,9 @@ import {
 import type { ComposeMode, SendResult, WebmailAttachment, WebmailListItem, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import type { Mailbox } from '@/lib/webmail/useMailbox';
-import { attachmentPreviewUrl, attachmentUrl, isPreviewableAttachment, originalPageUrl, rawMessageUrl } from '@/lib/webmail/client';
+import { attachmentUrl, originalPageUrl, rawMessageUrl, type ApiFile } from '@/lib/webmail/client';
+import FileViewer from '../files/FileViewer';
+import { filesOfMessage } from '../files/fileMeta';
 import { allowImageSender, isImageSenderAllowed, remoteImagePolicy } from '@/lib/webmail/sanitize';
 import { formatDateTime, formatShortDateTime } from '@/lib/webmail/dates';
 import WebmailBodyFrame, { BlockedImagesBar } from '../WebmailBodyFrame';
@@ -89,37 +91,33 @@ function formatBytes(bytes: number): string {
 /**
  * An attachment chip.
  *
- * Clicking the name opens a PREVIEW in a new tab when the browser can show
- * the type itself (images, PDF, text, audio, video); the browser's own viewer
- * then has its download button. The small arrow at the end always downloads
- * straight away. Types the browser would have to execute or that need another
- * app -- HTML, Office files, archives -- download on click, because a
- * sender-supplied document rendered on this origin is stored XSS (PRD SS7.6).
+ * Clicking the name opens the file in the viewer over the page, as Gmail and
+ * Zoho do (components/webmail/files/FilePreview.tsx says how each type is
+ * drawn without running what it contains). The small arrow at the end always
+ * downloads straight away.
  */
 function AttachmentChip({
   attachment,
   href,
-  previewHref,
+  onView,
 }: {
   attachment: WebmailAttachment;
   href: string;
-  previewHref: string;
+  /** Opens the file in the viewer over the page. */
+  onView: () => void;
 }) {
-  const previewable = isPreviewableAttachment(attachment.type);
   return (
     <span className="inline-flex max-w-xs items-stretch overflow-hidden rounded-lg border border-border bg-card text-[12.5px]">
-      <a
-        href={previewable ? previewHref : href}
-        target={previewable ? '_blank' : undefined}
-        rel={previewable ? 'noopener' : undefined}
-        download={previewable ? undefined : attachment.name}
-        title={previewable ? `Open ${attachment.name} in a new tab` : `Download ${attachment.name}`}
-        className="flex min-w-0 items-center gap-2 px-3 py-2 hover:bg-muted"
+      <button
+        type="button"
+        onClick={onView}
+        title={`View ${attachment.name}`}
+        className="flex min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-muted"
       >
         <Paperclip size={14} className="shrink-0 text-muted-foreground" />
         <span className="truncate font-medium">{attachment.name}</span>
         <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(attachment.size)}</span>
-      </a>
+      </button>
       <a
         href={href}
         download={attachment.name}
@@ -255,6 +253,12 @@ function MessageReader({
   } = mailbox;
 
   const [showMove, setShowMove] = useState(false);
+  // An attachment open in the viewer, and the attachments it steps through.
+  const [viewing, setViewing] = useState<{ files: ApiFile[]; index: number } | null>(null);
+  const viewAttachment = (from: WebmailMessage, attachments: WebmailAttachment[], attachmentIndex: number) => {
+    const files = filesOfMessage(from, attachments);
+    setViewing({ files, index: Math.max(0, files.findIndex((f) => f.index === attachmentIndex)) });
+  };
   const [showLabels, setShowLabels] = useState(false);
   const [showAiWriter, setShowAiWriter] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -625,7 +629,7 @@ function MessageReader({
                         key={attachment.index}
                         attachment={attachment}
                         href={attachmentUrl(message.id, attachment.index)}
-                        previewHref={attachmentPreviewUrl(message.id, attachment.index)}
+                        onView={() => viewAttachment(message, message.attachments.filter((a) => !a.isInline), attachment.index)}
                       />
                     ))}
                 </div>
@@ -693,7 +697,7 @@ function MessageReader({
                                       key={`${loaded.id}-${attachment.index}`}
                                       attachment={attachment}
                                       href={attachmentUrl(loaded.id, attachment.index)}
-                                      previewHref={attachmentPreviewUrl(loaded.id, attachment.index)}
+                                      onView={() => viewAttachment(loaded, loaded.attachments, attachment.index)}
                                     />
                                   ))}
                                 </div>
@@ -792,6 +796,16 @@ function MessageReader({
         }
         confirmLabel="Block sender"
       />
+
+      {viewing && viewing.files[viewing.index] && (
+        <FileViewer
+          files={viewing.files}
+          index={viewing.index}
+          onIndex={(index) => setViewing({ ...viewing, index })}
+          onClose={() => setViewing(null)}
+          emailLink={false}
+        />
+      )}
     </section>
   );
 }

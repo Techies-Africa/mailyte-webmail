@@ -375,6 +375,8 @@ export interface ApiFile {
   id: string;
   message_id: string;
   folder: string;
+  /** Sent files are in the Sent folder; everything else was received. */
+  direction?: "received" | "sent";
   /** What attachmentUrl() downloads it by. */
   index: number;
   name: string;
@@ -383,33 +385,72 @@ export interface ApiFile {
   size: number;
   subject: string;
   from: { name: string | null; email: string | null };
+  /** The first recipient -- who a sent file went to. */
+  to?: { name: string | null; email: string | null };
   received_at: string | null;
 }
 
 export interface FilePage {
   files: ApiFile[];
-  /** Where the next page starts; null at the end of the mailbox. */
+  /** Where the next page starts; null at the end. */
   next_cursor: number | null;
-  /** Emails with attachments in the mailbox, and how many this page read. */
+  /** Files matching the filters, across every page. */
+  total?: number;
   total_messages: number;
   scanned: number;
 }
 
-/**
- * One page of the Files library. The mail server reads a few hundred emails
- * per request at most, so a narrow search can come back with few files and a
- * `next_cursor` -- it has simply not reached the rest of the mailbox yet.
- */
-export function listFiles(
-  options: { q?: string; kind?: FileKind | null; cursor?: number },
-  onUnauthorized: () => void,
-) {
+export type FileSort = "newest" | "oldest" | "largest" | "smallest" | "name";
+
+export interface FileFilters {
+  q?: string;
+  kind?: FileKind | null;
+  /** An address the file came from or went to. */
+  person?: string | null;
+  direction?: "received" | "sent" | null;
+  /** YYYY-MM-DD, inclusive. */
+  since?: string | null;
+  until?: string | null;
+  minSize?: number | null;
+  maxSize?: number | null;
+  sort?: FileSort;
+}
+
+/** One page of the Files library, filtered and sorted on the mail server. */
+export function listFiles(options: FileFilters & { cursor?: number }, onUnauthorized: () => void) {
   const qs = new URLSearchParams();
   if (options.q) qs.set("q", options.q);
   if (options.kind) qs.set("kind", options.kind);
+  if (options.person) qs.set("person", options.person);
+  if (options.direction) qs.set("direction", options.direction);
+  if (options.since) qs.set("since", options.since);
+  if (options.until) qs.set("until", options.until);
+  if (options.minSize != null) qs.set("min_size", String(options.minSize));
+  if (options.maxSize != null) qs.set("max_size", String(options.maxSize));
+  if (options.sort && options.sort !== "newest") qs.set("sort", options.sort);
   if (options.cursor) qs.set("cursor", String(options.cursor));
   const query = qs.toString();
   return call<FilePage>(`/api/webmail/files${query ? `?${query}` : ""}`, undefined, onUnauthorized);
+}
+
+export interface FilesSummary {
+  total_files: number;
+  total_bytes: number;
+  received: { count: number; bytes: number };
+  sent: { count: number; bytes: number };
+  last_30_days: number;
+  by_kind: { kind: FileKind; count: number; bytes: number }[];
+  top_senders: { name: string | null; email: string; count: number; bytes: number }[];
+  /** The last twelve months, oldest first, empty months included. */
+  by_month: { month: string; count: number }[];
+  largest: ApiFile[];
+  newest_at: string | null;
+  oldest_at: string | null;
+}
+
+/** The Files overview: totals across the whole mailbox, not the current filter. */
+export function getFilesSummary(onUnauthorized: () => void) {
+  return call<FilesSummary>("/api/webmail/files/summary", undefined, onUnauthorized);
 }
 
 /** Whether the browser can show this type on its own, matching the proxy's allowlist. */
