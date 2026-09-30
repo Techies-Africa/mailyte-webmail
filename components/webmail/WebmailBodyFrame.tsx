@@ -84,6 +84,18 @@ import type { WebmailAttachment } from './types';
  *   too small to read.
  * - Mail that is already responsive never scales: its `@media` rules see
  *   the frame's own width and lay it out to fit, so it is never too wide.
+ *
+ * **A long reply chain must not squeeze itself to nothing.** Each reply wraps
+ * the one before it in a `<blockquote>`, and the browser's default for that is
+ * `margin: 1em 40px` -- 80px of width gone per level. A dozen replies deep (a
+ * support thread, a forwarded chain) the text was down to a couple of
+ * characters, breaking one per line, and eventually to zero width.
+ *
+ * Note that fit() cannot rescue this, which is why the reset has to prevent it:
+ * `overflow-wrap: anywhere` below lets text wrap mid-word, so a starved column
+ * reports no overflow -- scrollWidth stays equal to clientWidth and the message
+ * measures as fitting perfectly while being unreadable. Wide mail announces
+ * itself; a strangled quote chain does not.
  */
 function emailSafeReset(darkPlainText: boolean) {
   const surface = darkPlainText
@@ -109,6 +121,18 @@ function emailSafeReset(darkPlainText: boolean) {
   /* One long line in a <pre> would otherwise shrink the whole message to its
      width. Wrapped, it reads at full size, as other mail clients show it. */
   pre { white-space: pre-wrap !important; }
+  /* Quoted replies; see "A long reply chain" above. The browser's default is
+     "margin: 1em 40px", so every level of quoting costs 80px of width. Indent
+     the left only, by about what Gmail uses, and !important because senders
+     inline their own margins (a bare 40px is common, and beats a plain rule). */
+  blockquote { margin-left: 0.8ex !important; margin-right: 0 !important; padding-left: 1ex !important; }
+  /* Past the fourth level, stop indenting altogether: a fifth blockquote adds
+     nothing a reader can still follow, and without a stop the text runs out of
+     width no matter how small each step is. Matching "five deep" bounds the
+     total indent rather than slowing its growth. */
+  blockquote blockquote blockquote blockquote blockquote {
+    margin-left: 0 !important; padding-left: 0 !important; border-left: 0 !important;
+  }
   * { overflow-wrap: anywhere !important; word-break: break-word !important; }
   img, table { max-width: 100% !important; height: auto !important; }
   img[data-blocked] { min-width: 12px; min-height: 12px; border: 1px dashed #d1d5db; border-radius: 2px; }
