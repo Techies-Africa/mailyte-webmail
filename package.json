@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "check:brand": "node scripts/check-brand-tokens.mjs",
-    "dev:prod": "cross-env MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001"
+    "dev:prod": "cross-env MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001",
+    "predev": "node scripts/copy-pdf-worker.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",
@@ -29,11 +31,15 @@
     "date-fns": "^4.1.0",
     "dompurify": "^3.4.14",
     "framer-motion": "^12.18.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.511.0",
+    "mammoth": "^1.13.0",
     "next": "^16.1.6",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
     "@tanstack/react-query-devtools": "^5.103.2",
