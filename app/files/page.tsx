@@ -622,7 +622,14 @@ function FileCard({ file, onOpen }: { file: ApiFile; onOpen: (file: ApiFile) => 
             loading="lazy"
             decoding="async"
             onError={() => setBroken(true)}
-            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+            // Contain, not cover. Most of what lands in here is a screenshot or
+            // a scanned page, where cover crops to the middle of a 4:3 box and
+            // throws away the edges -- which for a screenshot is the window
+            // chrome, the toolbar, and any text down the sides, i.e. the part
+            // you were looking for. Letterboxed against the tile's own muted
+            // ground, the whole picture survives at a glance. The inset keeps
+            // a light image off the tile edge so it still reads as a thumbnail.
+            className="h-full w-full object-contain p-2 transition-transform duration-200 group-hover:scale-[1.02]"
           />
         ) : (
           <span className={`flex h-full w-full flex-col items-center justify-center gap-1.5 [&>svg]:h-9 [&>svg]:w-9 ${style.tint}`}>
