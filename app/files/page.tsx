@@ -18,7 +18,8 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import PdfThumbnail from '@/components/webmail/files/PdfThumbnail';
+import FileThumbnail from '@/components/webmail/files/FileThumbnail';
+import { rendererFor } from '@/components/webmail/files/FilePreview';
 import {
   BarChart3,
   Check,
@@ -604,6 +605,9 @@ function FileCard({ file, onOpen }: { file: ApiFile; onOpen: (file: ApiFile) => 
   const [broken, setBroken] = useState(false);
   const picture = INLINE_IMAGE.test(file.type.toLowerCase()) && !broken;
   const extension = extensionOf(file.name);
+  // Only these two can show something derived from the file itself.
+  const renderer = rendererFor(file);
+  const thumbKind = renderer === 'pdf' || renderer === 'docx' ? renderer : null;
   const typeTile = (
     <span
       className={`flex h-full w-full flex-col items-center justify-center gap-1.5 [&>svg]:h-9 [&>svg]:w-9 ${style.tint}`}
@@ -642,12 +646,15 @@ function FileCard({ file, onOpen }: { file: ApiFile; onOpen: (file: ApiFile) => 
             // a light image off the tile edge so it still reads as a thumbnail.
             className="h-full w-full object-contain p-2 transition-transform duration-200 group-hover:scale-[1.02]"
           />
+        ) : thumbKind ? (
+          // A PDF draws its own first page; a Word file its own first lines.
+          // Everything else keeps the type tile, and FileThumbnail falls back
+          // to exactly that node, so a document that cannot be read is
+          // indistinguishable from any other rather than showing a broken
+          // placeholder.
+          <FileThumbnail file={file} kind={thumbKind} fallback={typeTile} />
         ) : (
-          // A PDF draws its own first page here; everything else keeps the type
-          // tile. PdfThumbnail falls back to exactly this node, so a PDF that
-          // cannot be rasterised is indistinguishable from any other document
-          // rather than showing a broken-image placeholder.
-          <PdfThumbnail file={file} fallback={typeTile} />
+          typeTile
         )}
       </button>
       {/* Revealed on hover with a mouse; always there on touch. */}
