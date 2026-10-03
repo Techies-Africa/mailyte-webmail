@@ -18,6 +18,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PdfThumbnail from '@/components/webmail/files/PdfThumbnail';
 import {
   BarChart3,
   Check,
@@ -603,6 +604,16 @@ function FileCard({ file, onOpen }: { file: ApiFile; onOpen: (file: ApiFile) => 
   const [broken, setBroken] = useState(false);
   const picture = INLINE_IMAGE.test(file.type.toLowerCase()) && !broken;
   const extension = extensionOf(file.name);
+  const typeTile = (
+    <span
+      className={`flex h-full w-full flex-col items-center justify-center gap-1.5 [&>svg]:h-9 [&>svg]:w-9 ${style.tint}`}
+    >
+      {style.icon}
+      {extension && (
+        <span className="font-mono text-[10.5px] font-semibold tracking-wider">{extension}</span>
+      )}
+    </span>
+  );
 
   return (
     <li className="group relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition-shadow hover:shadow-panel">
@@ -632,10 +643,11 @@ function FileCard({ file, onOpen }: { file: ApiFile; onOpen: (file: ApiFile) => 
             className="h-full w-full object-contain p-2 transition-transform duration-200 group-hover:scale-[1.02]"
           />
         ) : (
-          <span className={`flex h-full w-full flex-col items-center justify-center gap-1.5 [&>svg]:h-9 [&>svg]:w-9 ${style.tint}`}>
-            {style.icon}
-            {extension && <span className="font-mono text-[10.5px] font-semibold tracking-wider">{extension}</span>}
-          </span>
+          // A PDF draws its own first page here; everything else keeps the type
+          // tile. PdfThumbnail falls back to exactly this node, so a PDF that
+          // cannot be rasterised is indistinguishable from any other document
+          // rather than showing a broken-image placeholder.
+          <PdfThumbnail file={file} fallback={typeTile} />
         )}
       </button>
       {/* Revealed on hover with a mouse; always there on touch. */}
