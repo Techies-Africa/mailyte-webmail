@@ -63,6 +63,10 @@ EXPOSE 3000
 # a NEXT_PUBLIC_ value.
 ENV MAILBOX_API_BASE_URL="http://api:8080/api/v1"
 
+# Optional analytics IDs. Leave blank for community/self-hosted installs; set
+# these only on deployments that should report into your analytics projects.
+ENV GOOGLE_ANALYTICS_ID="" CLARITY_PROJECT_ID=""
+
 # Socket probe, never pgrep: pgrep is absent from these images and would
 # yield exit 127 forever, so the container would never report healthy.
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \

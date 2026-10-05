@@ -37,8 +37,8 @@ function analyticsScript(googleTagId: string, clarityTagId: string) {
 }
 
 export function ProductionAnalytics() {
-  const googleTagId = process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID;
-  const clarityTagId = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID;
+  const googleTagId = process.env.GOOGLE_ANALYTICS_ID;
+  const clarityTagId = process.env.CLARITY_PROJECT_ID;
 
   if (process.env.NODE_ENV !== 'production' || !googleTagId || !clarityTagId) {
     return null;
