@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
+import { ProductionAnalytics } from '@/components/ProductionAnalytics';
 import AccentTheme from '@/components/providers/AccentTheme';
 import OutboxProvider from '@/components/providers/OutboxProvider';
 import PaneLayout from '@/components/providers/PaneLayout';
@@ -98,6 +99,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: PANE_LAYOUT_SCRIPT }} />
       </head>
       <body suppressHydrationWarning>
+        <ProductionAnalytics />
         <ThemeProvider>
           <AccentTheme />
           <PaneLayout />
