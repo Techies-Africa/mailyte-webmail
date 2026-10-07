@@ -127,6 +127,12 @@ export default function WebmailEditor({
   const editor = useEditor({
     // Next renders this on the client only; TipTap warns loudly otherwise.
     immediatelyRender: false,
+    // Without this Tiptap 3 re-renders this component only when its PARENT
+    // does, and the parent hears of document changes alone: the toolbar's
+    // pressed state lagged the caret (Bold still lit on plain text, so a
+    // click meant to turn it off turned it on), and a click with nothing
+    // selected showed nothing at all.
+    shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
