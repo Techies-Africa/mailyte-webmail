@@ -140,7 +140,9 @@ export default function WebmailEditor({
         // outgoing-mail scheme allowlist, so the bundled copy is turned off.
         link: false,
       }),
-      Link.configure({
+      // inclusive: false -- the bundled mark continues at its edge while
+      // autolink is on, so everything typed after a link stayed inside it.
+      Link.extend({ inclusive: false }).configure({
         openOnClick: false,
         autolink: true,
         // A pasted javascript: URL must never travel in an outgoing message.
