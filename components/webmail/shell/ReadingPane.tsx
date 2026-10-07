@@ -786,8 +786,9 @@ function MessageReader({
         isOpen={confirmBlock}
         onClose={() => setConfirmBlock(false)}
         onConfirm={async () => {
-          const ok = await blockSender(message.fromEmail);
-          if (ok && !inJunk) void markSpam([message.id]);
+          // blockSender files it to Junk itself: the markSpam this pane is
+          // handed asks first (app/page.tsx), and this dialog has just asked.
+          await blockSender(message.fromEmail, inJunk ? [] : [message.id]);
         }}
         icon={<Ban size={18} />}
         tone="danger"

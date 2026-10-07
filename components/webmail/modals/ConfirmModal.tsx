@@ -68,6 +68,10 @@ export default function ConfirmModal({
           </Button>
           <Button
             variant={isDanger ? 'danger' : 'primary'}
+            // Focus starts here, so Enter confirms and the page's keyboard
+            // shortcuts stop firing behind the dialog. A typed confirmation
+            // focuses its own field instead.
+            autoFocus={!typedConfirmation}
             disabled={!canConfirm}
             busy={busy}
             className={isDanger ? '!bg-destructive !text-destructive-foreground !border-transparent' : ''}

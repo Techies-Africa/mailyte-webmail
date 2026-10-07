@@ -1011,9 +1011,9 @@ export function useMailbox() {
     }
   }, [activeFolder, markingAllRead, folders, store, handleUnauthorized, queryClient, refreshFolders, toast]);
 
-  /** Block a sender: future mail files to Junk at delivery. */
+  /** Block a sender: future mail files to Junk at delivery, and `ids` (the message on screen) go there now. */
   const blockSender = useCallback(
-    async (address: string) => {
+    async (address: string, ids: string[] = []) => {
       const result = await apiBlockSender(address, handleUnauthorized);
       if (!result.success) {
         toast(result.message, { tone: 'error' });
@@ -1022,9 +1022,12 @@ export function useMailbox() {
       // Settings › Blocked senders shows the same list, already updated.
       if (result.data) queryClient.setQueryData(settingsKeys.blocked, result.data);
       toast(`Blocked ${address} — new mail from them goes to Junk`);
+      // Here rather than in the reading pane: the markSpam the panes are
+      // handed asks first (app/page.tsx), and blocking has already asked.
+      if (ids.length > 0) void markSpam(ids);
       return true;
     },
-    [handleUnauthorized, queryClient, toast],
+    [handleUnauthorized, queryClient, toast, markSpam],
   );
 
   /** Add and remove labels on some messages. */
