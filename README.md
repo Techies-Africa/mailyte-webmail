@@ -63,12 +63,14 @@ docker run -p 3000:3000 -e MAILBOX_API_BASE_URL="https://mail.example.com/api/v1
 | `NEXT_PUBLIC_BRAND_NAME` | no | What the app calls itself. Default `Webmail`. When it is `Mailyte` the real lockup artwork is drawn; any other name is set beside the mark as text. Replace `public/mailyte-mark-*.png` to change the mark |
 | `GOOGLE_ANALYTICS_ID` | no | Optional Google Analytics measurement ID for this deployment. Leave blank for self-hosted/community installs |
 | `CLARITY_PROJECT_ID` | no | Optional Microsoft Clarity project ID for this deployment. Leave blank for self-hosted/community installs |
+| `TURNSTILE_SITE_KEY` | no | Cloudflare Turnstile site key. Set it **and** `TURNSTILE_SECRET_KEY` to put a bot check on sign-in; leave both blank to turn it off |
+| `TURNSTILE_SECRET_KEY` | no | Cloudflare Turnstile secret key, used by the server only. Never put it in a `NEXT_PUBLIC_*` variable |
 
-`MAILBOX_API_BASE_URL`, `GOOGLE_ANALYTICS_ID`, and `CLARITY_PROJECT_ID` are
-read **at request time, on the server**, so one image works for every
-deployment — change them and restart, no rebuild. The `NEXT_PUBLIC_*` values
-are rendered in the browser and are therefore baked in at build time; that is
-the difference between the two, and it is deliberate.
+`MAILBOX_API_BASE_URL`, `GOOGLE_ANALYTICS_ID`, `CLARITY_PROJECT_ID` and the
+`TURNSTILE_*` keys are read **at request time, on the server**, so one image
+works for every deployment — change them and restart, no rebuild. The
+`NEXT_PUBLIC_*` values are rendered in the browser and are therefore baked in
+at build time; that is the difference between the two, and it is deliberate.
 
 ## How it is put together
 

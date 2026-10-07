@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiBaseUrl, readAccountStore, withAccount, writeAccountStore } from '@/lib/webmail/server';
+import { turnstileKeys, verifyTurnstile } from '@/lib/webmail/turnstile';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -20,6 +21,21 @@ export async function POST(request: NextRequest) {
   // client sent), so it is passed through, not built from the body.
   const forwardedFor = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
   const userAgent = request.headers.get('user-agent');
+
+  // Cloudflare Turnstile, when this deployment has both keys
+  // (lib/webmail/turnstile.ts). On every attempt, the two-factor step too:
+  // the browser decides whether two_factor_code is sent, so skipping the
+  // check when it is would hand a bot a way round it.
+  const turnstile = turnstileKeys();
+  if (turnstile) {
+    const clientIp = forwardedFor?.split(',')[0]?.trim() || null;
+    if (!(await verifyTurnstile(turnstile.secret, body.turnstile_token, clientIp))) {
+      return NextResponse.json(
+        { success: false, message: 'Please complete the security check, then try again.' },
+        { status: 403 },
+      );
+    }
+  }
   const backendRes = await fetch(`${apiBaseUrl()}/mailbox-auth/login`, {
     method: 'POST',
     headers: {
