@@ -25,6 +25,7 @@ import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 import { useNewMailNotifier } from '@/lib/webmail/useNewMailNotifier';
 import { toListItem } from '@/lib/webmail/adapters';
+import { withConversationSubject } from '@/components/webmail/composeQuoting';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
 
@@ -55,6 +56,7 @@ export default function WebmailInboxPage() {
     folders,
     activeFolder,
     openMessage,
+    thread,
     messages,
     selectedIds,
     unreadCount,
@@ -127,14 +129,15 @@ export default function WebmailInboxPage() {
       if (!openMessage) return;
       compose.openCompose({
         mode,
-        replyTo: openMessage,
+        // A reply keeps its conversation's subject when this message has none (composeQuoting).
+        replyTo: mode === 'forward' ? openMessage : withConversationSubject(openMessage, thread),
         initialBody: body ?? signatureSeed(mode) ?? undefined,
         // Files attached in the inline reply travel with it.
         attachments: attachments?.length ? attachments : undefined,
       });
       setQuickReply(null);
     },
-    [openMessage, compose, signatureSeed],
+    [openMessage, thread, compose, signatureSeed],
   );
 
   const [replySignal, setReplySignal] = useState(0);

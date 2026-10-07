@@ -46,6 +46,7 @@ import ThreadSummaryModal from '../modals/ThreadSummaryModal';
 import ConfirmModal from '../modals/ConfirmModal';
 import LabelPickerDialog from '../modals/LabelPickerDialog';
 import QuickReply from './QuickReply';
+import { withConversationSubject } from '../composeQuoting';
 import { Tag } from '@/components/ui/Pill';
 import { labelTag } from '@/lib/webmail/tags';
 
@@ -272,6 +273,10 @@ function MessageReader({
     () => thread.filter((m) => m.id !== message.id).sort(byNewestFirst),
     [thread, message.id],
   );
+
+  // What Reply answers: this message, with its conversation's subject when
+  // it has none of its own (composeQuoting).
+  const replyTarget = useMemo(() => withConversationSubject(message, thread), [message, thread]);
 
   // Whether remote images load on open. The policy is the reader's own
   // (Settings › General); under `ask` the per-sender allowance and the
@@ -724,7 +729,7 @@ function MessageReader({
             {quickReply ? (
               <QuickReply
                 key={quickReply}
-                message={message}
+                message={replyTarget}
                 mode={quickReply}
                 selfAddress={displayEmail}
                 signatureSeed={signatureSeed(quickReply)}

@@ -54,7 +54,7 @@ function initialDraft(
       base.to = to;
       base.cc = cc;
     } else {
-      base.to = replyRecipients(replyTo);
+      base.to = replyRecipients(replyTo, selfAddress);
     }
   } else if (replyTo && mode === 'forward') {
     base.subject = forwardSubject(replyTo.subject);

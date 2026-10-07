@@ -61,7 +61,7 @@ export default function QuickReply({
 }: QuickReplyProps) {
   const recipients = useMemo(() => {
     if (mode === 'replyAll') return replyAllRecipients(message, selfAddress);
-    return { to: replyRecipients(message), cc: '' };
+    return { to: replyRecipients(message, selfAddress), cc: '' };
   }, [message, mode, selfAddress]);
 
   // People an @mention added (D7). The card's recipients are otherwise
