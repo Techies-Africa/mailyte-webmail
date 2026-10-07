@@ -16,6 +16,15 @@ function analyticsScript(googleTagId: string, clarityTagId: string) {
 
   if (isLocal) return;
 
+  // Never on the auth pages. /login is the one page rendered per request
+  // (it reads the Turnstile site key at run time), so with the tracking ids
+  // set it would otherwise be the ONLY page that ever loaded this script --
+  // every session recorded would be a sign-in screen and nothing else, which
+  // is worse than no data at all. Clarity records what is on screen, and
+  // these are the two pages where a password is typed.
+  var path = window.location.pathname.replace(/\\/+$/, '');
+  if (path === '/login' || path === '/change-password') return;
+
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag(){window.dataLayer.push(arguments);};
 
