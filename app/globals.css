@@ -246,8 +246,16 @@
   .ProseMirror blockquote {
     margin: 0.25em 0;
     padding-left: 1ex;
-    border-left: 3px solid hsl(var(--border));
+    border-left: 3px solid hsl(var(--muted-foreground) / 0.8);
     color: hsl(var(--muted-foreground));
+  }
+  /* A long reply chain nests one quote per reply. Past the fourth level stop
+     indenting, as the reading pane does (WebmailBodyFrame): at 12 levels the
+     text had lost a quarter of its width, at 20 more than a third. */
+  .ProseMirror blockquote blockquote blockquote blockquote blockquote {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
   }
   .ProseMirror pre {
     margin: 0.25em 0;
@@ -257,8 +265,13 @@
     font-size: 0.9em;
     overflow-x: auto;
   }
+  /* The accent pulled toward the text colour: the bare accent was 2.3:1 to
+     3.6:1 on six of the twelve theme and mode pairs, under the 4.5 that AA
+     asks of text. The first line is the fallback for a browser without
+     color-mix(). */
   .ProseMirror a {
     color: hsl(var(--primary));
+    color: color-mix(in srgb, hsl(var(--primary)) 60%, hsl(var(--foreground)));
     text-decoration: underline;
   }
 
