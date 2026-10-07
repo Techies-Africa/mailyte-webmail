@@ -5,7 +5,7 @@ import { AtSign, Maximize2, Minus, Send, Sparkles, Square, Trash2, X } from 'luc
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
-import WebmailRecipientInput from '../WebmailRecipientInput';
+import WebmailRecipientInput, { CcBccToggles } from '../WebmailRecipientInput';
 import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
@@ -25,7 +25,7 @@ import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
-import { AttachButton, AttachmentChips, useAttachments } from './attachments';
+import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from './attachments';
 
 
 /** PRD F6: autosave every 30s + on close. */
@@ -54,7 +54,7 @@ function initialDraft(
       base.to = to;
       base.cc = cc;
     } else {
-      base.to = replyRecipients(replyTo);
+      base.to = replyRecipients(replyTo, selfAddress);
     }
   } else if (replyTo && mode === 'forward') {
     base.subject = forwardSubject(replyTo.subject);
@@ -168,7 +168,10 @@ export default function ComposeWindow({
   const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Picker, limits and chips shared with the inline reply (compose/attachments).
-  const { attachments, attachedBytes, addFiles, removeAt } = useAttachments(model.attachments ?? [], setSendError);
+  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps } = useAttachments(
+    model.attachments ?? [],
+    setSendError,
+  );
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // D1: a mention names the person to everyone, so mentioning someone who is
@@ -514,22 +517,12 @@ export default function ComposeWindow({
   );
 
   const ccBccToggles = (
-    <div className="flex gap-2.5 pr-1">
-      <button
-        type="button"
-        onClick={() => setShowCc((v) => !v)}
-        className={`text-[11px] font-bold ${showCc ? 'text-muted-foreground' : 'text-primary'}`}
-      >
-        Cc
-      </button>
-      <button
-        type="button"
-        onClick={() => setShowBcc((v) => !v)}
-        className={`text-[11px] font-bold ${showBcc ? 'text-muted-foreground' : 'text-primary'}`}
-      >
-        Bcc
-      </button>
-    </div>
+    <CcBccToggles
+      showCc={showCc}
+      showBcc={showBcc}
+      onToggleCc={() => setShowCc((v) => !v)}
+      onToggleBcc={() => setShowBcc((v) => !v)}
+    />
   );
 
   const form = (
@@ -745,6 +738,8 @@ export default function ComposeWindow({
       aria-label={title}
       onFocusCapture={onActivate}
       onPointerDownCapture={onActivate}
+      // Files dragged in from the desktop attach (compose/attachments.tsx).
+      {...dropProps}
       style={
         fullscreen
           ? visible
@@ -766,6 +761,7 @@ export default function ComposeWindow({
         {form}
       </div>
       {dialogs}
+      {dragging && <DropOverlay />}
     </div>
   );
 }
