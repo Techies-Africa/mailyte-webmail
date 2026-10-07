@@ -160,7 +160,7 @@ export default function WebmailEditor({
     content: initialHtml,
     editorProps: {
       attributes: {
-        class: `prose prose-sm dark:prose-invert max-w-none focus:outline-none px-4 py-3 text-[13.5px] leading-[1.75] text-foreground ${
+        class: `focus:outline-none px-4 py-3 text-[13.5px] leading-[1.75] text-foreground ${
           minHeightClass ?? (compact ? 'min-h-[7rem]' : 'min-h-[12rem]')
         }`,
         'aria-label': 'Message body',
