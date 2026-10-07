@@ -45,7 +45,7 @@ import AiWriterModal from '../modals/AiWriterModal';
 import ThreadSummaryModal from '../modals/ThreadSummaryModal';
 import ConfirmModal from '../modals/ConfirmModal';
 import LabelPickerDialog from '../modals/LabelPickerDialog';
-import QuickReply from './QuickReply';
+import QuickReply, { type QuickReplyDraft } from './QuickReply';
 import { withConversationSubject } from '../composeQuoting';
 import { Tag } from '@/components/ui/Pill';
 import { labelTag } from '@/lib/webmail/tags';
@@ -58,8 +58,8 @@ type ReadingPaneProps = {
   quickReply: QuickReplyMode;
   onQuickReplyChange: (mode: QuickReplyMode) => void;
   onForward: () => void;
-  /** Move an inline reply into a full compose window with what was typed. */
-  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string, attachments?: File[]) => void;
+  /** Move an inline reply into a full compose window with what was typed, attached and addressed. */
+  onOpenInComposer: (mode: 'reply' | 'replyAll', draft: QuickReplyDraft) => void;
   onQuickReplySend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   /** The AI writer's "Use this": a new message starting with that body. */
   onComposeWithBody: (body: string) => void;
@@ -735,7 +735,7 @@ function MessageReader({
                 signatureSeed={signatureSeed(quickReply)}
                 onSend={onQuickReplySend}
                 onCancel={() => onQuickReplyChange(null)}
-                onExpand={(body, attachments) => onOpenInComposer(quickReply, body, attachments)}
+                onExpand={(draft) => onOpenInComposer(quickReply, draft)}
                 revealSignal={replySignal}
                 contacts={mailbox.contacts}
               />

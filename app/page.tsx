@@ -9,6 +9,7 @@ import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollap
 import MessageListPane from '@/components/webmail/shell/MessageListPane';
 import PaneResizeHandle from '@/components/webmail/shell/PaneResizeHandle';
 import ReadingPane, { type QuickReplyMode } from '@/components/webmail/shell/ReadingPane';
+import type { QuickReplyDraft } from '@/components/webmail/shell/QuickReply';
 import CalendarPanel from '@/components/webmail/shell/CalendarPanel';
 import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
 import ComposeDock from '@/components/webmail/compose/ComposeDock';
@@ -25,7 +26,7 @@ import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 import { useNewMailNotifier } from '@/lib/webmail/useNewMailNotifier';
 import { toListItem } from '@/lib/webmail/adapters';
-import { withConversationSubject } from '@/components/webmail/composeQuoting';
+import { replySubject, withConversationSubject } from '@/components/webmail/composeQuoting';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
 
@@ -175,15 +176,20 @@ export default function WebmailInboxPage() {
   );
 
   const openReplyInComposer = useCallback(
-    (mode: ComposeMode, body?: string, attachments?: File[]) => {
+    (mode: ComposeMode, draft?: QuickReplyDraft) => {
       if (!openMessage) return;
+      // A reply keeps its conversation's subject when this message has none (composeQuoting).
+      const replyTo = mode === 'forward' ? openMessage : withConversationSubject(openMessage, thread);
       compose.openCompose({
         mode,
-        // A reply keeps its conversation's subject when this message has none (composeQuoting).
-        replyTo: mode === 'forward' ? openMessage : withConversationSubject(openMessage, thread),
-        initialBody: body ?? signatureSeed(mode) ?? undefined,
-        // Files attached in the inline reply travel with it.
-        attachments: attachments?.length ? attachments : undefined,
+        replyTo,
+        initialBody: draft?.body ?? signatureSeed(mode) ?? undefined,
+        // Files attached in the inline reply travel with it,
+        attachments: draft?.attachments.length ? draft.attachments : undefined,
+        // and so do its To, Cc and Bcc, edited there or not.
+        resumed: draft
+          ? { to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: replySubject(replyTo.subject) }
+          : undefined,
       });
       setQuickReply(null);
     },
@@ -440,7 +446,7 @@ export default function WebmailInboxPage() {
           onQuickReplyChange={changeQuickReply}
           replySignal={replySignal}
           onForward={() => openReplyInComposer('forward')}
-          onOpenInComposer={(mode, body, attachments) => openReplyInComposer(mode, body, attachments)}
+          onOpenInComposer={(mode, draft) => openReplyInComposer(mode, draft)}
           onQuickReplySend={(payload, mode) =>
             send(payload, { mode, replyTo: openMessage ?? undefined })
           }

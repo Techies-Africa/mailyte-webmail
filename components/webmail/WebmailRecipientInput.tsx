@@ -221,3 +221,35 @@ export default function WebmailRecipientInput({
     </div>
   );
 }
+
+/** The Cc and Bcc switches at the end of a To row: the compose window's and the inline reply's. */
+export function CcBccToggles({
+  showCc,
+  showBcc,
+  onToggleCc,
+  onToggleBcc,
+}: {
+  showCc: boolean;
+  showBcc: boolean;
+  onToggleCc: () => void;
+  onToggleBcc: () => void;
+}) {
+  return (
+    <div className="flex gap-2.5 pr-1">
+      <button
+        type="button"
+        onClick={onToggleCc}
+        className={`text-[11px] font-bold ${showCc ? 'text-muted-foreground' : 'text-primary'}`}
+      >
+        Cc
+      </button>
+      <button
+        type="button"
+        onClick={onToggleBcc}
+        className={`text-[11px] font-bold ${showBcc ? 'text-muted-foreground' : 'text-primary'}`}
+      >
+        Bcc
+      </button>
+    </div>
+  );
+}

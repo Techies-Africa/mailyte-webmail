@@ -5,7 +5,7 @@ import { AtSign, Maximize2, Minus, Send, Sparkles, Square, Trash2, X } from 'luc
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
-import WebmailRecipientInput from '../WebmailRecipientInput';
+import WebmailRecipientInput, { CcBccToggles } from '../WebmailRecipientInput';
 import { primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
@@ -517,22 +517,12 @@ export default function ComposeWindow({
   );
 
   const ccBccToggles = (
-    <div className="flex gap-2.5 pr-1">
-      <button
-        type="button"
-        onClick={() => setShowCc((v) => !v)}
-        className={`text-[11px] font-bold ${showCc ? 'text-muted-foreground' : 'text-primary'}`}
-      >
-        Cc
-      </button>
-      <button
-        type="button"
-        onClick={() => setShowBcc((v) => !v)}
-        className={`text-[11px] font-bold ${showBcc ? 'text-muted-foreground' : 'text-primary'}`}
-      >
-        Bcc
-      </button>
-    </div>
+    <CcBccToggles
+      showCc={showCc}
+      showBcc={showBcc}
+      onToggleCc={() => setShowCc((v) => !v)}
+      onToggleBcc={() => setShowBcc((v) => !v)}
+    />
   );
 
   const form = (
