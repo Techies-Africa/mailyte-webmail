@@ -642,6 +642,28 @@ function MessageReader({
             )}
           </div>
 
+          {/* The reply box sits straight under the message it answers, above
+              the earlier conversation (2026-10-07): below a long thread it
+              was a long scroll away. */}
+          <div className="mt-5">
+            {quickReply ? (
+              <QuickReply
+                key={quickReply}
+                message={replyTarget}
+                mode={quickReply}
+                selfAddress={displayEmail}
+                signatureSeed={signatureSeed(quickReply)}
+                onSend={onQuickReplySend}
+                onCancel={() => onQuickReplyChange(null)}
+                onExpand={(draft) => onOpenInComposer(quickReply, draft)}
+                revealSignal={replySignal}
+                contacts={mailbox.contacts}
+              />
+            ) : (
+              <div className="flex gap-2">{replyButtons('dashed')}</div>
+            )}
+          </div>
+
           {earlier.length > 0 && (
             <div className="mt-5">
               <h3 className="mb-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -724,25 +746,6 @@ function MessageReader({
               </div>
             </div>
           )}
-
-          <div className="mt-5">
-            {quickReply ? (
-              <QuickReply
-                key={quickReply}
-                message={replyTarget}
-                mode={quickReply}
-                selfAddress={displayEmail}
-                signatureSeed={signatureSeed(quickReply)}
-                onSend={onQuickReplySend}
-                onCancel={() => onQuickReplyChange(null)}
-                onExpand={(draft) => onOpenInComposer(quickReply, draft)}
-                revealSignal={replySignal}
-                contacts={mailbox.contacts}
-              />
-            ) : (
-              <div className="flex gap-2">{replyButtons('dashed')}</div>
-            )}
-          </div>
         </div>
       </div>
 
