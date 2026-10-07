@@ -174,11 +174,19 @@ export default function WebmailEditor({
       },
       handleDrop: (view, event, _slice, moved) => {
         if (moved) return false;
-        const files = Array.from(event.dataTransfer?.files ?? []).filter(isAcceptedImage);
-        if (files.length === 0) return false;
+        const dropped = Array.from(event.dataTransfer?.files ?? []);
+        if (dropped.length === 0) return false;
+        // Every file dropped on the text is handled here -- returning false
+        // let the browser open a PDF in the tab. Pictures go inline,
+        // Gmail-style (2026-10-07); the compose window or reply card around
+        // the editor attaches everything else (compose/attachments.tsx). The
+        // signature editor has no such host, so there the rest is refused.
         event.preventDefault();
-        const dropped = view.posAtCoords({ left: event.clientX, top: event.clientY });
-        void insertFiles(view, files, dropped?.pos);
+        const images = dropped.filter(isAcceptedImage);
+        if (images.length > 0) {
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          void insertFiles(view, images, at?.pos);
+        }
         return true;
       },
     },

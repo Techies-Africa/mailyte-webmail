@@ -25,7 +25,7 @@ import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
-import { AttachButton, AttachmentChips, useAttachments } from './attachments';
+import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from './attachments';
 
 
 /** PRD F6: autosave every 30s + on close. */
@@ -168,7 +168,10 @@ export default function ComposeWindow({
   const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Picker, limits and chips shared with the inline reply (compose/attachments).
-  const { attachments, attachedBytes, addFiles, removeAt } = useAttachments(model.attachments ?? [], setSendError);
+  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps } = useAttachments(
+    model.attachments ?? [],
+    setSendError,
+  );
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // D1: a mention names the person to everyone, so mentioning someone who is
@@ -745,6 +748,8 @@ export default function ComposeWindow({
       aria-label={title}
       onFocusCapture={onActivate}
       onPointerDownCapture={onActivate}
+      // Files dragged in from the desktop attach (compose/attachments.tsx).
+      {...dropProps}
       style={
         fullscreen
           ? visible
@@ -766,6 +771,7 @@ export default function ComposeWindow({
         {form}
       </div>
       {dialogs}
+      {dragging && <DropOverlay />}
     </div>
   );
 }
