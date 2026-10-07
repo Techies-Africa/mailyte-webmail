@@ -72,7 +72,7 @@ export const metadata: Metadata = {
  * Not here, on purpose: maximumScale / userScalable -- they stop people
  * pinch-zooming, an accessibility failure; iOS zooming into a small field is
  * fixed in globals.css instead. viewportFit 'cover' -- it needs safe-area
- * padding everywhere, and this is not an installed app. themeColor -- a media
+ * padding everywhere, which nothing here has yet. themeColor -- a media
  * query follows the device's theme, not the one chosen in the app.
  */
 export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
