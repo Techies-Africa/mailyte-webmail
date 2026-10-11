@@ -12,7 +12,8 @@ interface TrustCue {
 interface AuthLayoutProps {
   children: React.ReactNode;
   title: string;
-  description: string;
+  /** Fixed words, shown to Clarity; wrap any address in a data-clarity-mask span. */
+  description: React.ReactNode;
   footer?: React.ReactNode;
   panelHeadline?: React.ReactNode;
   panelDescription?: string;
@@ -56,7 +57,11 @@ export default function AuthLayout({
 }: AuthLayoutProps) {
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
-      <div className="relative hidden overflow-hidden bg-sidebar text-white md:flex md:w-[46%] md:flex-col md:p-12 lg:p-14">
+      {/* The brand panel is the same words for everyone: Clarity may show it. */}
+      <div
+        data-clarity-unmask="True"
+        className="relative hidden overflow-hidden bg-sidebar text-white md:flex md:w-[46%] md:flex-col md:p-12 lg:p-14"
+      >
         {/* A single brand-gradient sweep, per the guide: hero panels only. */}
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
         <div
@@ -100,8 +105,15 @@ export default function AuthLayout({
           </a>
 
           <div className="mb-6">
-            <h1 className="font-display text-[28px] font-bold tracking-tight text-foreground">{title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+            <h1 data-clarity-unmask="True" className="font-display text-[28px] font-bold tracking-tight text-foreground">
+              {title}
+            </h1>
+            {/* The page is masked by default (app/layout.tsx); the heading and
+                the description's fixed words are unmasked, and any address in
+                the description carries its own mask (LoginForm). */}
+            <p data-clarity-unmask="True" className="mt-2 text-sm text-muted-foreground">
+              {description}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm md:p-8">{children}</div>

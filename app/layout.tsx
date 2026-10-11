@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
-import { ProductionAnalytics } from '@/components/ProductionAnalytics';
 import AccentTheme from '@/components/providers/AccentTheme';
 import OutboxProvider from '@/components/providers/OutboxProvider';
 import PaneLayout from '@/components/providers/PaneLayout';
@@ -98,15 +97,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             what it sets persists. */}
         <script dangerouslySetInnerHTML={{ __html: PANE_LAYOUT_SCRIPT }} />
       </head>
-      {/* data-clarity-mask: Microsoft Clarity records what is on screen, and on
-          a webmail that is people's mail -- senders, subjects, message text,
-          contacts, file names, folder names. Masking the whole body (Clarity's
-          "Strict" mode, in code) keeps every recording to layout, clicks and
-          scrolls, with each piece of text a grey block, and covers any screen
-          added later without anyone remembering to (2026-10-11). The message
-          body's frame is masked again inside (WebmailBodyFrame). */}
+      {/* Analytics runs on the sign-in page only (app/login/page.tsx): inside
+          the app a recording would be people's mail (owner, 2026-10-11).
+          data-clarity-mask stays on the whole body as a backstop -- if a
+          recording ever reaches past sign-in, every piece of text is a grey
+          block. The sign-in page unmasks only its fixed words (AuthLayout). */}
       <body suppressHydrationWarning data-clarity-mask="True">
-        <ProductionAnalytics />
         <ThemeProvider>
           <AccentTheme />
           <PaneLayout />
