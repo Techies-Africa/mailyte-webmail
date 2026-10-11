@@ -98,7 +98,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             what it sets persists. */}
         <script dangerouslySetInnerHTML={{ __html: PANE_LAYOUT_SCRIPT }} />
       </head>
-      <body suppressHydrationWarning>
+      {/* data-clarity-mask: Microsoft Clarity records what is on screen, and on
+          a webmail that is people's mail -- senders, subjects, message text,
+          contacts, file names, folder names. Masking the whole body (Clarity's
+          "Strict" mode, in code) keeps every recording to layout, clicks and
+          scrolls, with each piece of text a grey block, and covers any screen
+          added later without anyone remembering to (2026-10-11). The message
+          body's frame is masked again inside (WebmailBodyFrame). */}
+      <body suppressHydrationWarning data-clarity-mask="True">
         <ProductionAnalytics />
         <ThemeProvider>
           <AccentTheme />

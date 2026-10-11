@@ -406,7 +406,9 @@ export default function WebmailBodyFrame({
   // DOMPurify returns balanced markup, so nothing in the message can close the
   // wrapper early.
   const srcDoc = useMemo(
-    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG}>${body}</${FIT_TAG}>`,
+    // data-clarity-mask: the frame is same-origin, so Clarity can read into it;
+    // the message itself is masked there too (app/layout.tsx).
+    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG} data-clarity-mask="True">${body}</${FIT_TAG}>`,
     [darkPlainText, body],
   );
 
@@ -441,6 +443,7 @@ export default function WebmailBodyFrame({
     <iframe
       ref={iframeRef}
       title="Message content"
+      data-clarity-mask="True"
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       // No referrer leaves this frame, for anything that does load.
       referrerPolicy="no-referrer"
