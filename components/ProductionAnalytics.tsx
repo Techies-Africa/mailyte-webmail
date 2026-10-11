@@ -17,14 +17,13 @@ function analyticsScript(googleTagId: string, clarityTagId: string) {
 
   if (isLocal) return;
 
-  // Never on the auth pages. /login is the one page rendered per request
-  // (it reads the Turnstile site key at run time), so with the tracking ids
-  // set it would otherwise be the ONLY page that ever loaded this script --
-  // every session recorded would be a sign-in screen and nothing else, which
-  // is worse than no data at all. Clarity records what is on screen, and
-  // these are the two pages where a password is typed.
-  var path = window.location.pathname.replace(/\\/+$/, '');
-  if (path === '/login' || path === '/change-password') return;
+  // The sign-in page only (owner, 2026-10-11): inside the app a recording
+  // is people's mail. Its inputs, addresses and errors stay masked; only its
+  // fixed words are unmasked (components/auth/AuthLayout).
+  var onLanding = function () {
+    return window.location.pathname.replace(/\\/+$/, '') === '/login';
+  };
+  if (!onLanding()) return;
 
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag(){window.dataLayer.push(arguments);};
@@ -42,12 +41,23 @@ function analyticsScript(googleTagId: string, clarityTagId: string) {
     t=l.createElement(r);t.async=1;t.src='https://www.clarity.ms/tag/'+i;
     y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
   })(window, document, 'clarity', 'script', '${clarityTagId}');
+
+  // Sign-in leaves with a full page load, so neither tag survives into the
+  // app. Should anything ever leave this page in-app instead, both stop.
+  var watch = window.setInterval(function () {
+    if (onLanding()) return;
+    window.clearInterval(watch);
+    window['ga-disable-${googleTagId}'] = true;
+    if (typeof window.clarity === 'function') window.clarity('stop');
+  }, 500);
 })();
 `;
 }
 
 /**
- * The tracking tags, when this deployment has both ids.
+ * The tracking tags, on the sign-in page only (app/login/page.tsx), when
+ * this deployment has both ids. Nowhere inside the app: a recording there
+ * would be people's mail (owner, 2026-10-11).
  *
  * `connection()` makes this read them at REQUEST time, which is the whole
  * point: they are set where the container runs, exactly like
@@ -56,11 +66,8 @@ function analyticsScript(googleTagId: string, clarityTagId: string) {
  * both are empty, so it returned null and nothing was ever recorded in
  * production -- on any page.
  *
- * This component sits in the root layout, so opting in here makes every page
- * render on demand rather than being prerendered once. That is the right
- * trade for this app: every page is a client-side shell behind a sign-in,
- * there is nothing to gain from prerendering it, and a configuration value
- * that is baked into the image is a value that cannot be configured.
+ * Rendered by the sign-in page, which is already rendered per request (it
+ * reads the Turnstile site key at run time too).
  */
 export async function ProductionAnalytics() {
   await connection();

@@ -1,4 +1,5 @@
 import { connection } from 'next/server';
+import { ProductionAnalytics } from '@/components/ProductionAnalytics';
 import { turnstileKeys } from '@/lib/webmail/turnstile';
 import LoginForm from './LoginForm';
 
@@ -10,5 +11,11 @@ import LoginForm from './LoginForm';
  */
 export default async function LoginPage() {
   await connection();
-  return <LoginForm turnstileSiteKey={turnstileKeys()?.siteKey ?? ''} />;
+  return (
+    <>
+      {/* The one page analytics runs on (components/ProductionAnalytics). */}
+      <ProductionAnalytics />
+      <LoginForm turnstileSiteKey={turnstileKeys()?.siteKey ?? ''} />
+    </>
+  );
 }
