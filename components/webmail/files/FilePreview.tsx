@@ -340,11 +340,14 @@ function DocumentPreview({ html }: { html: string }) {
     body{margin:0;padding:48px 56px;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#18181b;background:#fff;word-wrap:break-word}
     img{max-width:100%;height:auto} table{border-collapse:collapse;max-width:100%} td,th{border:1px solid #e4e4e7;padding:4px 8px;vertical-align:top}
     h1,h2,h3{line-height:1.25} a{color:#3730a3}
-  </style></head><body>${html}</body></html>`;
+  </style></head><body data-clarity-mask="True">${html}</body></html>`;
   return (
     <div className="h-full overflow-hidden p-3 sm:p-6">
       <iframe
         title="Document preview"
+        // Opaque origin, so Clarity cannot read in; masked anyway in case the
+        // sandbox is ever loosened (app/layout.tsx).
+        data-clarity-mask="True"
         sandbox=""
         srcDoc={doc}
         className="mx-auto block h-full w-full max-w-4xl rounded-lg bg-white shadow-panel"
