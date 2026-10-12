@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react';
 import AuthLayout from '@/components/auth/AuthLayout';
@@ -19,7 +18,6 @@ import {
 import { dropAllHeld, releaseAllHeld } from '@/lib/webmail/query/opRunner';
 
 export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: string }) {
-  const router = useRouter();
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -132,7 +130,9 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
         const reason = data.password_change_reason
           ? `?reason=${encodeURIComponent(data.password_change_reason)}`
           : '';
-        router.push(`/change-password${reason}`);
+        // A full navigation, like the inbox below: analytics runs on this page
+        // only, and an in-app jump would carry it onto a password form.
+        window.location.assign(`/change-password${reason}`);
         return;
       }
 
@@ -170,11 +170,21 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
   };
 
   const title = twoFactor ? 'Enter your code' : adding ? 'Add another account' : 'Sign in to your mail';
-  const description = twoFactor
-    ? `Open your authenticator app and enter the code for ${emailAddress}.`
-    : adding
-      ? `You stay signed in to ${existing.length === 1 ? existing[0].email : 'your other accounts'}. Switch between them from the account menu.`
-      : 'Use your mailbox address and password. The same ones your mail apps use.';
+  // Addresses in their own masked span: the words around them are shown to
+  // Clarity on this page, an address never is (components/auth/AuthLayout).
+  const description = twoFactor ? (
+    <>
+      Open your authenticator app and enter the code for <span data-clarity-mask="True">{emailAddress}</span>.
+    </>
+  ) : adding ? (
+    <>
+      You stay signed in to{' '}
+      {existing.length === 1 ? <span data-clarity-mask="True">{existing[0].email}</span> : 'your other accounts'}. Switch
+      between them from the account menu.
+    </>
+  ) : (
+    'Use your mailbox address and password. The same ones your mail apps use.'
+  );
 
   return (
     <AuthLayout title={title} description={description}>

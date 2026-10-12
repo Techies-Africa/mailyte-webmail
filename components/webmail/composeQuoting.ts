@@ -8,7 +8,8 @@
 // string "[Original Recipients]" into the message body.
 
 import { formatQuoteDate } from '@/lib/webmail/dates';
-import type { ComposeMode, WebmailMessage, WebmailParticipant } from './types';
+import { NO_SUBJECT } from '@/lib/webmail/adapters';
+import type { ComposeMode, WebmailListItem, WebmailMessage, WebmailParticipant } from './types';
 
 export function formatParticipant(p: WebmailParticipant): string {
   if (!p.email) return '';
@@ -38,18 +39,52 @@ export function forwardSubject(subject: string): string {
   return `Fwd: ${stripped}`;
 }
 
+/** A real subject: not empty, and not the list's "(no subject)" stand-in (lib/webmail/adapters). */
+function hasSubject(subject: string): boolean {
+  const trimmed = subject.trim();
+  return trimmed !== '' && trimmed !== NO_SUBJECT;
+}
+
+/**
+ * The message a reply is written from. When it has no subject of its own --
+ * the other side answered from a client that dropped it -- it borrows the
+ * newest subject in its conversation, so the reply goes out as "Re: <the
+ * conversation>" rather than "Re: (no subject)" (2026-10-07). With nothing to
+ * borrow it carries an empty subject, never the list's stand-in. `thread` is
+ * useMailbox's, oldest first, and includes the message itself.
+ */
+export function withConversationSubject(message: WebmailMessage, thread: WebmailListItem[]): WebmailMessage {
+  if (hasSubject(message.subject)) return message;
+  const borrowed = [...thread].reverse().find((m) => hasSubject(m.subject));
+  return { ...message, subject: borrowed?.subject ?? '' };
+}
+
+/**
+ * Who a reply goes to first: the message's Reply-To (if it set one) or its
+ * From -- except on a message this mailbox SENT, which is answered to the
+ * people it went to, as Gmail does. Until 2026-10-07 Reply on your own
+ * message addressed it to yourself.
+ */
+function replyPrimary(message: WebmailMessage, self: string): WebmailParticipant[] {
+  if (message.fromEmail.toLowerCase() === self) {
+    const others = message.to.filter((p) => p.email.toLowerCase() !== self);
+    if (others.length > 0) return others;
+  }
+  return message.replyTo.length > 0 ? message.replyTo : [{ name: message.from, email: message.fromEmail }];
+}
+
 /**
  * Reply-All recipients, per the conventional rules every mail client follows:
- * To = the message's Reply-To (if it set one) or its From; Cc = everyone else
- * who was on To/Cc, minus ourselves (replying to your own address is the
- * classic Reply-All embarrassment).
+ * To = replyPrimary above; Cc = everyone else who was on To/Cc, minus
+ * ourselves (replying to your own address is the classic Reply-All
+ * embarrassment).
  */
 export function replyAllRecipients(
   message: WebmailMessage,
   selfAddress: string,
 ): { to: string; cc: string } {
   const self = selfAddress.toLowerCase();
-  const primary = message.replyTo.length > 0 ? message.replyTo : [{ name: message.from, email: message.fromEmail }];
+  const primary = replyPrimary(message, self);
 
   const seen = new Set<string>(primary.map((p) => p.email.toLowerCase()));
   seen.add(self);
@@ -64,9 +99,8 @@ export function replyAllRecipients(
   return { to: addressList(primary), cc: addressList(others) };
 }
 
-export function replyRecipients(message: WebmailMessage): string {
-  const primary = message.replyTo.length > 0 ? message.replyTo : [{ name: message.from, email: message.fromEmail }];
-  return addressList(primary);
+export function replyRecipients(message: WebmailMessage, selfAddress: string): string {
+  return addressList(replyPrimary(message, selfAddress.toLowerCase()));
 }
 
 function escapeHtml(value: string): string {

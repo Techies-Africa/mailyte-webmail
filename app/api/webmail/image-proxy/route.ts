@@ -29,6 +29,17 @@ import { mailboxToken } from '@/lib/webmail/server';
  *  - the response must declare an image/* type and fit the size cap
  */
 
+/**
+ * Who is asking, the way Gmail's proxy says "GoogleImageProxy". Without it
+ * this was Node's bare default, and the open tracker saw a fetch arriving from
+ * inside our own network with no browser behind it: indistinguishable from the
+ * platform's own scanners, which it is built to ignore. So every open by
+ * somebody reading in this webmail went uncounted. The tracker counts this
+ * agent as a reader's mail client; keep the token in step with
+ * `_MAIL_CLIENT_PROXIES` in mailyte-email-server's worker/tracking.
+ */
+const PROXY_USER_AGENT = 'Mozilla/5.0 (compatible; MailyteImageProxy/1.0)';
+
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 10_000;
@@ -131,7 +142,7 @@ export async function GET(request: NextRequest) {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         // No conditional/cookie/referrer state of the reader's ever leaves
         // here — the request is anonymous by construction.
-        headers: { Accept: 'image/*' },
+        headers: { Accept: 'image/*', 'User-Agent': PROXY_USER_AGENT },
         cache: 'no-store',
       });
     } catch {

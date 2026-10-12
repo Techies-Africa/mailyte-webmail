@@ -10,12 +10,12 @@ import Button from '@/components/ui/Button';
 import { Hint, Input, Label } from '@/components/ui/Field';
 
 /**
- * Mirrors the mail server's own policy (validate_password_strength): 12+
+ * Mirrors the mail server's own policy (validate_password_strength): 10+
  * characters, letters and numbers, and not on its common-password list. The
  * list is deliberately not copied here; that rule stays a server-side
  * rejection surfaced from the 422 body.
  */
-const MIN_LENGTH = 12;
+const MIN_LENGTH = 10;
 
 function localPolicyError(password: string): string | null {
   if (password.length === 0) return null;

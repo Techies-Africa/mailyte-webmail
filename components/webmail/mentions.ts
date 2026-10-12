@@ -189,6 +189,9 @@ export function mentionExtension({ getContacts, onMention, onPopup }: MentionOpt
               return true;
             }
             if (event.key === 'Escape') {
+              // Closing the list is all this Escape does: the reply card and
+              // the page must not also read it as "close the reply".
+              event.stopPropagation();
               onPopup(null);
               current = null;
               return true;

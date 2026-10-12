@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
+import { ProductionAnalytics } from '@/components/ProductionAnalytics';
 import { brand } from '@/lib/webmail/brand';
 import { turnstileKeys } from '@/lib/webmail/turnstile';
 import LoginForm from './LoginForm';
@@ -48,5 +49,11 @@ export async function generateMetadata(): Promise<Metadata> {
  */
 export default async function LoginPage() {
   await connection();
-  return <LoginForm turnstileSiteKey={turnstileKeys()?.siteKey ?? ''} />;
+  return (
+    <>
+      {/* The one page analytics runs on (components/ProductionAnalytics). */}
+      <ProductionAnalytics />
+      <LoginForm turnstileSiteKey={turnstileKeys()?.siteKey ?? ''} />
+    </>
+  );
 }

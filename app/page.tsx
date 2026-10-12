@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2 } from 'lucide-react';
+import { AlertOctagon, Archive, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/webmail/shell/Sidebar';
 import FolderNav from '@/components/webmail/shell/FolderNav';
 import { useSidebarCollapsed } from '@/components/webmail/shell/useSidebarCollapsed';
 import MessageListPane from '@/components/webmail/shell/MessageListPane';
 import PaneResizeHandle from '@/components/webmail/shell/PaneResizeHandle';
 import ReadingPane, { type QuickReplyMode } from '@/components/webmail/shell/ReadingPane';
+import type { QuickReplyDraft } from '@/components/webmail/shell/QuickReply';
 import CalendarPanel from '@/components/webmail/shell/CalendarPanel';
 import ContactsPanel from '@/components/webmail/shell/ContactsPanel';
 import ComposeDock from '@/components/webmail/compose/ComposeDock';
@@ -19,14 +20,51 @@ import MoveEmailModal from '@/components/webmail/modals/MoveEmailModal';
 import LabelPickerDialog from '@/components/webmail/modals/LabelPickerDialog';
 import type { ComposeMode, WebmailListItem } from '@/components/webmail/types';
 import type { ComposePayload } from '@/components/webmail/compose/types';
-import { useMailbox, type SendContext } from '@/lib/webmail/useMailbox';
+import { useMailbox, type Mailbox, type SendContext } from '@/lib/webmail/useMailbox';
 import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 import { useNewMailNotifier } from '@/lib/webmail/useNewMailNotifier';
 import { toListItem } from '@/lib/webmail/adapters';
+import { replySubject, withConversationSubject } from '@/components/webmail/composeQuoting';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
+
+/** Archive, delete or spam, waiting for a yes (feedback 2026-10-07). */
+type PendingAsk = { kind: 'archive' | 'trash' | 'spam'; ids: string[] };
+
+/** What the ask-first dialog says. The 6-second Undo still follows a yes. */
+function askCopy({ kind, ids }: PendingAsk) {
+  const one = ids.length === 1;
+  const what = one ? 'this message' : `${ids.length} messages`;
+  const goes = one ? 'It goes' : 'They go';
+  const it = one ? 'it' : 'them';
+  if (kind === 'archive') {
+    return {
+      icon: <Archive size={18} />,
+      tone: 'neutral' as const,
+      title: `Archive ${what}`,
+      body: `${goes} to Archive. Nothing is deleted, and search still finds ${it}.`,
+      confirmLabel: 'Archive',
+    };
+  }
+  if (kind === 'trash') {
+    return {
+      icon: <Trash2 size={18} />,
+      tone: 'danger' as const,
+      title: `Delete ${what}`,
+      body: `${goes} to Trash, where you can still restore ${it}.`,
+      confirmLabel: 'Delete',
+    };
+  }
+  return {
+    icon: <AlertOctagon size={18} />,
+    tone: 'danger' as const,
+    title: `Mark ${what} as spam`,
+    body: `${goes} to Junk. Nothing is deleted, and Not spam brings ${it} back.`,
+    confirmLabel: 'Mark as spam',
+  };
+}
 
 /**
  * The mailbox screen: the rail, the message list, the reading pane, and the
@@ -47,6 +85,7 @@ export default function WebmailInboxPage() {
   const [showBulkMove, setShowBulkMove] = useState(false);
   const [showBulkLabel, setShowBulkLabel] = useState(false);
   const [pendingDeleteForever, setPendingDeleteForever] = useState<{ ids: string[]; label: string } | null>(null);
+  const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
 
   const {
     sessionChecked,
@@ -55,6 +94,7 @@ export default function WebmailInboxPage() {
     folders,
     activeFolder,
     openMessage,
+    thread,
     messages,
     selectedIds,
     unreadCount,
@@ -62,6 +102,19 @@ export default function WebmailInboxPage() {
     signatureSeed,
     sharedMailboxes,
   } = mailbox;
+
+  // Archive, delete and spam ask first (feedback 2026-10-07). Every path to
+  // them -- toolbar, row hover, bulk bar, menus -- calls these three on the
+  // mailbox it is handed, so the panes get this copy, whose three only ask;
+  // the dialog at the end runs the real ones on a yes. The e and # keys and
+  // a row's bin set the question directly. useMailbox returns a fresh object
+  // every render anyway, so building this one per render adds nothing.
+  const askFirst: Mailbox = {
+    ...mailbox,
+    archive: async (ids: string[]) => setPendingAsk({ kind: 'archive', ids }),
+    trash: async (ids: string[]) => setPendingAsk({ kind: 'trash', ids }),
+    markSpam: async (ids: string[]) => setPendingAsk({ kind: 'spam', ids }),
+  };
 
   // A different message means a fresh reply box.
   useEffect(() => {
@@ -123,18 +176,24 @@ export default function WebmailInboxPage() {
   );
 
   const openReplyInComposer = useCallback(
-    (mode: ComposeMode, body?: string, attachments?: File[]) => {
+    (mode: ComposeMode, draft?: QuickReplyDraft) => {
       if (!openMessage) return;
+      // A reply keeps its conversation's subject when this message has none (composeQuoting).
+      const replyTo = mode === 'forward' ? openMessage : withConversationSubject(openMessage, thread);
       compose.openCompose({
         mode,
-        replyTo: openMessage,
-        initialBody: body ?? signatureSeed(mode) ?? undefined,
-        // Files attached in the inline reply travel with it.
-        attachments: attachments?.length ? attachments : undefined,
+        replyTo,
+        initialBody: draft?.body ?? signatureSeed(mode) ?? undefined,
+        // Files attached in the inline reply travel with it,
+        attachments: draft?.attachments.length ? draft.attachments : undefined,
+        // and so do its To, Cc and Bcc, edited there or not.
+        resumed: draft
+          ? { to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: replySubject(replyTo.subject) }
+          : undefined,
       });
       setQuickReply(null);
     },
-    [openMessage, compose, signatureSeed],
+    [openMessage, thread, compose, signatureSeed],
   );
 
   const [replySignal, setReplySignal] = useState(0);
@@ -211,12 +270,12 @@ export default function WebmailInboxPage() {
   const trashRow = useCallback(
     (item: WebmailListItem) => {
       if (!inTrash) {
-        void mailbox.trash([item.id]);
+        setPendingAsk({ kind: 'trash', ids: [item.id] });
         return;
       }
       setPendingDeleteForever({ ids: [item.id], label: item.subject });
     },
-    [inTrash, mailbox],
+    [inTrash],
   );
 
   // --- Keyboard ------------------------------------------------------------------------
@@ -257,8 +316,8 @@ export default function WebmailInboxPage() {
       next: () => step(1),
       previous: () => step(-1),
       open: messages.length > 0 && !openMessage ? () => step(0) : undefined,
-      archive: openMessage && !inTrash ? () => void mailbox.archive([openMessage.id]) : undefined,
-      trash: openMessage && !inTrash ? () => void mailbox.trash([openMessage.id]) : undefined,
+      archive: openMessage && !inTrash ? () => setPendingAsk({ kind: 'archive', ids: [openMessage.id] }) : undefined,
+      trash: openMessage && !inTrash ? () => setPendingAsk({ kind: 'trash', ids: [openMessage.id] }) : undefined,
       toggleStar: openMessage ? () => void mailbox.toggleStar(openMessage.id) : undefined,
       markUnread: openMessage
         ? () => {
@@ -356,7 +415,7 @@ export default function WebmailInboxPage() {
             pane is absolute over it) and it is only hidden, so Back returns to
             the same place in the list rather than to the top. */}
         <MessageListPane
-          mailbox={mailbox}
+          mailbox={askFirst}
           menuOpen={menuOpen}
           covered={isMobile && (!!openMessage || mailbox.loadingMessage)}
           onOpen={(item) => void handleOpen(item)}
@@ -381,13 +440,13 @@ export default function WebmailInboxPage() {
         )}
 
         <ReadingPane
-          mailbox={mailbox}
+          mailbox={askFirst}
           isMobile={isMobile}
           quickReply={quickReply}
           onQuickReplyChange={changeQuickReply}
           replySignal={replySignal}
           onForward={() => openReplyInComposer('forward')}
-          onOpenInComposer={(mode, body, attachments) => openReplyInComposer(mode, body, attachments)}
+          onOpenInComposer={(mode, draft) => openReplyInComposer(mode, draft)}
           onQuickReplySend={(payload, mode) =>
             send(payload, { mode, replyTo: openMessage ?? undefined })
           }
@@ -451,6 +510,20 @@ export default function WebmailInboxPage() {
         confirmLabel="Delete forever"
         typedConfirmation="DELETE"
       />
+
+      {pendingAsk && (
+        <ConfirmModal
+          isOpen
+          onClose={() => setPendingAsk(null)}
+          onConfirm={() => {
+            const { kind, ids } = pendingAsk;
+            if (kind === 'archive') void mailbox.archive(ids);
+            else if (kind === 'trash') void mailbox.trash(ids);
+            else void mailbox.markSpam(ids);
+          }}
+          {...askCopy(pendingAsk)}
+        />
+      )}
 
       <MoveEmailModal
         isOpen={showBulkMove}

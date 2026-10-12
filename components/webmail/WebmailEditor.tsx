@@ -127,6 +127,12 @@ export default function WebmailEditor({
   const editor = useEditor({
     // Next renders this on the client only; TipTap warns loudly otherwise.
     immediatelyRender: false,
+    // Without this Tiptap 3 re-renders this component only when its PARENT
+    // does, and the parent hears of document changes alone: the toolbar's
+    // pressed state lagged the caret (Bold still lit on plain text, so a
+    // click meant to turn it off turned it on), and a click with nothing
+    // selected showed nothing at all.
+    shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
@@ -134,7 +140,9 @@ export default function WebmailEditor({
         // outgoing-mail scheme allowlist, so the bundled copy is turned off.
         link: false,
       }),
-      Link.configure({
+      // inclusive: false -- the bundled mark continues at its edge while
+      // autolink is on, so everything typed after a link stayed inside it.
+      Link.extend({ inclusive: false }).configure({
         openOnClick: false,
         autolink: true,
         // A pasted javascript: URL must never travel in an outgoing message.
@@ -160,7 +168,7 @@ export default function WebmailEditor({
     content: initialHtml,
     editorProps: {
       attributes: {
-        class: `prose prose-sm dark:prose-invert max-w-none focus:outline-none px-4 py-3 text-[13.5px] leading-[1.75] text-foreground ${
+        class: `focus:outline-none px-4 py-3 text-[13.5px] leading-[1.75] text-foreground ${
           minHeightClass ?? (compact ? 'min-h-[7rem]' : 'min-h-[12rem]')
         }`,
         'aria-label': 'Message body',
@@ -174,11 +182,19 @@ export default function WebmailEditor({
       },
       handleDrop: (view, event, _slice, moved) => {
         if (moved) return false;
-        const files = Array.from(event.dataTransfer?.files ?? []).filter(isAcceptedImage);
-        if (files.length === 0) return false;
+        const dropped = Array.from(event.dataTransfer?.files ?? []);
+        if (dropped.length === 0) return false;
+        // Every file dropped on the text is handled here -- returning false
+        // let the browser open a PDF in the tab. Pictures go inline,
+        // Gmail-style (2026-10-07); the compose window or reply card around
+        // the editor attaches everything else (compose/attachments.tsx). The
+        // signature editor has no such host, so there the rest is refused.
         event.preventDefault();
-        const dropped = view.posAtCoords({ left: event.clientX, top: event.clientY });
-        void insertFiles(view, files, dropped?.pos);
+        const images = dropped.filter(isAcceptedImage);
+        if (images.length > 0) {
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          void insertFiles(view, images, at?.pos);
+        }
         return true;
       },
     },

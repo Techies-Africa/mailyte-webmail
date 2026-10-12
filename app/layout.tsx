@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
-import { ProductionAnalytics } from '@/components/ProductionAnalytics';
 import AccentTheme from '@/components/providers/AccentTheme';
 import OutboxProvider from '@/components/providers/OutboxProvider';
 import PaneLayout from '@/components/providers/PaneLayout';
@@ -75,7 +74,7 @@ export const metadata: Metadata = {
  * Not here, on purpose: maximumScale / userScalable -- they stop people
  * pinch-zooming, an accessibility failure; iOS zooming into a small field is
  * fixed in globals.css instead. viewportFit 'cover' -- it needs safe-area
- * padding everywhere, and this is not an installed app. themeColor -- a media
+ * padding everywhere, which nothing here has yet. themeColor -- a media
  * query follows the device's theme, not the one chosen in the app.
  */
 export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
@@ -101,8 +100,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             what it sets persists. */}
         <script dangerouslySetInnerHTML={{ __html: PANE_LAYOUT_SCRIPT }} />
       </head>
-      <body suppressHydrationWarning>
-        <ProductionAnalytics />
+      {/* Analytics runs on the sign-in page only (app/login/page.tsx): inside
+          the app a recording would be people's mail (owner, 2026-10-11).
+          data-clarity-mask stays on the whole body as a backstop -- if a
+          recording ever reaches past sign-in, every piece of text is a grey
+          block. The sign-in page unmasks only its fixed words (AuthLayout). */}
+      <body suppressHydrationWarning data-clarity-mask="True">
         <ThemeProvider>
           <AccentTheme />
           <PaneLayout />

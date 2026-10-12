@@ -45,7 +45,8 @@ import AiWriterModal from '../modals/AiWriterModal';
 import ThreadSummaryModal from '../modals/ThreadSummaryModal';
 import ConfirmModal from '../modals/ConfirmModal';
 import LabelPickerDialog from '../modals/LabelPickerDialog';
-import QuickReply from './QuickReply';
+import QuickReply, { type QuickReplyDraft } from './QuickReply';
+import { withConversationSubject } from '../composeQuoting';
 import { Tag } from '@/components/ui/Pill';
 import { labelTag } from '@/lib/webmail/tags';
 
@@ -57,8 +58,8 @@ type ReadingPaneProps = {
   quickReply: QuickReplyMode;
   onQuickReplyChange: (mode: QuickReplyMode) => void;
   onForward: () => void;
-  /** Move an inline reply into a full compose window with what was typed. */
-  onOpenInComposer: (mode: 'reply' | 'replyAll', body: string, attachments?: File[]) => void;
+  /** Move an inline reply into a full compose window with what was typed, attached and addressed. */
+  onOpenInComposer: (mode: 'reply' | 'replyAll', draft: QuickReplyDraft) => void;
   onQuickReplySend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
   /** The AI writer's "Use this": a new message starting with that body. */
   onComposeWithBody: (body: string) => void;
@@ -272,6 +273,10 @@ function MessageReader({
     () => thread.filter((m) => m.id !== message.id).sort(byNewestFirst),
     [thread, message.id],
   );
+
+  // What Reply answers: this message, with its conversation's subject when
+  // it has none of its own (composeQuoting).
+  const replyTarget = useMemo(() => withConversationSubject(message, thread), [message, thread]);
 
   // Whether remote images load on open. The policy is the reader's own
   // (Settings › General); under `ask` the per-sender allowance and the
@@ -637,6 +642,28 @@ function MessageReader({
             )}
           </div>
 
+          {/* The reply box sits straight under the message it answers, above
+              the earlier conversation (2026-10-07): below a long thread it
+              was a long scroll away. */}
+          <div className="mt-5">
+            {quickReply ? (
+              <QuickReply
+                key={quickReply}
+                message={replyTarget}
+                mode={quickReply}
+                selfAddress={displayEmail}
+                signatureSeed={signatureSeed(quickReply)}
+                onSend={onQuickReplySend}
+                onCancel={() => onQuickReplyChange(null)}
+                onExpand={(draft) => onOpenInComposer(quickReply, draft)}
+                revealSignal={replySignal}
+                contacts={mailbox.contacts}
+              />
+            ) : (
+              <div className="flex gap-2">{replyButtons('dashed')}</div>
+            )}
+          </div>
+
           {earlier.length > 0 && (
             <div className="mt-5">
               <h3 className="mb-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -719,25 +746,6 @@ function MessageReader({
               </div>
             </div>
           )}
-
-          <div className="mt-5">
-            {quickReply ? (
-              <QuickReply
-                key={quickReply}
-                message={message}
-                mode={quickReply}
-                selfAddress={displayEmail}
-                signatureSeed={signatureSeed(quickReply)}
-                onSend={onQuickReplySend}
-                onCancel={() => onQuickReplyChange(null)}
-                onExpand={(body, attachments) => onOpenInComposer(quickReply, body, attachments)}
-                revealSignal={replySignal}
-                contacts={mailbox.contacts}
-              />
-            ) : (
-              <div className="flex gap-2">{replyButtons('dashed')}</div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -781,8 +789,9 @@ function MessageReader({
         isOpen={confirmBlock}
         onClose={() => setConfirmBlock(false)}
         onConfirm={async () => {
-          const ok = await blockSender(message.fromEmail);
-          if (ok && !inJunk) void markSpam([message.id]);
+          // blockSender files it to Junk itself: the markSpam this pane is
+          // handed asks first (app/page.tsx), and this dialog has just asked.
+          await blockSender(message.fromEmail, inJunk ? [] : [message.id]);
         }}
         icon={<Ban size={18} />}
         tone="danger"

@@ -125,6 +125,9 @@ export function textToSafeHtml(text: string): string {
   return `<p>${escapeHtml(text).replace(/\n/g, '<br/>')}</p>`;
 }
 
+/** What a message with no Subject header shows as. A reply must not send it on (composeQuoting). */
+export const NO_SUBJECT = '(no subject)';
+
 export function toListItem(m: ApiMessageSummary): WebmailListItem {
   const from = participants(m.from);
   return {
@@ -134,7 +137,7 @@ export function toListItem(m: ApiMessageSummary): WebmailListItem {
     fromEmail: from[0]?.email ?? '',
     to: participants(m.to),
     cc: participants(m.cc),
-    subject: m.subject || '(no subject)',
+    subject: m.subject || NO_SUBJECT,
     preview: (m.preview ?? '').trim(),
     isRead: m.is_read,
     isStarred: m.is_starred,

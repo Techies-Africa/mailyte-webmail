@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Paperclip, X } from 'lucide-react';
 import IconButton from '@/components/ui/IconButton';
+import { isAcceptedImage } from '@/lib/webmail/images';
 
 /** Matches SendMailboxMessageRequest's own limits. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -14,9 +15,33 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** A drag that carries files from the desktop -- not text or a link moved inside the editor. */
+function carriesFiles(data: DataTransfer | null): boolean {
+  return !!data && Array.from(data.types).includes('Files');
+}
+
 /**
- * Picking files, the limits and the chips -- shared by the full compose window
- * and the inline reply card.
+ * The files in a drop, folders left out and counted. A dropped folder arrives
+ * as an empty "file" that passes every check here and then fails the send.
+ */
+function droppedFiles(data: DataTransfer): { files: File[]; folders: number } {
+  const files: File[] = [];
+  let folders = 0;
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== 'file') continue;
+    if (item.webkitGetAsEntry()?.isDirectory) {
+      folders += 1;
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  return { files, folders };
+}
+
+/**
+ * Picking files, dropping them, the limits and the chips -- shared by the
+ * full compose window and the inline reply card.
  *
  * Both hosts send the same ComposePayload, and the wire already switches to
  * multipart whenever `attachments` is non-empty (sendMessage in client.ts), so
@@ -25,12 +50,20 @@ export function formatBytes(bytes: number): string {
  * Errors are handed back rather than rendered: each host already has its own
  * error bar, and a file that is too big belongs in the same one as a failed
  * send.
+ *
+ * Dropping (2026-10-07): a host spreads `dropProps` on its root and shows
+ * <DropOverlay /> while `dragging`. Pictures dropped onto the text go inline,
+ * Gmail-style -- WebmailEditor's handleDrop puts them there -- and every other
+ * file, and a picture dropped anywhere else on the host, is attached through
+ * addFiles, so a drop meets the same limits as the paperclip. While a host is
+ * on screen, a file dropped beside it is refused rather than opened in the
+ * tab, which would take the message being written with it.
  */
 export function useAttachments(initial: File[], onError: (message: string | null) => void) {
   const [attachments, setAttachments] = useState<File[]>(initial);
   const attachedBytes = attachments.reduce((sum, file) => sum + file.size, 0);
 
-  const addFiles = (files: FileList | null) => {
+  const addFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
     onError(null);
     const incoming = Array.from(files);
@@ -52,7 +85,75 @@ export function useAttachments(initial: File[], onError: (message: string | null
 
   const removeAt = (index: number) => setAttachments((prev) => prev.filter((_, i) => i !== index));
 
-  return { attachments, attachedBytes, addFiles, removeAt };
+  const [dragging, setDragging] = useState(false);
+  // dragenter and dragleave fire for every child the pointer crosses; the
+  // depth says when it has really left the host.
+  const depth = useRef(0);
+
+  useEffect(() => {
+    const refuse = (event: DragEvent) => {
+      if (event.defaultPrevented || !carriesFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+    };
+    window.addEventListener('dragover', refuse);
+    window.addEventListener('drop', refuse);
+    return () => {
+      window.removeEventListener('dragover', refuse);
+      window.removeEventListener('drop', refuse);
+    };
+  }, []);
+
+  const dropProps = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      depth.current += 1;
+      setDragging(true);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      // Without this the drop never fires and the browser opens the file.
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (!carriesFiles(event.dataTransfer)) return;
+      depth.current = Math.max(0, depth.current - 1);
+      if (depth.current === 0) setDragging(false);
+    },
+    onDrop: (event: React.DragEvent) => {
+      depth.current = 0;
+      setDragging(false);
+      if (!carriesFiles(event.dataTransfer)) return;
+      // Already handled = the editor took it (WebmailEditor's handleDrop) and
+      // put the pictures inline. ProseMirror only asks it when the drop point
+      // maps into the text; anywhere else, everything is attached. Read
+      // before this handler's own preventDefault below.
+      const editorTookIt = event.nativeEvent.defaultPrevented;
+      event.preventDefault();
+      const { files, folders } = droppedFiles(event.dataTransfer);
+      addFiles(editorTookIt ? files.filter((file) => !isAcceptedImage(file)) : files);
+      if (folders > 0) onError("Folders can't be attached. Zip the folder, then drop the .zip.");
+    },
+  };
+
+  return { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps };
+}
+
+/**
+ * Over a compose host while files are dragged across it. It takes no pointer
+ * events, so a drop still lands on what is underneath -- which is how a
+ * picture let go over the text still goes inline.
+ */
+export function DropOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-primary bg-primary/5">
+      <span className="rounded-full bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary shadow-sm">
+        Drop files here
+      </span>
+    </div>
+  );
 }
 
 /** The paperclip and the file input it opens. */
