@@ -17,6 +17,17 @@ import {
 } from '@/lib/webmail/query/session';
 import { dropAllHeld, releaseAllHeld } from '@/lib/webmail/query/opRunner';
 
+/**
+ * Where to go once signed in. `next` is honoured for one place only, the AI
+ * app approve page (app/connect/authorize), which sends people here when they
+ * are signed out. Anything else is the inbox, so the parameter can never send
+ * someone off this site.
+ */
+function landing(): string {
+  const next = new URLSearchParams(window.location.search).get('next') ?? '';
+  return next.startsWith('/connect/authorize?') ? next : '/';
+}
+
 export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: string }) {
   const [emailAddress, setEmailAddress] = useState('');
   const [password, setPassword] = useState('');
@@ -139,7 +150,7 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
       // A full navigation rather than router.push: the inbox must start from
       // nothing, and if it was already mounted behind this page its state
       // belongs to whichever account was active before.
-      window.location.assign('/');
+      window.location.assign(landing());
     } catch {
       setError('Could not reach the server. Please try again.');
     } finally {
@@ -157,8 +168,8 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
   const continueAs = async (email: string) => {
     setSwitching(email);
     setNotice(null);
-    const message = await switchAccount(email);
-    if (!message) return; // on its way to the inbox
+    const message = await switchAccount(email, landing());
+    if (!message) return; // on its way to the inbox (or the approve page)
     setSwitching(null);
     // The server drops a mailbox whose session has ended; if this one is gone
     // from the list, it needs its password rather than an error.
