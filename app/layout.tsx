@@ -40,8 +40,11 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: brand.name,
+  title: { default: brand.name, template: `%s | ${brand.name}` },
   description: 'Read and send mail from your own mail server.',
+  // No openGraph/twitter here: they need an absolute origin, and the one image
+  // is built once and served from any host, so /login (the only page worth
+  // sharing) derives it from the request in its own generateMetadata.
   // A webmail is a private surface; there is nothing here for a crawler.
   robots: { index: false, follow: false },
   // The icons live in public/ only -- an app/favicon.ico or app/apple-icon.png
