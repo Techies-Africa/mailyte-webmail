@@ -8,6 +8,7 @@ import {
   getRules,
   getSecurity,
   getVacation,
+  listConnectedApps,
   listSessions,
   type ApiSession,
 } from '@/lib/webmail/client';
@@ -31,6 +32,7 @@ export const settingsKeys = {
   security: ['mb', 'security'] as const,
   sessions: ['mb', 'security', 'sessions'] as const,
   subscriptions: ['mb', 'cal', 'subscriptions'] as const,
+  connectedApps: ['mb', 'connected-apps'] as const,
 };
 
 const SECTION_STALE = 5 * 60_000;
@@ -45,6 +47,15 @@ export function useBlockedSenders(onUnauthorized: () => void) {
     queryKey: settingsKeys.blocked,
     queryFn: async () => required(unwrap(await getBlockedSenders(onUnauthorized)), 'Blocked senders'),
     staleTime: SECTION_STALE,
+  });
+}
+
+/** AI apps connected to this mailbox. Refetched on every visit: an app may have connected since. */
+export function useConnectedApps(onUnauthorized: () => void) {
+  return useQuery({
+    queryKey: settingsKeys.connectedApps,
+    queryFn: async () => required(unwrap(await listConnectedApps(onUnauthorized)), 'Connected apps'),
+    staleTime: 0,
   });
 }
 

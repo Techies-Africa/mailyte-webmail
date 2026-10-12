@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter, Bell } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter, Bell, Sparkles } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
 import RulesSettings from './RulesSettings';
@@ -10,6 +10,7 @@ import SecuritySettings from './SecuritySettings';
 import AppearanceSettings from './AppearanceSettings';
 import CalendarSettings from './CalendarSettings';
 import NotificationSettings from './NotificationSettings';
+import ConnectedAppsSettings from './ConnectedAppsSettings';
 import type { SettingsSectionProps } from './types';
 
 /**
@@ -104,6 +105,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'Two-factor authentication and where you are signed in.',
     icon: ShieldCheck,
     component: SecuritySettings,
+  },
+  {
+    id: 'connected-apps',
+    label: 'Connected apps',
+    description: 'AI apps like ChatGPT and Claude that you allowed to use this mailbox.',
+    icon: Sparkles,
+    component: ConnectedAppsSettings,
   },
   {
     id: 'appearance',

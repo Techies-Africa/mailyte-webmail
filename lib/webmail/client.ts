@@ -1104,3 +1104,82 @@ export async function logout() {
     body: JSON.stringify({ all: false }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// AI apps acting for this mailbox (Mailyte plans/30, step 30-5): ChatGPT,
+// Claude and other MCP clients. The approve page and Settings, Connected apps.
+
+export interface ApiAiApp {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  website_url: string | null;
+  /** The address the app runs from, e.g. chatgpt.com. */
+  host: string | null;
+  /** True only for apps Mailyte has checked itself (ChatGPT, Claude). */
+  verified: boolean;
+}
+
+export interface ApiConnectRequest {
+  app: ApiAiApp;
+  mailbox: string;
+  scopes: { scope: string; label: string; default: boolean }[];
+  daily_send_cap: number;
+  /** Back to the app with "access_denied", for Decline. */
+  decline_url: string;
+}
+
+export interface ApiConnectedApp {
+  id: string;
+  app: ApiAiApp;
+  access: { scope: string; label: string }[];
+  daily_send_cap: number;
+  sent_today: number;
+  connected_at: string | null;
+  last_used_at: string | null;
+}
+
+/** What the app asks for. `query` is the app's own request, passed through. */
+export function getConnectRequest(query: string, onUnauthorized: () => void) {
+  return call<ApiConnectRequest>(`/api/webmail/connect/authorize${query}`, undefined, onUnauthorized);
+}
+
+export function approveConnect(
+  request: Record<string, string>,
+  grantedScopes: string[],
+  onUnauthorized: () => void,
+) {
+  return call<{ redirect_to: string }>(
+    "/api/webmail/connect/authorize",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...request, granted_scopes: grantedScopes }),
+    },
+    onUnauthorized,
+  );
+}
+
+export function listConnectedApps(onUnauthorized: () => void) {
+  return call<ApiConnectedApp[]>("/api/webmail/connected-apps", undefined, onUnauthorized);
+}
+
+export function disconnectApp(id: string, onUnauthorized: () => void) {
+  return call<{ id: string }>(
+    `/api/webmail/connected-apps/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    onUnauthorized,
+  );
+}
+
+export function setAppSendLimit(id: string, dailySendCap: number, onUnauthorized: () => void) {
+  return call<{ id: string; daily_send_cap: number }>(
+    `/api/webmail/connected-apps/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ daily_send_cap: dailySendCap }),
+    },
+    onUnauthorized,
+  );
+}
