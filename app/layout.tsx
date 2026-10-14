@@ -62,8 +62,9 @@ const mono = IBM_Plex_Mono({
  * browser fetches only the family that --font-body ends up naming.
  *
  * No `weight` where the family has a variable axis (all but Atkinson), so one
- * file covers 400-700. Atkinson Hyperlegible ships only 400 and 700, so 500
- * and 600 are synthesised by the browser; accepted, since that option is
+ * file covers 400-700. Atkinson Hyperlegible ships only 400 and 700, so the
+ * browser substitutes the nearest face (medium shows as regular, semibold as
+ * bold) rather than synthesising anything; accepted, since that option is
  * chosen for letterform clarity rather than weight range.
  */
 // The default card's own Manrope. --font-body is overridden the moment any other

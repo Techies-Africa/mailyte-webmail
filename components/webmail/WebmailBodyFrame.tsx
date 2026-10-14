@@ -188,7 +188,7 @@ function emailSafeReset(darkPlainText: boolean, type: { font: FontId | null; sca
     background: ${surface.chip} !important; color: ${surface.link} !important;
     border: 1px solid ${surface.chipBorder} !important; border-radius: 7px !important;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
-    font-size: 13px !important; font-weight: 600 !important; font-style: normal !important;
+    font-size: calc(13px * ${type.scale / 100}) !important; font-weight: 600 !important; font-style: normal !important;
     line-height: 1.3 !important; letter-spacing: 0 !important; text-align: left !important;
     text-decoration: none !important; text-transform: none !important;
     cursor: pointer; user-select: none; -webkit-user-select: none; white-space: nowrap !important;

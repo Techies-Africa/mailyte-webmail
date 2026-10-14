@@ -102,8 +102,9 @@ export const FONTS: readonly FontChoice[] = [
   },
   {
     id: 'atkinson',
-    // Only 400 and 700 exist, so 500 and 600 are synthesised. Accepted: the
-    // point of this one is letterform clarity, not weight range.
+    // Only 400 and 700 exist, so medium shows as regular and semibold as bold
+    // (nearest face, nothing synthesised). Accepted: the point of this one is
+    // letterform clarity, not weight range.
     name: 'Atkinson Hyperlegible',
     note: 'Built for low vision.',
     preview: 'var(--font-atkinson)',
