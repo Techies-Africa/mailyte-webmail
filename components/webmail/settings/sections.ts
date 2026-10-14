@@ -116,7 +116,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: 'appearance',
     label: 'Appearance',
-    description: 'The accent colour used across your mailbox.',
+    description: 'Text size, font and the accent colour used across your mailbox.',
     icon: Palette,
     component: AppearanceSettings,
   },

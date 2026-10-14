@@ -169,6 +169,62 @@
   --selection-strong: 45 45% 24%;
 }
 
+/* ---------------------------------------------------------------------------
+ * Font families (Settings → Appearance). Identity only lives in
+ * lib/webmail/typography.ts; the stacks live here, the same split as the
+ * accents above. The custom properties named here are defined by next/font on
+ * <html> (app/layout.tsx) -- declaring one costs nothing, so the family a
+ * viewer never picks is never downloaded.
+ *
+ * BOTH --font-body and --font-display are overridden, so the whole app takes
+ * on the choice including subject lines and headings (owner, 2026-10-12).
+ * --font-mono is deliberately left alone: addresses and eyebrows stay
+ * fixed-width whatever is picked.
+ *
+ * Unlayered on purpose, like the accents: these must beat `body { @apply
+ * font-sans }` inside @layer base, and :root[data-font] already outranks the
+ * next/font class that defines the property.
+ *
+ * Message bodies are NOT styled from here -- a separate iframe document cannot
+ * see these properties. See `frameStack` in lib/webmail/typography.ts.
+ * ------------------------------------------------------------------------- */
+
+:root[data-font='system'] {
+  --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-body);
+}
+:root[data-font='inter'] {
+  --font-body: var(--font-inter);
+  --font-display: var(--font-inter);
+}
+:root[data-font='plex'] {
+  --font-body: var(--font-plex);
+  --font-display: var(--font-plex);
+}
+:root[data-font='lexend'] {
+  --font-body: var(--font-lexend);
+  --font-display: var(--font-lexend);
+}
+:root[data-font='atkinson'] {
+  --font-body: var(--font-atkinson);
+  --font-display: var(--font-atkinson);
+}
+:root[data-font='serif'] {
+  --font-body: var(--font-source-serif);
+  --font-display: var(--font-source-serif);
+}
+:root[data-font='mono'] {
+  --font-body: var(--font-jetbrains);
+  --font-display: var(--font-jetbrains);
+}
+
+/* cv11 and ss01 are Manrope's stylistic sets (set on body in @layer base). In
+   another family the same tags mean something else entirely, so they apply to
+   the default only. */
+:root[data-font] body {
+  font-feature-settings: normal;
+}
+
 @layer base {
   * {
     @apply border-border;

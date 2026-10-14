@@ -1,14 +1,26 @@
 import type { Metadata, Viewport } from 'next';
-import { IBM_Plex_Mono, Manrope, Space_Grotesk } from 'next/font/google';
+import {
+  Atkinson_Hyperlegible,
+  IBM_Plex_Mono,
+  IBM_Plex_Sans,
+  Inter,
+  JetBrains_Mono,
+  Lexend,
+  Manrope,
+  Source_Serif_4,
+  Space_Grotesk,
+} from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import AccentTheme from '@/components/providers/AccentTheme';
+import Typography from '@/components/providers/Typography';
 import OutboxProvider from '@/components/providers/OutboxProvider';
 import PaneLayout from '@/components/providers/PaneLayout';
 import QueryProvider from '@/components/providers/QueryProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { brand } from '@/lib/webmail/brand';
 import { PANE_LAYOUT_SCRIPT } from '@/lib/webmail/paneLayout';
+import { TYPOGRAPHY_SCRIPT } from '@/lib/webmail/typography';
 
 /**
  * The three families the brand guide names, self-hosted by next/font so no
@@ -37,6 +49,61 @@ const mono = IBM_Plex_Mono({
   weight: ['400', '500'],
   display: 'swap',
   variable: '--font-mono',
+});
+
+/**
+ * The families a viewer may pick instead (Settings → Appearance; ids and
+ * stacks in lib/webmail/typography.ts, the data-font blocks in globals.css).
+ *
+ * `preload: false` on every one of them, deliberately: preloading eight
+ * families on every page load to use one would be absurd. A @font-face
+ * declaration costs nothing until a glyph actually matches it, so declaring
+ * them all here is free for the viewer who never changes the default -- the
+ * browser fetches only the family that --font-body ends up naming.
+ *
+ * No `weight` where the family has a variable axis (all but Atkinson), so one
+ * file covers 400-700. Atkinson Hyperlegible ships only 400 and 700, so the
+ * browser substitutes the nearest face (medium shows as regular, semibold as
+ * bold) rather than synthesising anything; accepted, since that option is
+ * chosen for letterform clarity rather than weight range.
+ */
+// The default card's own Manrope. --font-body is overridden the moment any other
+// font is picked, so the picker could not preview the default through it. Same
+// font file as `body` above, so the browser downloads nothing twice.
+const optManrope = Manrope({
+  subsets: ['latin'],
+  weight: ['600'],
+  display: 'swap',
+  preload: false,
+  variable: '--font-manrope',
+});
+
+const optInter = Inter({ subsets: ['latin'], display: 'swap', preload: false, variable: '--font-inter' });
+
+const optPlex = IBM_Plex_Sans({ subsets: ['latin'], display: 'swap', preload: false, variable: '--font-plex' });
+
+const optLexend = Lexend({ subsets: ['latin'], display: 'swap', preload: false, variable: '--font-lexend' });
+
+const optAtkinson = Atkinson_Hyperlegible({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  display: 'swap',
+  preload: false,
+  variable: '--font-atkinson',
+});
+
+const optSourceSerif = Source_Serif_4({
+  subsets: ['latin'],
+  display: 'swap',
+  preload: false,
+  variable: '--font-source-serif',
+});
+
+const optJetBrains = JetBrains_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  preload: false,
+  variable: '--font-jetbrains',
 });
 
 export const metadata: Metadata = {
@@ -88,7 +155,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${body.variable} ${display.variable} ${mono.variable}`}
+      className={[
+        body.variable,
+        display.variable,
+        mono.variable,
+        // Only defines the custom properties; nothing downloads until a
+        // data-font block in globals.css actually names one.
+        optManrope.variable,
+        optInter.variable,
+        optPlex.variable,
+        optLexend.variable,
+        optAtkinson.variable,
+        optSourceSerif.variable,
+        optJetBrains.variable,
+      ].join(' ')}
     >
       <head>
         {/* The remembered pane widths and collapsed rail, copied from
@@ -99,6 +179,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             and the root layout never re-renders on a client navigation, so
             what it sets persists. */}
         <script dangerouslySetInnerHTML={{ __html: PANE_LAYOUT_SCRIPT }} />
+        {/* The chosen font and text size, onto <html> before the first paint
+            for the same reason as the pane widths: a size applied after
+            hydration would reflow every line of text on every page load. */}
+        <script dangerouslySetInnerHTML={{ __html: TYPOGRAPHY_SCRIPT }} />
       </head>
       {/* Analytics runs on the sign-in page only (app/login/page.tsx): inside
           the app a recording would be people's mail (owner, 2026-10-11).
@@ -108,6 +192,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body suppressHydrationWarning data-clarity-mask="True">
         <ThemeProvider>
           <AccentTheme />
+          <Typography />
           <PaneLayout />
           {/* Inside the toasts: mutations report through useToast. */}
           <ToastProvider>

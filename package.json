@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "check:brand": "node scripts/check-brand-tokens.mjs",
+    "check:type": "node scripts/check-type-scale.mjs",
     "dev:prod": "cross-env MAILBOX_API_BASE_URL=https://api.courier.mailyte.com/api/v1 NEXT_PUBLIC_BRAND_NAME=Mailyte next dev -p 3001",
     "predev": "node scripts/copy-pdf-worker.mjs",
     "prebuild": "node scripts/copy-pdf-worker.mjs"

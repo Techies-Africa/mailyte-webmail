@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
+import { frameStackFor, typographyFromRoot, type FontId } from '@/lib/webmail/typography';
 import { ImageOff } from 'lucide-react';
 import { sanitizeEmailHtml } from '@/lib/webmail/sanitize';
 import { splitQuotedHistory } from '@/lib/webmail/quotedHistory';
@@ -114,7 +115,7 @@ import type { WebmailAttachment } from './types';
  * stylesheet still reaches the quoted half. Expanding changes the body's
  * height, which the ResizeObserver in attach() already watches.
  */
-function emailSafeReset(darkPlainText: boolean) {
+function emailSafeReset(darkPlainText: boolean, type: { font: FontId | null; scale: number }) {
   const surface = darkPlainText
     // The app's own dark tokens, so the frame is continuous with the page
     // behind it rather than a near-miss shade floating on top of it.
@@ -129,7 +130,12 @@ function emailSafeReset(darkPlainText: boolean) {
 
   return `<style>
   :root { color-scheme: ${surface.scheme}; }
-  html, body { max-width: 100%; overflow-x: hidden; background: ${surface.bg}; color: ${surface.fg}; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  html, body { max-width: 100%; overflow-x: hidden; background: ${surface.bg}; color: ${surface.fg}; font-family: ${frameStackFor(type.font)}; }
+  /* The reader's text size. A percentage, on html only: it stays relative to the
+     reader's own browser default (a raised default is kept), and body inherits
+     it. rem or a size on body would resolve against the already-scaled html and
+     apply the scale twice. Mail that sets its own size keeps it. */
+  html { font-size: ${type.scale}%; }
   /* Only ever reached by plain text, where we wrote the markup -- an HTML
      sender's own link colours are never overridden. */
   a { color: ${surface.link}; }
@@ -182,7 +188,7 @@ function emailSafeReset(darkPlainText: boolean) {
     background: ${surface.chip} !important; color: ${surface.link} !important;
     border: 1px solid ${surface.chipBorder} !important; border-radius: 7px !important;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
-    font-size: 13px !important; font-weight: 600 !important; font-style: normal !important;
+    font-size: calc(13px * ${type.scale / 100}) !important; font-weight: 600 !important; font-style: normal !important;
     line-height: 1.3 !important; letter-spacing: 0 !important; text-align: left !important;
     text-decoration: none !important; text-transform: none !important;
     cursor: pointer; user-select: none; -webkit-user-select: none; white-space: nowrap !important;
@@ -209,7 +215,13 @@ function emailSafeReset(darkPlainText: boolean) {
 </style>`;
 }
 
-/** Smaller than this is too small to read; the message scrolls sideways instead. */
+/**
+ * Smaller than this is too small to read; the message scrolls sideways instead.
+ *
+ * ponytail: a larger text size pushes more mail into this shrink path, so the
+ * two settings partly fight each other on wide mail. Accepted for now --
+ * reworking fit() to scale its threshold with --font-scale is the upgrade.
+ */
 const MIN_FIT_SCALE = 0.45;
 /** A widening smaller than this keeps the current scale: it still fits, and a pane dragged a few pixels need not reflow the message. */
 const FIT_STEP = 0.01;
@@ -374,6 +386,18 @@ export default function WebmailBodyFrame({
 
   const darkPlainText = !isHtml && isDark;
 
+  // Read off <html>, which the pre-paint script in app/layout.tsx has already
+  // set -- for exactly the reason the dark-mode seed above does it. Reading
+  // localStorage during render would mismatch the server's HTML, and reading
+  // it in an effect would rewrite srcDoc and remount the iframe on every
+  // message opened.
+  //
+  // ponytail: not reactive. Settings is a separate route, so no reading pane
+  // is on screen to go stale, and the frame picks up a change on its next
+  // mount. If the two ever sit side by side, back this with a
+  // useSyncExternalStore store like components/webmail/shell/useSidebarCollapsed.ts.
+  const [type] = useState(typographyFromRoot);
+
   const sanitized = useMemo(
     () => sanitizeEmailHtml(html, { attachments, attachmentHref, allowRemoteImages }),
     [html, attachments, attachmentHref, allowRemoteImages],
@@ -408,8 +432,8 @@ export default function WebmailBodyFrame({
   const srcDoc = useMemo(
     // data-clarity-mask: the frame is same-origin, so Clarity can read into it;
     // the message itself is masked there too (app/layout.tsx).
-    () => `${emailSafeReset(darkPlainText)}<${FIT_TAG} data-clarity-mask="True">${body}</${FIT_TAG}>`,
-    [darkPlainText, body],
+    () => `${emailSafeReset(darkPlainText, type)}<${FIT_TAG} data-clarity-mask="True">${body}</${FIT_TAG}>`,
+    [darkPlainText, body, type],
   );
 
   /*
