@@ -265,6 +265,7 @@ export default function WebmailSecuritySection({ onUnauthorized }: { onUnauthori
                 <div className="flex items-center gap-2">
                   <span>{session.signed_in_at ? formatDateTime(new Date(session.signed_in_at)) : '—'}</span>
                   {session.current && <StatusBadge tone="primary">this device</StatusBadge>}
+                  {session.signed_in_via && <StatusBadge tone="neutral">Signed in via {session.signed_in_via}</StatusBadge>}
                 </div>
                 <div className="truncate font-mono text-xs text-muted-foreground">
                   {session.ip_address ?? 'unknown address'}

@@ -92,8 +92,79 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
     });
   }, []);
 
+  // `/login?handoff=<code>`: a partner who runs this mailbox opened it from
+  // their dashboard (plans/36-partners). The code is redeemed on arrival for
+  // the same session a password would buy; a second factor, if the holder
+  // has one, is asked for here like any other sign-in, and the next submit
+  // carries it back to the redeem route instead of the login route.
+  const [handoff, setHandoff] = useState<string | null>(null);
+  const handoffTried = useRef(false);
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('handoff');
+    if (!code || handoffTried.current) return;
+    handoffTried.current = true;
+    // The code must not survive in the address bar or the history: a reload
+    // would try to spend it again, and a copied URL would hand it on.
+    window.history.replaceState(null, '', '/login');
+    void redeem(code, undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const redeem = async (code: string, twoFactorCode: string | undefined) => {
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+    await prepareSessionChange();
+    let signedIn = false;
+    try {
+      const res = await fetch('/api/webmail-auth/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, two_factor_code: twoFactorCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        setHandoff(null);
+        setTwoFactor(false);
+        setError(data.message || 'This sign-in link has expired. Ask for a new one.');
+        return;
+      }
+
+      if (data.two_factor_required) {
+        setHandoff(code);
+        if (data.email_address) setEmailAddress(data.email_address);
+        setTwoFactor(true);
+        setCode('');
+        return;
+      }
+
+      sessionStorage.setItem('mailyte_mailbox_display', JSON.stringify(data.email_account));
+      announceAccountChange();
+      signedIn = true;
+      if (data.must_change_password) {
+        const reason = data.password_change_reason ? `?reason=${encodeURIComponent(data.password_change_reason)}` : '';
+        window.location.assign(`/change-password${reason}`);
+        return;
+      }
+      window.location.assign(landing());
+    } catch {
+      setError('Could not reach the server. Please try again.');
+    } finally {
+      if (!signedIn) abortSessionChange();
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Answering the second factor for a hand-off: the code goes back to the
+    // redeem route, not the password route.
+    if (handoff && twoFactor) {
+      await redeem(handoff, code.trim());
+      return;
+    }
     setError(null);
     setLoading(true);
     // Signing in makes the new mailbox the active one for this browser. What
