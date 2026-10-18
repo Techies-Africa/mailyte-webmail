@@ -799,6 +799,8 @@ export interface ApiSession {
   expires_at: string | null;
   ip_address: string | null;
   user_agent: string | null;
+  /** The partner who opened this session from their dashboard; null when the holder signed in. */
+  signed_in_via?: string | null;
   revoked: boolean;
   active: boolean;
   current: boolean;
