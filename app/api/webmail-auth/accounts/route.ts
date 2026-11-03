@@ -31,8 +31,8 @@ async function sessionEnded(token: string): Promise<boolean> {
 
 /**
  * The store without the accounts whose sessions have ended. The cookie keeps
- * a token until its own expiry, but the mail server ends a session after
- * eight idle hours -- so "Continue as" offered mailboxes that could no longer
+ * a token until its own expiry, but the mail server ends a session sooner
+ * when it sits idle -- so "Continue as" offered mailboxes that could no longer
  * open, and a click on one went to the inbox, was refused, and landed back
  * here with the same row still offered (2026-09-30).
  */

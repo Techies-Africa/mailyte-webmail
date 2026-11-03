@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { makeQueryClient } from '@/lib/webmail/query/queryClient';
 import { ACCOUNT_MISMATCH_EVENT } from '@/lib/webmail/client';
 import { qk } from '@/lib/webmail/query/keys';
 import { abortSessionChange, dropAllHeld, flushHeldOnExit, settleAllHeld } from '@/lib/webmail/query/opRunner';
 import { clearUnauthorizedRedirect, onAccountChange, setSessionSettler } from '@/lib/webmail/query/session';
+
+/** How long after coming back the folders are checked a second time. */
+const RETURN_RECHECK_MS = 8_000;
 
 /**
  * The query cache for the whole app.
@@ -62,6 +65,49 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
     const onPageHide = () => flushHeldOnExit(client);
     window.addEventListener('pagehide', onPageHide);
     return () => window.removeEventListener('pagehide', onPageHide);
+  }, [client]);
+
+  // Back in the window. TanStack Query hears only `visibilitychange`, which
+  // stays silent when someone returns from another app and this window never
+  // left the screen, so the window's own focus counts too. `onFocus()` takes
+  // no argument: the answer stays "is the tab visible", which is what keeps
+  // the folder poll paused in a hidden tab.
+  useEffect(() => {
+    let recheck: number | undefined;
+    focusManager.setEventListener((onFocus) => {
+      // Clicking into the message frame blurs this window while the page
+      // keeps focus, and the click back out fires `focus` again: not a return.
+      let withinPage = false;
+      const onBlur = () => {
+        window.setTimeout(() => {
+          withinPage = document.hasFocus();
+        }, 0);
+      };
+      const onReturn = (event: Event) => {
+        if (event.type === 'focus' && withinPage) {
+          withinPage = false;
+          return;
+        }
+        onFocus();
+        // A code someone came here to fetch often lands a few seconds after they do.
+        window.clearTimeout(recheck);
+        if (document.visibilityState === 'visible') {
+          recheck = window.setTimeout(
+            () => void client.refetchQueries({ queryKey: qk.folders, exact: true, type: 'active' }),
+            RETURN_RECHECK_MS,
+          );
+        }
+      };
+      window.addEventListener('visibilitychange', onReturn);
+      window.addEventListener('focus', onReturn);
+      window.addEventListener('blur', onBlur);
+      return () => {
+        window.clearTimeout(recheck);
+        window.removeEventListener('visibilitychange', onReturn);
+        window.removeEventListener('focus', onReturn);
+        window.removeEventListener('blur', onBlur);
+      };
+    });
   }, [client]);
 
   return (

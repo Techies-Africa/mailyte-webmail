@@ -74,7 +74,7 @@ import {
   type ListFilter,
   type SearchScope,
 } from '@/lib/webmail/query/listParams';
-import { POLL_MS, foldersQuery, listQuery, messageQuery, summaryQuery, threadQuery } from '@/lib/webmail/query/mailQueries';
+import { POLL_MS, RETURN_CHECK_MIN_MS, foldersQuery, listQuery, messageQuery, summaryQuery, threadQuery } from '@/lib/webmail/query/mailQueries';
 import {
   addDelta,
   adjustFolderCounts,
@@ -220,7 +220,8 @@ export function useMailbox() {
     ...foldersQuery(queryClient, handleUnauthorized),
     refetchInterval: POLL_MS,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
+    // 'always' skips the query's own 15 s staleTime, so a quick return still checks.
+    refetchOnWindowFocus: (query) => (Date.now() - query.state.dataUpdatedAt > RETURN_CHECK_MIN_MS ? 'always' : false),
   });
   // The counts include every action not yet confirmed, so the badges and the
   // tab title move with the click.

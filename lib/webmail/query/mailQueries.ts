@@ -17,6 +17,13 @@ import { cancelAbsorb, onFoldersFetched } from './mailSync';
 /** How often the folder list is polled for changes while the tab is visible (PRD P4). */
 export const POLL_MS = 45_000;
 
+/**
+ * The soonest a return to the window checks the folders again. Coming back
+ * checks at once, even inside the query's 15 s staleTime (a quick trip to
+ * another tab is exactly when a code was just sent), but not twice in a few seconds.
+ */
+export const RETURN_CHECK_MIN_MS = 5_000;
+
 export function foldersQuery(queryClient: QueryClient, onUnauthorized: () => void) {
   return queryOptions({
     queryKey: qk.folders,
