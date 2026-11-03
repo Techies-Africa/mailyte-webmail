@@ -397,7 +397,17 @@ export default function EventModal({
   );
 
   return (
-    <Dialog open onClose={onClose} title={title} footer={footer}>
+    // Typing in here is the point of the dialog, so only the X and Cancel
+    // close it: not a click on the dimmed page (a drag that ends there counts
+    // as one) and not Escape. "Event details" has nothing to lose.
+    <Dialog
+      open
+      onClose={onClose}
+      title={title}
+      footer={footer}
+      closeOnBackdrop={Boolean(readOnly)}
+      closeOnEscape={Boolean(readOnly)}
+    >
       <div className="space-y-4">
         {error && (
           <p role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">

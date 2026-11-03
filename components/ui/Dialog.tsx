@@ -16,6 +16,8 @@ type DialogProps = {
   width?: 'sm' | 'md' | 'lg';
   /** Turn off when the dialog is the one thing typing must not close. */
   closeOnBackdrop?: boolean;
+  /** Turn off when Escape must not close it either (a form being typed into). */
+  closeOnEscape?: boolean;
 };
 
 const WIDTHS = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' };
@@ -48,12 +50,15 @@ export default function Dialog({
   footer,
   width = 'md',
   closeOnBackdrop = true,
+  closeOnEscape = true,
 }: DialogProps) {
   // <body> exists only in the browser; the server renders nothing here.
   const onClient = useSyncExternalStore(noSubscribe, () => true, () => false);
 
   useEffect(() => {
-    if (!open) return;
+    // Not attached when Escape is off, rather than swallowed: a menu open
+    // inside the dialog still closes on it first.
+    if (!open || !closeOnEscape) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       // Handled: the drawer, the reply box and the shortcuts leave it alone.
@@ -62,7 +67,7 @@ export default function Dialog({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, closeOnEscape]);
 
   if (!open || !onClient) return null;
 
