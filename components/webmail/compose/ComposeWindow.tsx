@@ -5,8 +5,8 @@ import { AtSign, Maximize2, Minus, Send, Sparkles, Square, Trash2, X } from 'luc
 import type { ComposeDraft, ComposeMode, SendResult, WebmailContact } from '../types';
 import type { ComposePayload, ComposeWindow as ComposeWindowModel, FromOption } from './types';
 import WebmailEditor from '../WebmailEditor';
-import WebmailRecipientInput, { CcBccToggles } from '../WebmailRecipientInput';
-import { primaryRecipient } from '../recipients';
+import WebmailRecipientInput, { CcBccToggles, useRecipientDnd } from '../WebmailRecipientInput';
+import { moveBetween, primaryRecipient } from '../recipients';
 import ScheduleSendMenu from '../ScheduleSendMenu';
 import AiWriterModal from '../modals/AiWriterModal';
 import ConfirmModal from '../modals/ConfirmModal';
@@ -21,15 +21,27 @@ import {
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import IconButton from '@/components/ui/IconButton';
+import { useToast } from '@/components/ui/Toast';
 import { formatTime } from '@/lib/webmail/dates';
 import { forwardSubject, quotedBody, replyAllRecipients, replyRecipients, replySubject } from '../composeQuoting';
 import { useDockDrag, type DockDragCallbacks } from './useDockDrag';
 import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
+import { addBeforeSessionChange } from '@/lib/webmail/query/session';
+import { forgetSnapshot, useSnapshotWriter } from '@/lib/webmail/composeRecovery';
 import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from './attachments';
 
 
 /** PRD F6: autosave every 30s + on close. */
 const AUTOSAVE_MS = 30_000;
+
+/** What a save came to: stored, nothing there worth storing, or refused (offline, 5xx, signed out). */
+type SaveOutcome = 'saved' | 'nothing' | 'failed';
+
+/** Anything in the message beyond an empty shell: someone on any line, a subject, words or a picture. */
+function hasContent(d: ComposeDraft): boolean {
+  const words = d.body.replace(/<[^>]*>/g, '').trim();
+  return !!(d.to.trim() || d.cc.trim() || d.bcc.trim() || d.subject.trim() || words || /<img\b/i.test(d.body));
+}
 
 
 const MODE_TITLE: Record<ComposeMode, string> = {
@@ -85,12 +97,16 @@ type ComposeWindowProps = {
   onMoveBy: (delta: 1 | -1) => void;
   isMobile: boolean;
   selfAddress: string;
+  /** The mailbox the server says this session is (not the cached placeholder); null until it has said. */
+  accountEmail: string | null;
   selfName: string | null;
   /** Shared mailboxes this session may send as. Empty = no From picker. */
   fromOptions: FromOption[];
   contacts: WebmailContact[];
   canSchedule: boolean;
   onAiWrite?: (instruction: string, existingBody: string) => Promise<string>;
+  /** Hands the dock this window's save-then-close, for the minimized tab's X. Null on unmount. */
+  registerClose?: (id: string, close: (() => void) | null) => void;
   onClose: () => void;
   onMinimize: () => void;
   onFullscreen: () => void;
@@ -132,11 +148,13 @@ export default function ComposeWindow({
   onMoveBy,
   isMobile,
   selfAddress,
+  accountEmail,
   selfName,
   fromOptions,
   contacts,
   canSchedule,
   onAiWrite,
+  registerClose,
   onClose,
   onMinimize,
   onFullscreen,
@@ -159,6 +177,8 @@ export default function ComposeWindow({
   // the page): the window is sized to it so Send stays above the keyboard.
   // Only for the window in front -- a hidden one has nothing to keep visible.
   const visible = useVisualViewport(fullscreen && isMobile && !hidden);
+
+  const { toast } = useToast();
 
   const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, selfAddress, resumed));
   const [showCc, setShowCc] = useState(!!resumed?.cc);
@@ -218,8 +238,20 @@ export default function ComposeWindow({
   const draftRef = useRef<ComposeDraft>(draft);
   const draftIdRef = useRef<string | undefined>(existingDraftId);
   // A restored message counts as edited: it exists nowhere else as it is now.
+  // `dirty` is what the server does not have yet (a save clears it); `edited`
+  // is touched-since-it-opened, for good -- why a snapshot of it exists.
   const dirtyRef = useRef(!!model.restored);
+  const editedRef = useRef(!!model.restored);
+  // Counts edits. draftRef trails the state by a render, so a save cannot tell
+  // from it alone whether something was typed while it was on its way.
+  const editRev = useRef(0);
+  const markDirty = () => {
+    dirtyRef.current = true;
+    editedRef.current = true;
+    editRev.current += 1;
+  };
   const sentRef = useRef(false);
+  const attachmentCountRef = useRef(model.attachments?.length ?? 0);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -302,35 +334,52 @@ export default function ComposeWindow({
    */
   const worthSaving = useCallback(() => {
     if (!dirtyRef.current || sentRef.current) return false;
-    const current = draftRef.current;
-    const bodyText = current.body.replace(/<[^>]*>/g, '').trim();
-    return !!(current.to.trim() || current.subject.trim() || bodyText);
+    return hasContent(draftRef.current);
   }, []);
 
-  const persistDraft = useCallback(async () => {
-    if (!worthSaving()) return;
+  // The reply headers this message carries: a live reply's, or a resumed one's.
+  const threadingHeaders = useCallback(() => {
+    const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
+    return {
+      inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : model.threading?.inReplyTo,
+      references: isReply ? (replyTo?.references ?? undefined) : model.threading?.references,
+    };
+  }, [mode, replyTo, model.threading]);
+
+  // One save at a time. An autosave tick and a Close that overlapped both named
+  // the same draft to replace (or none yet), and the server kept both copies.
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve());
+
+  const savePass = useCallback(async (): Promise<SaveOutcome> => {
+    if (!worthSaving()) return 'nothing';
     setSavingDraft(true);
     try {
-      const isReply = (mode === 'reply' || mode === 'replyAll') && !!replyTo;
-      const saved = await onSaveDraft(
-        {
-          ...draftRef.current,
-          inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : model.threading?.inReplyTo,
-          references: isReply ? (replyTo?.references ?? undefined) : model.threading?.references,
-        },
-        draftIdRef.current,
-      );
+      const sent = draftRef.current;
+      const rev = editRev.current;
+      const saved = await onSaveDraft({ ...sent, ...threadingHeaders() }, draftIdRef.current);
+      // null = refused. An empty id is a draft the server stored without naming it.
+      if (saved === null) return 'failed';
       if (saved) {
         setDraftId(saved);
         draftIdRef.current = saved;
         onDraftId(saved);
-        setDraftSavedAt(new Date());
-        dirtyRef.current = false;
       }
+      setDraftSavedAt(new Date());
+      // Whatever was typed while this was in flight is not in it, and stays unsaved.
+      if (draftRef.current === sent && editRev.current === rev) dirtyRef.current = false;
+      return 'saved';
+    } catch {
+      return 'failed';
     } finally {
       setSavingDraft(false);
     }
-  }, [mode, replyTo, worthSaving, onSaveDraft, onDraftId]);
+  }, [worthSaving, threadingHeaders, onSaveDraft, onDraftId]);
+
+  const persistDraft = useCallback((): Promise<SaveOutcome> => {
+    const run = saveChain.current.then(savePass);
+    saveChain.current = run;
+    return run;
+  }, [savePass]);
 
   // Autosave on a fixed timer (F6), so a long uninterrupted paragraph is
   // still saved.
@@ -339,48 +388,142 @@ export default function ComposeWindow({
     return () => clearInterval(interval);
   }, [persistDraft]);
 
-  // The beforeunload guard (F6): closing the tab mid-message asks first.
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!dirtyRef.current || sentRef.current) return;
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, []);
-
   const onAttachmentsChangeRef = useRef(onAttachmentsChange);
   useEffect(() => {
     onAttachmentsChangeRef.current = onAttachmentsChange;
   }, [onAttachmentsChange]);
   useEffect(() => {
+    attachmentCountRef.current = attachments.length;
     onAttachmentsChangeRef.current?.(sentRef.current ? 0 : attachments.length);
   }, [attachments.length]);
   // Gone from the screen, the files are gone too; nothing left to warn about.
   useEffect(() => () => onAttachmentsChangeRef.current?.(0), []);
 
-  // Moving to Calendar, Contacts or Settings is a client-side navigation: it
-  // unmounts this window without a beforeunload, so the guard above never
-  // asks. Save what was written instead, so it is waiting in Drafts.
   const persistDraftRef = useRef(persistDraft);
   useEffect(() => {
     persistDraftRef.current = persistDraft;
   }, [persistDraft]);
-  useEffect(() => () => void persistDraftRef.current(), []);
+
+  // Gone from the screen for good -- Close, a send, a discard, or a move to
+  // Calendar, Contacts or Settings (a client-side navigation: no beforeunload).
+  // Save what was written, so it is waiting in Drafts, and once the server has
+  // it (or it was sent, or discarded) let go of the local copy. A save that
+  // failed keeps the copy for the next visit.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      void persistDraftRef.current().then((outcome) => {
+        // In development React unmounts a window once as it opens and mounts it again; that one is still here.
+        if (outcome !== 'failed' && !mountedRef.current) forgetSnapshot(model.id);
+      });
+    };
+  }, [model.id]);
   // Minimizing saves too, as it did when a minimized window was unmounted:
   // what is in Drafts matches what was on screen when it went away.
   useEffect(() => {
     if (hidden) void persistDraftRef.current();
   }, [hidden]);
+  // An account switch or a sign-out ends this session: the draft goes to the
+  // server first, while it is still this mailbox's to write to.
+  useEffect(
+    () =>
+      addBeforeSessionChange(async () => {
+        await persistDraftRef.current();
+      }),
+    [],
+  );
 
+  // The mailbox this window's text belongs to, fixed at the first answer. The
+  // server can name another mailbox while the window is open (the session was
+  // switched elsewhere); the page then starts over, but for a moment this
+  // window is still on screen, and text written under the new name would be
+  // restored into -- and sendable from -- the wrong account.
+  const ownerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (accountEmail && !ownerRef.current) ownerRef.current = accountEmail;
+  }, [accountEmail]);
+
+  // What the browser keeps for this window if the page goes away (composeRecovery).
+  const buildSnapshot = () => {
+    const d = draftRef.current;
+    const account = ownerRef.current ?? accountEmail;
+    if (!account || !editedRef.current || sentRef.current || !hasContent(d)) return null;
+    return {
+      account,
+      to: d.to,
+      cc: d.cc,
+      bcc: d.bcc,
+      subject: d.subject,
+      body: d.body,
+      draftId: draftIdRef.current,
+      from: from !== selfAddress ? from : undefined,
+      threading: threadingHeaders(),
+    };
+  };
+  const flushSnapshot = useSnapshotWriter(model.id, buildSnapshot, [draft, from, draftId, accountEmail]);
+
+  // Leaving the page (F6). Nothing is lost when there is no text worth keeping,
+  // when the server has it, or when it is kept in this browser under a mailbox
+  // and comes back; what cannot come back still asks: attached files, text the
+  // browser would not keep (too big, storage off, no Web Locks, a sign-out
+  // wiped it), and any text before the server has said whose mailbox this is.
+  // (Before this, every unsaved message asked.)
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (sentRef.current) return;
+      const attached = attachmentCountRef.current > 0;
+      if (!attached && !worthSaving()) return;
+      if (!attached && ownerRef.current && flushSnapshot()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [flushSnapshot, worthSaving]);
+
+  // Close: save, then go. Never go on a save that failed -- the message would
+  // be thrown away while the window says it was kept.
+  const closingRef = useRef(false);
   const closeWithSave = async () => {
-    await persistDraft();
-    onClose();
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setSendError(null);
+    try {
+      let saved = false;
+      for (;;) {
+        const outcome = await persistDraft();
+        if (outcome === 'failed') {
+          setSendError("Couldn't save this draft. Check your connection and try Close again, or Discard it.");
+          toast("Couldn't save the draft, so it is still open", { tone: 'error' });
+          // A minimized window cannot show the bar above: bring it back.
+          if (hidden) onRestore();
+          return;
+        }
+        if (outcome === 'saved') saved = true;
+        // Words typed while that save was on its way need another pass.
+        if (!worthSaving()) break;
+      }
+      if (saved) toast('Saved to Drafts');
+      onClose();
+    } finally {
+      closingRef.current = false;
+    }
   };
 
+  // Registered with the dock, so the minimized tab's X takes the same road.
+  const closeRef = useRef(closeWithSave);
+  useEffect(() => {
+    closeRef.current = closeWithSave;
+  });
+  useEffect(() => {
+    registerClose?.(model.id, () => void closeRef.current());
+    return () => registerClose?.(model.id, null);
+  }, [registerClose, model.id]);
+
   const touch = (patch: Partial<ComposeDraft>) => {
-    dirtyRef.current = true;
+    markDirty();
     setDraft((prev) => ({ ...prev, ...patch }));
   };
 
@@ -516,6 +659,21 @@ export default function ComposeWindow({
     </div>
   );
 
+  // A chip dragged to another line, or moved there from its menu. All three
+  // lines change in one update, so the move cannot be seen half done.
+  const recipientDnd = useRecipientDnd(
+    (entry, fromLine, toLine) => {
+      markDirty();
+      setDraft((prev) => ({ ...prev, ...moveBetween(prev, entry, fromLine, toLine) }));
+      if (toLine === 'cc') setShowCc(true);
+      if (toLine === 'bcc') setShowBcc(true);
+    },
+    () => {
+      setShowCc(true);
+      setShowBcc(true);
+    },
+  );
+
   const ccBccToggles = (
     <CcBccToggles
       showCc={showCc}
@@ -563,12 +721,27 @@ export default function ComposeWindow({
           autoFocus={mode === 'compose' && !resumed?.to}
           placeholder="recipient@domain.com"
           trailing={ccBccToggles}
+          dnd={recipientDnd('to')}
         />
         {showCc && (
-          <WebmailRecipientInput label="Cc" value={draft.cc} onChange={(value) => touch({ cc: value })} contacts={contacts} placeholder="cc@domain.com" />
+          <WebmailRecipientInput
+            label="Cc"
+            value={draft.cc}
+            onChange={(value) => touch({ cc: value })}
+            contacts={contacts}
+            placeholder="cc@domain.com"
+            dnd={recipientDnd('cc')}
+          />
         )}
         {showBcc && (
-          <WebmailRecipientInput label="Bcc" value={draft.bcc} onChange={(value) => touch({ bcc: value })} contacts={contacts} placeholder="bcc@domain.com" />
+          <WebmailRecipientInput
+            label="Bcc"
+            value={draft.bcc}
+            onChange={(value) => touch({ bcc: value })}
+            contacts={contacts}
+            placeholder="bcc@domain.com"
+            dnd={recipientDnd('bcc')}
+          />
         )}
         <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
           <span className="shrink-0 font-mono text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Subj</span>
@@ -616,7 +789,7 @@ export default function ComposeWindow({
             // Already a recipient in their own right: the pill never owns them.
             if (!mentionAddedRef.current.has(email) && ccWithMention(draft, contact) === null) return;
             mentionAddedRef.current.set(email, mentionEntry(contact));
-            dirtyRef.current = true;
+            markDirty();
             // Decided against the LATEST Cc, inside the update: the restore in
             // onChange above may have just put them back, and `draft` here is
             // one render behind -- deciding outside added them twice.
@@ -688,7 +861,7 @@ export default function ComposeWindow({
             // Remount the editor around the generated body: the AI writer
             // replaces the whole document, the one case where reaching past
             // TipTap's own state is right.
-            dirtyRef.current = true;
+            markDirty();
             setSeededHtml(generated + quoted);
             setDraft((prev) => ({ ...prev, body: generated + quoted }));
             setEditorSeed((n) => n + 1);

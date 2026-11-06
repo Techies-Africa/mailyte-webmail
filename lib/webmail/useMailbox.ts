@@ -1152,7 +1152,9 @@ export function useMailbox() {
       if (!result.success || !result.data) return null;
       void refreshFolders();
       void invalidateFolderLists(queryClient, [draftsFolder]);
-      return result.data.id;
+      // null means refused. A draft the server stored but gave no id (an IMAP
+      // server without UIDPLUS) is '', so Close does not read it as a failure.
+      return result.data.id ?? '';
     },
     [handleUnauthorized, refreshFolders, queryClient, draftsFolder],
   );
@@ -1254,6 +1256,10 @@ export function useMailbox() {
     // session
     sessionChecked,
     displayEmail,
+    // The server's own answer to whose mailbox this is. displayEmail can be a
+    // cached placeholder; anything keyed to an account (the unsent-text copy
+    // of a compose window) waits for this.
+    accountEmail: capabilitiesQuery.data?.email_address || null,
     settings,
     capabilities,
     aiAvailable,

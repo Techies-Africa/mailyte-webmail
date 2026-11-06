@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertOctagon, Archive, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/webmail/shell/Sidebar';
@@ -23,6 +23,8 @@ import type { ComposePayload } from '@/components/webmail/compose/types';
 import { useMailbox, type Mailbox, type SendContext } from '@/lib/webmail/useMailbox';
 import { useOutbox } from '@/components/providers/OutboxProvider';
 import { useComposeWindows } from '@/lib/webmail/useComposeWindows';
+import { adoptOrphans } from '@/lib/webmail/composeRecovery';
+import { useToast } from '@/components/ui/Toast';
 import { useKeyboardShortcuts, useUnreadTitle } from '@/lib/webmail/useKeyboardShortcuts';
 import { useNewMailNotifier } from '@/lib/webmail/useNewMailNotifier';
 import { toListItem } from '@/lib/webmail/adapters';
@@ -87,9 +89,12 @@ export default function WebmailInboxPage() {
   const [pendingDeleteForever, setPendingDeleteForever] = useState<{ ids: string[]; label: string } | null>(null);
   const [pendingAsk, setPendingAsk] = useState<PendingAsk | null>(null);
 
+  const { toast } = useToast();
+
   const {
     sessionChecked,
     displayEmail,
+    accountEmail,
     settings,
     folders,
     activeFolder,
@@ -246,6 +251,34 @@ export default function WebmailInboxPage() {
       ),
     [registerComposeOpener, openCompose],
   );
+
+  // A tab or a browser closed on a half-written message: the windows it had
+  // open come back, as they were (composeRecovery). Once per visit to the
+  // inbox, and only when the server has said whose mailbox this is -- the
+  // cached placeholder could be another account's. They open as plain
+  // compose windows, the shape a saved draft resumes in, and count as edited,
+  // so closing one saves it.
+  const restoredOnce = useRef(false);
+  useEffect(() => {
+    if (!sessionChecked || !accountEmail || restoredOnce.current) return;
+    restoredOnce.current = true;
+    let count = 0;
+    void adoptOrphans(accountEmail, (snapshot) => {
+      count += 1;
+      openCompose({
+        mode: 'compose',
+        initialBody: snapshot.body,
+        draftId: snapshot.draftId,
+        resumed: { to: snapshot.to, cc: snapshot.cc, bcc: snapshot.bcc, subject: snapshot.subject },
+        from: snapshot.from,
+        threading: snapshot.threading,
+        quoteIncluded: true,
+        restored: true,
+      });
+    }).then(() => {
+      if (count > 0) toast(count === 1 ? 'Restored your unsent message' : `Restored ${count} unsent messages`);
+    });
+  }, [sessionChecked, accountEmail, openCompose, toast]);
 
   // Leaving the inbox keeps what is being written -- it is saved to Drafts --
   // but not its attachments. Ask first, only when there are some.
@@ -482,6 +515,7 @@ export default function WebmailInboxPage() {
         compose={compose}
         isMobile={isMobile}
         selfAddress={displayEmail}
+        accountEmail={accountEmail}
         selfName={settings?.name ?? null}
         fromOptions={fromOptions}
         contacts={mailbox.contacts}

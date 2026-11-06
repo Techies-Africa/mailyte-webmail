@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Mail, X } from 'lucide-react';
 import type { SendResult, WebmailContact } from '../types';
 import type { ComposeWindows } from '@/lib/webmail/useComposeWindows';
@@ -28,6 +28,8 @@ type ComposeDockProps = {
   compose: ComposeWindows;
   isMobile: boolean;
   selfAddress: string;
+  /** Whose mailbox the server says this is; null until it has said (the window's unsent-text copy waits for it). */
+  accountEmail: string | null;
   selfName: string | null;
   fromOptions: FromOption[];
   contacts: WebmailContact[];
@@ -95,6 +97,7 @@ export default function ComposeDock({
   compose,
   isMobile,
   selfAddress,
+  accountEmail,
   selfName,
   fromOptions,
   contacts,
@@ -105,6 +108,16 @@ export default function ComposeDock({
   onDiscardDraft,
 }: ComposeDockProps) {
   const { windows, closeCompose, setLayout, setLabel, setTo, setDraftId, reportAttachments, activate, moveWindow } = compose;
+
+  // Each window's own save-then-close, which a minimized tab's X calls instead
+  // of dropping the window: that would skip the save, and lose the message if
+  // the save was going to fail.
+  const closersRef = useRef(new Map<string, () => void>());
+  const registerClose = useCallback((id: string, close: (() => void) | null) => {
+    if (close) closersRef.current.set(id, close);
+    else closersRef.current.delete(id);
+  }, []);
+  const closeFromTab = (id: string) => (closersRef.current.get(id) ?? (() => closeCompose(id)))();
   const viewport = useSyncExternalStore(subscribeToViewport, getViewport, getServerViewport);
   const slots = layoutSlots(windows, viewport.width, viewport.inset);
 
@@ -220,11 +233,13 @@ export default function ComposeDock({
               onMoveBy={(delta) => moveBy(w, delta)}
               isMobile={isMobile}
               selfAddress={selfAddress}
+              accountEmail={accountEmail}
               selfName={selfName}
               fromOptions={fromOptions}
               contacts={contacts}
               canSchedule={canSchedule}
               onAiWrite={onAiWrite}
+              registerClose={registerClose}
               onClose={() => closeCompose(w.id)}
               onMinimize={() => minimize(w.id)}
               onFullscreen={() => setLayout(w.id, 'fullscreen')}
@@ -247,7 +262,7 @@ export default function ComposeDock({
                 restoreRef={tabRefFor(w.id)}
                 onActivate={activateThis}
                 onRestore={() => restoreFromTab(w.id)}
-                onClose={() => closeCompose(w.id)}
+                onClose={() => closeFromTab(w.id)}
                 onMoveBy={(delta) => moveBy(w, delta)}
               />
             )}
@@ -269,7 +284,7 @@ export default function ComposeDock({
               drag={dragFor(w)}
               restoreRef={tabRefFor(w.id)}
               onRestore={() => restoreFromTab(w.id)}
-              onClose={() => closeCompose(w.id)}
+              onClose={() => closeFromTab(w.id)}
               onMoveBy={() => {}}
             />
           ))}

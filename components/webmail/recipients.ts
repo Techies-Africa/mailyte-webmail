@@ -14,6 +14,31 @@ export function splitRecipients(value: string): string[] {
     .filter(Boolean);
 }
 
+/** The three lines of a message that name people. */
+export type RecipientLines = { to: string; cc: string; bcc: string };
+export type RecipientField = keyof RecipientLines;
+
+/**
+ * `lines` with one person taken off `from` and put on `to`, keeping the name
+ * written with the address. Someone already on `to` is only taken off `from`,
+ * so a drop never lists anyone twice.
+ */
+export function moveBetween(
+  lines: RecipientLines,
+  entry: string,
+  from: RecipientField,
+  to: RecipientField,
+): RecipientLines {
+  const next: RecipientLines = { to: lines.to, cc: lines.cc, bcc: lines.bcc };
+  if (from === to) return next;
+  const email = extractEmail(entry).toLowerCase();
+  const isThem = (e: string) => extractEmail(e).toLowerCase() === email;
+  next[from] = splitRecipients(lines[from]).filter((e) => !isThem(e)).join(', ');
+  const there = splitRecipients(lines[to]);
+  next[to] = (there.some(isThem) ? there : [...there, entry]).join(', ');
+  return next;
+}
+
 /** "Ada Lovelace <ada@x.com>" -> "ada@x.com"; a bare address passes through. */
 export function extractEmail(entry: string): string {
   const match = entry.match(/<([^>]+)>/);

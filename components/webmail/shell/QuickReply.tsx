@@ -6,7 +6,8 @@ import { AtSign, Maximize2, Send, Trash2 } from 'lucide-react';
 import type { ComposeMode, SendResult, WebmailContact, WebmailMessage } from '../types';
 import type { ComposePayload } from '../compose/types';
 import WebmailEditor from '../WebmailEditor';
-import WebmailRecipientInput, { CcBccToggles } from '../WebmailRecipientInput';
+import WebmailRecipientInput, { CcBccToggles, useRecipientDnd } from '../WebmailRecipientInput';
+import { moveBetween } from '../recipients';
 import ConfirmModal from '../modals/ConfirmModal';
 import Button from '@/components/ui/Button';
 import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from '../compose/attachments';
@@ -90,6 +91,20 @@ export default function QuickReply({
   });
   const [showCc, setShowCc] = useState(() => recipients.cc !== '');
   const [showBcc, setShowBcc] = useState(false);
+
+  // A chip dragged to another line, or moved there from its menu -- as in the
+  // compose window. Starting a drag opens the lines still hidden.
+  const recipientDnd = useRecipientDnd(
+    (entry, fromLine, toLine) => {
+      setRecipients((prev) => ({ ...prev, ...moveBetween(prev, entry, fromLine, toLine) }));
+      if (toLine === 'cc') setShowCc(true);
+      if (toLine === 'bcc') setShowBcc(true);
+    },
+    () => {
+      setShowCc(true);
+      setShowBcc(true);
+    },
+  );
 
   // People a mention ADDED to Cc (email -> the Cc entry written), and the
   // mentions last seen in the body -- the compose window's bookkeeping, so
@@ -215,6 +230,7 @@ export default function QuickReply({
         onChange={(to) => setRecipients((prev) => ({ ...prev, to }))}
         contacts={contacts}
         placeholder="recipient@domain.com"
+        dnd={recipientDnd('to')}
         trailing={
           <CcBccToggles
             showCc={showCc}
@@ -231,6 +247,7 @@ export default function QuickReply({
           onChange={(cc) => setRecipients((prev) => ({ ...prev, cc }))}
           contacts={contacts}
           placeholder="cc@domain.com"
+          dnd={recipientDnd('cc')}
         />
       )}
       {showBcc && (
@@ -240,6 +257,7 @@ export default function QuickReply({
           onChange={(bcc) => setRecipients((prev) => ({ ...prev, bcc }))}
           contacts={contacts}
           placeholder="bcc@domain.com"
+          dnd={recipientDnd('bcc')}
         />
       )}
 
