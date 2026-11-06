@@ -16,6 +16,7 @@ import {
   prepareSessionChange,
   withAccountHeader,
 } from "./query/session";
+import { forgetAllSnapshots } from "./composeRecovery";
 
 /**
  * `status` on a failure is the HTTP status, or 0 when the server was never
@@ -1085,6 +1086,11 @@ export async function signOut(all = false): Promise<void> {
     data?: { remaining?: number };
   };
   forgetDisplayAddress();
+  // Unsent text kept in this browser (composeRecovery): open drafts were just
+  // saved to the server by prepareSessionChange (a window whose save failed
+  // makes the page ask before it goes), and whoever uses this browser next
+  // must not find the rest. Another mailbox still signed in keeps its own.
+  forgetAllSnapshots(!!body?.data?.remaining);
   announceAccountChange();
   window.location.assign(body?.data?.remaining ? "/" : "/login");
 }

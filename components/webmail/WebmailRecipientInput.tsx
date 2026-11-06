@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CircleAlert, X } from 'lucide-react';
 import type { WebmailContact } from './types';
 import Avatar from '@/components/ui/Avatar';
-import { displayChip, extractEmail, splitRecipients } from './recipients';
+import Menu from '@/components/ui/Menu';
+import { displayChip, extractEmail, splitRecipients, type RecipientField } from './recipients';
 
 /**
  * A recipient field as chips, with autocomplete (PRD C2).
@@ -13,12 +14,54 @@ import { displayChip, extractEmail, splitRecipients } from './recipients';
  * it does not parse -- before the send, not after. The value stays a
  * comma-separated string at the boundary because that is what the compose
  * draft and the API already speak.
+ *
+ * Given `dnd`, a chip also moves to another line (To, Cc, Bcc) of the same
+ * message: dragged onto it, or by choosing "Move to ..." from the chip --
+ * dragging does not work on a phone, and not everyone can drag.
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Characters that end an address as you type, the way every mail client does. */
 const COMMIT_KEYS = [',', ';', 'Enter', 'Tab'];
+
+/**
+ * The only thing a chip drag carries, under a type nothing else reads. Never
+ * text/plain: a drop on the subject or the editor would paste the address.
+ */
+const CHIP_MIME = 'application/x-mailyte-recipient';
+const LINES: RecipientField[] = ['to', 'cc', 'bcc'];
+const LINE_NAME: Record<RecipientField, string> = { to: 'To', cc: 'Cc', bcc: 'Bcc' };
+
+/** How a recipient line takes part in moving people between a message's lines. */
+export type RecipientDnd = {
+  /** Which line this input is. */
+  field: RecipientField;
+  /** The line a chip is being dragged from right now; null when none is. */
+  dragFrom: RecipientField | null;
+  onDragFrom: (field: RecipientField | null) => void;
+  /** Take `entry` off `from` and put it on `to`. */
+  move: (entry: string, from: RecipientField, to: RecipientField) => void;
+};
+
+/**
+ * The drag state for ONE message's lines, kept by whoever owns the lines, so
+ * a chip can only land on a line of its own message. Returns the `dnd` prop
+ * for a given line. `onStart` runs as a drag begins: the host opens the lines
+ * that are still hidden, so each can take a drop.
+ */
+export function useRecipientDnd(
+  move: RecipientDnd['move'],
+  onStart?: () => void,
+): (field: RecipientField) => RecipientDnd {
+  const [dragFrom, setDragFrom] = useState<RecipientField | null>(null);
+  const onDragFrom = (from: RecipientField | null) => {
+    setDragFrom(from);
+    // A tick later, so the layout does not shift under the drag as it begins.
+    if (from && onStart) window.setTimeout(onStart, 0);
+  };
+  return (field) => ({ field, dragFrom, onDragFrom, move });
+}
 
 type WebmailRecipientInputProps = {
   label: string;
@@ -29,6 +72,8 @@ type WebmailRecipientInputProps = {
   /** Rendered at the right-hand end of the row (the Cc/Bcc toggles). */
   trailing?: React.ReactNode;
   placeholder?: string;
+  /** Lets chips move between this message's To, Cc and Bcc (useRecipientDnd). */
+  dnd?: RecipientDnd;
 };
 
 export default function WebmailRecipientInput({
@@ -39,11 +84,37 @@ export default function WebmailRecipientInput({
   autoFocus,
   trailing,
   placeholder,
+  dnd,
 }: WebmailRecipientInputProps) {
   const [pending, setPending] = useState('');
   const [highlight, setHighlight] = useState(0);
   const [open, setOpen] = useState(false);
+  const [dropOver, setDropOver] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // A chip from ANOTHER line of this message is being dragged: this line can take it.
+  const taking = dnd && dnd.dragFrom !== null && dnd.dragFrom !== dnd.field ? dnd : null;
+  const dropProps = taking
+    ? {
+        onDragOver: (e: React.DragEvent) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          setDropOver(true);
+        },
+        // dragleave fires for every child crossed; only leaving the row counts.
+        onDragLeave: (e: React.DragEvent) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropOver(false);
+        },
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          setDropOver(false);
+          const entry = e.dataTransfer.getData(CHIP_MIME);
+          if (entry && taking.dragFrom) taking.move(entry, taking.dragFrom, taking.field);
+          // The source chip is gone by now, and a removed element hears no dragend.
+          taking.onDragFrom(null);
+        },
+      }
+    : undefined;
 
   const chips = useMemo(() => splitRecipients(value), [value]);
 
@@ -122,7 +193,13 @@ export default function WebmailRecipientInput({
   };
 
   return (
-    <div ref={containerRef} className="relative flex items-start gap-2 border-b border-border px-4 py-1.5">
+    <div
+      ref={containerRef}
+      {...dropProps}
+      className={`relative flex items-start gap-2 border-b border-border px-4 py-1.5 ${
+        taking ? (dropOver ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : 'bg-primary/5') : ''
+      }`}
+    >
       {/* Every line of this row is 32px -- a 24px chip with 4px above and
           below, or the input -- so the label and the Cc/Bcc toggles, centred
           in a 32px box, sit on the first line however many lines the chips
@@ -141,7 +218,21 @@ export default function WebmailRecipientInput({
           return (
             <span
               key={`${chip}-${index}`}
+              draggable={!!dnd}
+              onDragStart={
+                dnd
+                  ? (e) => {
+                      e.dataTransfer.setData(CHIP_MIME, chip);
+                      e.dataTransfer.effectAllowed = 'move';
+                      dnd.onDragFrom(dnd.field);
+                    }
+                  : undefined
+              }
+              // Not dropped on a line (Escape, or let go elsewhere): the chip is still here to hear it.
+              onDragEnd={dnd ? () => dnd.onDragFrom(null) : undefined}
               className={`my-1 inline-flex h-6 max-w-full items-center gap-1 rounded-full pl-0.5 pr-1 text-[12.5px] ${
+                dnd ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${
                 valid
                   ? 'bg-muted text-foreground'
                   : 'bg-destructive/10 text-destructive ring-1 ring-destructive/30'
@@ -153,7 +244,39 @@ export default function WebmailRecipientInput({
               ) : (
                 <CircleAlert size={13} className="ml-1 shrink-0" />
               )}
-              <span className="truncate px-0.5">{displayChip(chip)}</span>
+              {dnd ? (
+                <Menu
+                  label={`Move ${email}`}
+                  className="min-w-0"
+                  // A span with a button role, not a <button>: Firefox does not start a
+                  // drag of the chip from a real button inside it.
+                  trigger={({ toggle, open: menuOpen }) => (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={toggle}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggle();
+                        }
+                      }}
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      className="min-w-0 select-none truncate rounded px-0.5 text-left hover:underline"
+                    >
+                      {displayChip(chip)}
+                    </span>
+                  )}
+                  items={LINES.filter((line) => line !== dnd.field).map((line) => ({
+                    key: line,
+                    label: `Move to ${LINE_NAME[line]}`,
+                    onSelect: () => dnd.move(chip, dnd.field, line),
+                  }))}
+                />
+              ) : (
+                <span className="truncate px-0.5">{displayChip(chip)}</span>
+              )}
               <button
                 type="button"
                 onClick={() => removeAt(index)}

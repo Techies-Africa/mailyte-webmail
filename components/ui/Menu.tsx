@@ -21,6 +21,8 @@ type MenuProps = {
   /** Opens upward, for controls on the bottom edge of the screen. */
   direction?: 'down' | 'up';
   label: string;
+  /** Extra classes for the wrapper around the trigger (a trigger that has to shrink needs `min-w-0`). */
+  className?: string;
 };
 
 /**
@@ -29,7 +31,7 @@ type MenuProps = {
  * bulk "More" menu, which previously each carried their own copy of the same
  * outside-click effect (now useDismiss, shared with SelectMenu).
  */
-export default function Menu({ trigger, items, align = 'left', direction = 'down', label }: MenuProps) {
+export default function Menu({ trigger, items, align = 'left', direction = 'down', label, className }: MenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -38,7 +40,7 @@ export default function Menu({ trigger, items, align = 'left', direction = 'down
   useKeepOnScreen(panelRef, open);
 
   return (
-    <div ref={ref} className="relative inline-flex">
+    <div ref={ref} className={['relative inline-flex', className ?? ''].join(' ')}>
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
       {open && (
         <div
