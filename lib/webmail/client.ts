@@ -921,6 +921,28 @@ export function updateRules(rules: ApiRule[], onUnauthorized: () => void) {
   );
 }
 
+/**
+ * Cold outreach (off unless turned on): a person-to-person email from a domain
+ * under a year old that this mailbox has never written to goes to the
+ * "Cold outreach" folder instead of the inbox. `parse_cold` in the mail server
+ * is the authority for this shape.
+ */
+export function getColdOutreach(onUnauthorized: () => void) {
+  return call<{ enabled: boolean }>("/api/webmail/cold-outreach", undefined, onUnauthorized);
+}
+
+export function updateColdOutreach(enabled: boolean, onUnauthorized: () => void) {
+  return call<{ enabled: boolean }>(
+    "/api/webmail/cold-outreach",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    },
+    onUnauthorized,
+  );
+}
+
 export interface ApiVacation {
   enabled: boolean;
   subject?: string | null;

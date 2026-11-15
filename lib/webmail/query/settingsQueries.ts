@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   getBlockedSenders,
+  getColdOutreach,
   getForwarding,
   getRules,
   getSecurity,
@@ -28,6 +29,7 @@ export const settingsKeys = {
   blocked: ['mb', 'blocked'] as const,
   forwarding: ['mb', 'forwarding'] as const,
   vacation: ['mb', 'vacation'] as const,
+  coldOutreach: ['mb', 'cold-outreach'] as const,
   rules: ['mb', 'rules'] as const,
   security: ['mb', 'security'] as const,
   sessions: ['mb', 'security', 'sessions'] as const,
@@ -71,6 +73,14 @@ export function useVacation(onUnauthorized: () => void) {
   return useQuery({
     queryKey: settingsKeys.vacation,
     queryFn: async () => required(unwrap(await getVacation(onUnauthorized)), 'The vacation responder'),
+    staleTime: SECTION_STALE,
+  });
+}
+
+export function useColdOutreach(onUnauthorized: () => void) {
+  return useQuery({
+    queryKey: settingsKeys.coldOutreach,
+    queryFn: async () => required(unwrap(await getColdOutreach(onUnauthorized)), 'Cold outreach'),
     staleTime: SECTION_STALE,
   });
 }
