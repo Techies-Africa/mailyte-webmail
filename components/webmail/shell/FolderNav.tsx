@@ -66,8 +66,10 @@ const CATEGORY_DOTS: Record<string, string> = {
   Promotions: 'hsl(38 85% 55%)',
   Updates: 'hsl(200 75% 55%)',
   Notifications: 'hsl(280 65% 62%)',
+  // Filed only for a mailbox that turned Cold outreach on (Settings).
+  'Cold outreach': 'hsl(205 20% 58%)',
 };
-const CATEGORY_ORDER = ['Social', 'Promotions', 'Updates', 'Notifications'];
+const CATEGORY_ORDER = ['Social', 'Promotions', 'Updates', 'Notifications', 'Cold outreach'];
 
 /**
  * Shared mailboxes arrive as IMAP folders under Dovecot's shared namespace:

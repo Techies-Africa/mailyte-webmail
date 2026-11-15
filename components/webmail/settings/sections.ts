@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react';
-import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter, Bell, Sparkles } from 'lucide-react';
+import { Settings2, PenSquare, Forward, Plane, ShieldCheck, Palette, CalendarDays, Ban, ListFilter, Bell, Sparkles, Snowflake } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
 import ComposingSettings from './ComposingSettings';
 import RulesSettings from './RulesSettings';
 import ForwardingSettings from './ForwardingSettings';
 import VacationSettings from './VacationSettings';
 import BlockedSendersSettings from './BlockedSendersSettings';
+import ColdOutreachSettings from './ColdOutreachSettings';
 import SecuritySettings from './SecuritySettings';
 import AppearanceSettings from './AppearanceSettings';
 import CalendarSettings from './CalendarSettings';
@@ -91,6 +92,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: 'Addresses whose mail is filed to Junk on arrival.',
     icon: Ban,
     component: BlockedSendersSettings,
+  },
+  {
+    id: 'cold-outreach',
+    label: 'Cold outreach',
+    description: 'Move first emails from brand-new senders out of your inbox.',
+    icon: Snowflake,
+    component: ColdOutreachSettings,
   },
   {
     id: 'calendar',
