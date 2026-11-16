@@ -126,6 +126,11 @@ export interface WebmailSettings {
   undoSendEnabled: boolean;
   undoSendSeconds: number;
   storage: { usedMb: number; quotaMb: number; percentage: number | null };
+  /**
+   * Set only when Mailyte staff opened this mailbox to look into a problem
+   * (a one-hour support session); null for the holder's own sign-in.
+   */
+  supportSession: { endsAt: string } | null;
 }
 
 export interface WebmailFolder {

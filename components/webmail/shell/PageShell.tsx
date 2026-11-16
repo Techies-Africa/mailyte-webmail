@@ -6,6 +6,7 @@ import { ArrowLeft, BookUser, CalendarDays, Paperclip, Settings } from 'lucide-r
 import Sidebar from './Sidebar';
 import SidebarItem, { SidebarDivider } from './SidebarItem';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
+import SupportSessionBanner from './SupportSessionBanner';
 import { useCapabilities, useSettings } from '@/lib/webmail/query/accountQueries';
 import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
@@ -88,6 +89,7 @@ export default function PageShell({ current, children }: PageShellProps) {
       </Sidebar>
 
       <PageMenuContext.Provider value={menu}>{children}</PageMenuContext.Provider>
+      <SupportSessionBanner />
     </div>
   );
 }
