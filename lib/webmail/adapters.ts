@@ -90,6 +90,7 @@ export interface ApiSettings {
   undo_send_enabled: boolean;
   undo_send_seconds: number;
   storage: { used_mb: number; quota_mb: number; percentage: number | null };
+  support_session?: { access_id: string; ends_at: string } | null;
 }
 
 export interface ApiFolder {
@@ -220,6 +221,7 @@ export function toSettings(s: ApiSettings): WebmailSettings {
       quotaMb: s.storage?.quota_mb ?? 0,
       percentage: s.storage?.percentage ?? null,
     },
+    supportSession: s.support_session ? { endsAt: s.support_session.ends_at } : null,
   };
 }
 

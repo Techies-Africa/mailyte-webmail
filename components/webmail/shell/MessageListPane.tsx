@@ -31,6 +31,7 @@ import Menu from '@/components/ui/Menu';
 import { FilterPill } from '@/components/ui/Pill';
 import MessageRow from './MessageRow';
 import StorageBanner from './StorageBanner';
+import SupportSessionBanner from './SupportSessionBanner';
 import WebmailEmptyState from '../WebmailEmptyState';
 import { LIST_PANE_ID, SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 
@@ -414,6 +415,7 @@ export default function MessageListPane({
       )}
 
       <StorageBanner />
+      <SupportSessionBanner />
 
       {error && (
         <div className="flex shrink-0 items-center justify-between gap-3 bg-destructive/10 px-3.5 py-2 text-[12px] text-destructive">
