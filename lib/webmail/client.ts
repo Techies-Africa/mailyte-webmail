@@ -5,6 +5,7 @@
 
 import type {
   ApiContact,
+  ApiDelivery,
   ApiFolder,
   ApiMessageDetail,
   ApiMessageSummary,
@@ -475,6 +476,18 @@ export function getMessage(id: string, onUnauthorized: () => void) {
   );
 }
 
+/**
+ * What happened to a message this mailbox sent. An optional extra: any failure
+ * (404 from a server without it, 503, a timeout) just means nothing is shown.
+ */
+export function getMessageDelivery(id: string, onUnauthorized: () => void) {
+  return call<ApiDelivery>(
+    `/api/webmail/messages/${encodeURIComponent(id)}/delivery`,
+    { signal: AbortSignal.timeout(10_000) },
+    onUnauthorized,
+  );
+}
+
 function messageAction(
   id: string,
   action: string,
@@ -764,6 +777,9 @@ export function updateSettings(
     display_density?: "comfortable" | "compact";
     undo_send_enabled?: boolean;
     undo_send_seconds?: number;
+    /** Only sent when the server offered them (see WebmailSettings.trackOpens). */
+    track_opens?: boolean;
+    track_clicks?: boolean;
   },
   onUnauthorized: () => void,
 ) {

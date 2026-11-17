@@ -72,7 +72,7 @@ export default function MoveEmailModal({
           There is nowhere else to move this — create a folder first.
         </p>
       ) : (
-        <div className="thin-scroll max-h-72 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+        <div className="max-h-72 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
           {targets.map((folder) => {
             const isOn = selected === folder.name;
             return (

@@ -114,7 +114,7 @@ export default function WebmailSettingsPage() {
         })}
       </Sidebar>
 
-      <main className="thin-scroll flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-card px-4 py-3 sm:px-8">
           <IconButton
             label="Menu"

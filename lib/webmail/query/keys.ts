@@ -28,6 +28,8 @@ export const qk = {
   threads: ['mb', 'thread'] as const,
   thread: (id: string) => ['mb', 'thread', id] as const,
   summary: (id: string) => ['mb', 'summary', id] as const,
+  /** What happened to a message this mailbox sent (delivery, opens, clicks, spam score). */
+  delivery: (id: string) => ['mb', 'delivery', id] as const,
 
   accounts: ['browser', 'accounts'] as const,
   /** Every signed-in mailbox's newest unread inbox mail: the new-mail notifier's poll. */

@@ -363,7 +363,7 @@ export default function Sidebar({
                   </span>
                 </div>
 
-                <div className="thin-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   {others.length > 0 && (
                     <div className="border-b border-border p-1.5">
                       <div className="px-2 pb-1 pt-1 font-mono text-[9.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">

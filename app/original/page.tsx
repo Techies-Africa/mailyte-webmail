@@ -203,7 +203,7 @@ function OriginalView() {
           {raw === null && !error ? (
             <p className="px-5 py-8 text-sm text-muted-foreground">Loading the original…</p>
           ) : (
-            <pre className="thin-scroll max-h-[70dvh] overflow-auto whitespace-pre-wrap break-all px-5 py-4 font-mono text-[12px] leading-[1.6]">
+            <pre className="max-h-[70dvh] overflow-auto whitespace-pre-wrap break-all px-5 py-4 font-mono text-[12px] leading-[1.6]">
               {raw ?? ''}
             </pre>
           )}

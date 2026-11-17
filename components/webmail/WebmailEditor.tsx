@@ -427,7 +427,7 @@ export default function WebmailEditor({
           {errorRow}
         </>
       )}
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <EditorContent editor={editor} />
       </div>
       {mentionPopup && <MentionMenu popup={mentionPopup} />}

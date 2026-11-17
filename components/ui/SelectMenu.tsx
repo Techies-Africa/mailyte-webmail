@@ -341,7 +341,7 @@ export default function SelectMenu({
             role="listbox"
             aria-label={label}
             // relative: the rows' offsetTop is measured from the list, for the scroll above.
-            className="thin-scroll relative max-h-[min(22rem,calc(100dvh-8rem))] overflow-y-auto p-1"
+            className="relative max-h-[min(22rem,calc(100dvh-8rem))] overflow-y-auto p-1"
           >
             {options.map((option, index) => {
               const isSelected = index === selectedIndex;
