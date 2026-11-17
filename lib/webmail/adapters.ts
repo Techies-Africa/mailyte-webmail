@@ -7,8 +7,13 @@
 // an absent preview renders as no preview, never as invented text.
 
 import type {
+  DeliveryStatus,
+  SpamReason,
+  SpamVerdict,
   WebmailAttachment,
   WebmailContact,
+  WebmailDelivery,
+  WebmailEngagement,
   WebmailFolder,
   WebmailSettings,
   WebmailListItem,
@@ -89,6 +94,9 @@ export interface ApiSettings {
   display_density: 'comfortable' | 'compact';
   undo_send_enabled: boolean;
   undo_send_seconds: number;
+  /** Sent only by a server that offers per-mailbox tracking (and has it switched on). */
+  track_opens?: boolean;
+  track_clicks?: boolean;
   storage: { used_mb: number; quota_mb: number; percentage: number | null };
   support_session?: { access_id: string; ends_at: string } | null;
 }
@@ -216,12 +224,103 @@ export function toSettings(s: ApiSettings): WebmailSettings {
     // Off unless the holder turned it on -- the delay is paid on every send.
     undoSendEnabled: s.undo_send_enabled ?? false,
     undoSendSeconds: s.undo_send_seconds ?? 5,
+    // Left out entirely (not false) when the server does not send them: that
+    // is how the settings page knows not to offer switches nothing would honour.
+    ...(typeof s.track_opens === 'boolean'
+      ? { trackOpens: s.track_opens, trackClicks: s.track_clicks === true }
+      : {}),
     storage: {
       usedMb: s.storage?.used_mb ?? 0,
       quotaMb: s.storage?.quota_mb ?? 0,
       percentage: s.storage?.percentage ?? null,
     },
     supportSession: s.support_session ? { endsAt: s.support_session.ends_at } : null,
+  };
+}
+
+/** `GET /mailbox/messages/{id}/delivery`. Every field optional: a field this build does not know is ignored. */
+export interface ApiDelivery {
+  tracked?: { opens?: boolean; clicks?: boolean } | null;
+  recipients?: { email?: string; status?: string }[] | null;
+  /** How many recipients the message had; more than `recipients` when the list was cut. */
+  recipients_total?: number;
+  opens?: ApiEngagement | null;
+  clicks?: (ApiEngagement & { links?: string[] | null }) | null;
+  spam?: {
+    score?: number;
+    verdict?: string;
+    reasons?: { rule?: string; kind?: string; plain?: string; fix?: string }[] | null;
+  } | null;
+}
+
+interface ApiEngagement {
+  count?: number;
+  first_at?: string | null;
+  last_at?: string | null;
+}
+
+const DELIVERY_STATUSES: readonly DeliveryStatus[] = [
+  'bounced',
+  'rejected',
+  'complained',
+  'clicked',
+  'opened',
+  'delivered',
+  'deferred',
+  'pending',
+];
+const SPAM_VERDICTS: readonly SpamVerdict[] = ['good', 'fair', 'poor'];
+const SPAM_KINDS: readonly SpamReason['kind'][] = ['content', 'setup', 'sender'];
+
+function toDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toEngagement(e: ApiEngagement | null | undefined): WebmailEngagement | null {
+  if (!e || typeof e.count !== 'number' || e.count < 1) return null;
+  return { count: e.count, firstAt: toDate(e.first_at), lastAt: toDate(e.last_at) };
+}
+
+export function toDelivery(d: ApiDelivery): WebmailDelivery {
+  const clicks = toEngagement(d.clicks);
+  const score = d.spam?.score;
+  const verdict = SPAM_VERDICTS.find((v) => v === d.spam?.verdict);
+  const recipients = (d.recipients ?? [])
+    .filter((r) => typeof r.email === 'string' && r.email !== '')
+    .map((r) => ({
+      email: r.email as string,
+      // An unknown word from a newer server reads as "pending", never as a made-up state.
+      status: DELIVERY_STATUSES.find((s) => s === r.status) ?? 'pending',
+    }));
+
+  return {
+    trackedOpens: d.tracked?.opens === true,
+    trackedClicks: d.tracked?.clicks === true,
+    recipients,
+    recipientsTotal:
+      typeof d.recipients_total === 'number' && d.recipients_total > recipients.length
+        ? d.recipients_total
+        : recipients.length,
+    opens: toEngagement(d.opens),
+    clicks: clicks ? { ...clicks, links: (d.clicks?.links ?? []).filter((l) => typeof l === 'string') } : null,
+    // No score, or a verdict we cannot place: show no spam line at all.
+    spam:
+      typeof score === 'number' && Number.isFinite(score) && verdict
+        ? {
+            score,
+            verdict,
+            reasons: (d.spam?.reasons ?? [])
+              .filter((r) => typeof r.plain === 'string' && r.plain !== '')
+              .map((r) => ({
+                rule: r.rule ?? '',
+                kind: SPAM_KINDS.find((k) => k === r.kind) ?? 'content',
+                plain: r.plain as string,
+                fix: r.fix ?? '',
+              })),
+          }
+        : null,
   };
 }
 

@@ -125,12 +125,64 @@ export interface WebmailSettings {
   /** Undo-send: opt-in, because the delay applies to every message sent. */
   undoSendEnabled: boolean;
   undoSendSeconds: number;
+  /**
+   * Track opens / clicks on the mail this mailbox sends. ABSENT (undefined)
+   * when the mail server does not offer the feature -- an older server, or
+   * one with it switched off -- which is the cue to show no switches at all.
+   * Off unless the holder turned them on.
+   */
+  trackOpens?: boolean;
+  trackClicks?: boolean;
   storage: { usedMb: number; quotaMb: number; percentage: number | null };
   /**
    * Set only when Mailyte staff opened this mailbox to look into a problem
    * (a one-hour support session); null for the holder's own sign-in.
    */
   supportSession: { endsAt: string } | null;
+}
+
+/**
+ * What happened to a message the mailbox sent. The statuses are the words
+ * Mailyte's dashboard (Email Activity) uses, strongest first.
+ */
+export type DeliveryStatus =
+  | 'bounced'
+  | 'rejected'
+  | 'complained'
+  | 'clicked'
+  | 'opened'
+  | 'delivered'
+  | 'deferred'
+  | 'pending';
+
+export type SpamVerdict = 'good' | 'fair' | 'poor';
+
+/** What pushed a spam score up, and where the fix lives. */
+export interface SpamReason {
+  rule: string;
+  /** content = the email itself, setup = the domain's DNS, sender = From name/address. */
+  kind: 'content' | 'setup' | 'sender';
+  plain: string;
+  fix: string;
+}
+
+export interface WebmailEngagement {
+  count: number;
+  firstAt: Date | null;
+  lastAt: Date | null;
+}
+
+export interface WebmailDelivery {
+  /** What was switched on when the message went; both false = tracking was off. */
+  trackedOpens: boolean;
+  trackedClicks: boolean;
+  recipients: { email: string; status: DeliveryStatus }[];
+  /** The real number of recipients: more than `recipients.length` when a long list was cut. */
+  recipientsTotal: number;
+  opens: WebmailEngagement | null;
+  clicks: (WebmailEngagement & { links: string[] }) | null;
+  /** Null until the filter's score has been recorded. */
+  spam: { score: number; verdict: SpamVerdict; reasons: SpamReason[] } | null;
 }
 
 export interface WebmailFolder {

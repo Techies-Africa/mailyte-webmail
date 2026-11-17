@@ -165,7 +165,7 @@ export default function CalendarPanel({ open, onClose, onLeave }: CalendarPanelP
             Nothing in the next {UPCOMING_DAYS} days
           </div>
         ) : (
-          <ul className="thin-scroll max-h-44 divide-y divide-border overflow-y-auto border-t border-border">
+          <ul className="max-h-44 divide-y divide-border overflow-y-auto border-t border-border">
             {upcoming.map((event) => {
               const start = new Date(event.start);
               return (

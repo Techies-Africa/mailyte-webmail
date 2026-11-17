@@ -273,7 +273,7 @@ function FilesScreen() {
         </div>
       </header>
 
-      <div className="thin-scroll flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto">
         {overviewShown && (
           <section aria-label="Overview" className="border-b border-border bg-pane px-3 py-3 sm:px-5 sm:py-4">
             {summary.data ? (
@@ -304,7 +304,7 @@ function FilesScreen() {
         {/* The filters, pinned while the list scrolls under them. */}
         <div className="sticky top-0 z-10 border-b border-border bg-card/95 px-3 pb-2 pt-2.5 backdrop-blur sm:px-5">
           {/* Scrolls sideways on a phone rather than wrapping into three rows. */}
-          <div className="thin-scroll -mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-1">
+          <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-1">
             <FilterPill active={kind === null} onClick={() => setKind(null)} className="shrink-0">
               All types
             </FilterPill>

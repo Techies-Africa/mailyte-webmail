@@ -83,7 +83,7 @@ export default function InvitationsPanel({ invitations, busy, onRespond, onDismi
       </div>
 
       {expanded && (
-        <ul id={listId} className="thin-scroll flex max-h-[min(22rem,40dvh)] flex-wrap gap-2.5 overflow-y-auto px-3 pb-3 sm:px-5">
+        <ul id={listId} className="flex max-h-[min(22rem,40dvh)] flex-wrap gap-2.5 overflow-y-auto px-3 pb-3 sm:px-5">
           {invitations.map((invitation) => {
             const start = new Date(invitation.start);
             const working = busy === invitation.id;

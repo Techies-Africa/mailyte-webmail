@@ -1307,6 +1307,8 @@ export function useMailbox() {
     openMessage,
     thread,
     loadingMessage,
+    /** The id of the message being fetched for the reading pane, or null. */
+    openingId,
     open,
     close,
     loadThreadMessage,

@@ -430,7 +430,7 @@ export default function MessageListPane({
       {/* A neighbouring page stands in, dimmed, while the asked-for one loads. */}
       <div
         ref={rowsRef}
-        className={`thin-scroll min-h-0 flex-1 overflow-y-auto transition-opacity ${isPlaceholderPage ? 'opacity-60' : ''}`}
+        className={`min-h-0 flex-1 overflow-y-auto transition-opacity ${isPlaceholderPage ? 'opacity-60' : ''}`}
       >
         {loadingList ? (
           <div>

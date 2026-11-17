@@ -1,7 +1,14 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
-import type { WebmailFolder, WebmailListItem } from '@/components/webmail/types';
-import { toFolder, toListItem, toMessage } from '@/lib/webmail/adapters';
-import { aiSummarize, getMessage, getThread, listFolders, listMessages } from '@/lib/webmail/client';
+import type { WebmailDelivery, WebmailFolder, WebmailListItem } from '@/components/webmail/types';
+import { toDelivery, toFolder, toListItem, toMessage } from '@/lib/webmail/adapters';
+import {
+  aiSummarize,
+  getMessage,
+  getMessageDelivery,
+  getThread,
+  listFolders,
+  listMessages,
+} from '@/lib/webmail/client';
 import { ApiError, unwrap } from './errors';
 import { qk } from './keys';
 import { PAGE_SIZE, sameListOtherPage, type ListParams } from './listParams';
@@ -23,6 +30,40 @@ export const POLL_MS = 45_000;
  * another tab is exactly when a code was just sent), but not twice in a few seconds.
  */
 export const RETURN_CHECK_MIN_MS = 5_000;
+
+/**
+ * Delivery, opens, clicks and spam score of a sent message.
+ *
+ * An extra beside the message: no retry (a 404 means the server has no such
+ * feature, a 503 will say the same in a second), and the reader shows nothing
+ * on any failure. Coming back to the tab asks again, so a message opened a
+ * minute ago shows the opens that have arrived since.
+ *
+ * A message sent seconds ago has no delivery rows yet (the log trails the send)
+ * or a recipient still pending. While that is so it asks again every 15 s, at
+ * most 12 times (about three minutes), so the panel moves on by itself without
+ * ever polling for good a message whose rows never come.
+ */
+const INFLIGHT_POLL_MS = 15_000;
+const INFLIGHT_POLL_LIMIT = 12;
+
+export function deliveryQuery(id: string, onUnauthorized: () => void) {
+  return queryOptions({
+    queryKey: qk.delivery(id),
+    queryFn: async (): Promise<WebmailDelivery | null> => {
+      const data = unwrap(await getMessageDelivery(id, onUnauthorized));
+      return data ? toDelivery(data) : null;
+    },
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const inFlight = !!data && (data.recipients.length === 0 || data.recipients.some((r) => r.status === 'pending'));
+      return inFlight && query.state.dataUpdateCount < INFLIGHT_POLL_LIMIT ? INFLIGHT_POLL_MS : false;
+    },
+  });
+}
 
 export function foldersQuery(queryClient: QueryClient, onUnauthorized: () => void) {
   return queryOptions({

@@ -46,9 +46,26 @@ import ThreadSummaryModal from '../modals/ThreadSummaryModal';
 import ConfirmModal from '../modals/ConfirmModal';
 import LabelPickerDialog from '../modals/LabelPickerDialog';
 import QuickReply, { type QuickReplyDraft } from './QuickReply';
+import DeliveryStatus from './DeliveryStatus';
+import ReaderSkeleton from './ReaderSkeleton';
+import { hasTrackableLinks } from '@/lib/webmail/links';
 import { withConversationSubject } from '../composeQuoting';
 import { Tag } from '@/components/ui/Pill';
 import { labelTag } from '@/lib/webmail/tags';
+
+/** True once `flag` has stayed true for `ms`; false the moment it clears. */
+function useAfterDelay(flag: boolean, ms: number): boolean {
+  const [elapsed, setElapsed] = useState(false);
+  useEffect(() => {
+    if (!flag) return;
+    const timer = setTimeout(() => setElapsed(true), ms);
+    return () => {
+      clearTimeout(timer);
+      setElapsed(false);
+    };
+  }, [flag, ms]);
+  return flag && elapsed;
+}
 
 export type QuickReplyMode = 'reply' | 'replyAll' | null;
 
@@ -157,23 +174,16 @@ export default function ReadingPane({
   onDeleteForever,
   replySignal,
 }: ReadingPaneProps) {
-  const { openMessage: message, loadingMessage } = mailbox;
+  const { openMessage: message, loadingMessage, openingId, messages } = mailbox;
+  const slow = useAfterDelay(loadingMessage, 90);
 
-  if (loadingMessage && !message) {
-    return (
-      // Over the list on a phone, where the list fills the width: in the row
-      // beside it this spinner had no width at all, and a tapped message
-      // looked like nothing had happened until it arrived.
-      <section
-        aria-label="Message"
-        aria-busy="true"
-        className={`flex min-w-0 flex-1 flex-col bg-pane ${isMobile ? 'absolute inset-0 z-20' : ''}`}
-      >
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
-      </section>
-    );
+  // The message you clicked is still on its way. Show IT loading -- over the
+  // list on a phone, where the list fills the width -- rather than leaving the
+  // previous message on screen under the new row's highlight. With nothing open
+  // yet this is immediate; over an open message it waits ~90 ms, so a message
+  // that arrives at once (prefetched on hover) never flickers a skeleton.
+  if (loadingMessage && (!message || (slow && message.id !== openingId))) {
+    return <ReaderSkeleton row={messages.find((m) => m.id === openingId) ?? null} isMobile={isMobile} />;
   }
 
   if (!message) {
@@ -269,6 +279,10 @@ function MessageReader({
   const [threadState, setThreadState] = useState<ThreadState>(EMPTY_THREAD_STATE);
 
   const scheduled = sendTimes[message.id];
+  // Delivery, opens, clicks and spam score are shown for mail the mailbox sent.
+  const inSent = folders.find((f) => f.name === message.folder)?.role === 'sent';
+  // Whether the email has any link to click: with none, the panel has no Clicked step.
+  const hasLinks = useMemo(() => hasTrackableLinks(message.body, message.bodyIsHtml), [message.body, message.bodyIsHtml]);
   const earlier = useMemo(
     () => thread.filter((m) => m.id !== message.id).sort(byNewestFirst),
     [thread, message.id],
@@ -568,8 +582,9 @@ function MessageReader({
       {/* Body */}
       {/* scrollbar-gutter: a scrollbar appearing or going would change the
           message frame's width, and a wide email re-fits to every width. */}
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable] sm:px-6 sm:py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable] sm:px-6 sm:py-5">
         <div className="mx-auto max-w-[760px]">
+          {inSent && <DeliveryStatus messageId={message.id} hasLinks={hasLinks} />}
           {scheduled && (
             <div
               className={`mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3.5 py-2.5 text-[13px] ${

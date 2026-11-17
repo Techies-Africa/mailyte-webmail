@@ -143,7 +143,7 @@ export default function LabelPickerDialog({ isOpen, onClose, known, current, wha
           No labels yet. Make one below.
         </p>
       ) : (
-        <ul className="thin-scroll mb-3 max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+        <ul className="mb-3 max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
           {names.map((name) => {
             const now = state.get(name) ?? 'none';
             return (

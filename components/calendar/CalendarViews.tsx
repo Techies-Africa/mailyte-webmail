@@ -267,7 +267,7 @@ export function MonthView({ events, anchor, colour, onSelect, onCreateAt }: View
           phone in landscape) the weeks scroll rather than squeeze. */}
       <div
         ref={gridRef}
-        className="thin-scroll grid min-h-0 flex-1 auto-rows-[minmax(5.5rem,1fr)] grid-cols-7 overflow-y-auto"
+        className="grid min-h-0 flex-1 auto-rows-[minmax(5.5rem,1fr)] grid-cols-7 overflow-y-auto"
       >
         {days.map((day) => {
           const dayEvents = eventsOn(events, day);
@@ -467,7 +467,7 @@ export function WeekView({ events, anchor, colour, onSelect, onCreateAt }: ViewP
           ))}
         </div>
 
-        <div ref={gridRef} className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+        <div ref={gridRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]">
             <div>
               {hours.map((hour) => (
@@ -663,7 +663,7 @@ export function AgendaView({ events, colour, onSelect, onCreate }: AgendaProps) 
   }
 
   return (
-    <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-3 pb-10 sm:px-6">
         {groups.map(([key, dayEvents], index) => {
           const day = new Date(`${key}T00:00:00`);

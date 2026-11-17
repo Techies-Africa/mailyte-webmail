@@ -79,7 +79,7 @@ export default function ContactsPanel({ open, onClose, onLeave, contacts, onWrit
         </div>
       </div>
 
-      <div className="thin-scroll max-h-[260px] overflow-y-auto p-1.5">
+      <div className="max-h-[260px] overflow-y-auto p-1.5">
         {book.length === 0 ? (
           <p className="px-3 py-6 text-center text-[12.5px] text-muted-foreground">
             No saved contacts yet. Add people in the address book and they appear here.

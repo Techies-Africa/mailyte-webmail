@@ -289,7 +289,7 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
         </p>
       )}
 
-      <div className="thin-scroll flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
           <p className="p-6 text-sm text-muted-foreground">Loading&hellip;</p>
         ) : shown.length === 0 ? (
