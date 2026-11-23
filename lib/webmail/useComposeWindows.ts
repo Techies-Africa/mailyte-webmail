@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ComposeMode, WebmailMessage } from '@/components/webmail/types';
 import type { ComposeLayout, ComposeWindow } from '@/components/webmail/compose/types';
+import type { FileLinkRef } from '@/components/webmail/compose/fileLinks';
 import { dockViewportNow, fitToViewport } from '@/components/webmail/compose/dockLayout';
 import { PANE_RESIZE_END_EVENT } from '@/lib/webmail/paneLayout';
 
@@ -34,6 +35,8 @@ export interface OpenComposeOptions {
   layout?: ComposeLayout;
   /** Files to start with: a message coming back from Undo or a failed send. */
   attachments?: File[];
+  /** Download links to start with: a resumed draft, a restored or returned message. */
+  fileLinks?: FileLinkRef[];
   /** The address it was being sent from, when not the person's own. */
   from?: string;
   /** initialBody already carries the quotation; do not add it again. */
@@ -127,6 +130,7 @@ export function useComposeWindows() {
             draftId: options.draftId,
             resumed: options.resumed,
             attachments: options.attachments,
+            fileLinks: options.fileLinks,
             from: options.from,
             quoteIncluded: options.quoteIncluded,
             restored: options.restored,

@@ -162,6 +162,8 @@ export default function WebmailInboxPage() {
           mode: 'compose',
           initialBody: message.body,
           draftId: item.id,
+          // Its files sent as download links come back with it.
+          fileLinks: message.fileLinks,
           resumed: {
             to: message.to.map((p) => p.email).join(', '),
             cc: message.cc.map((p) => p.email).join(', '),
@@ -191,6 +193,7 @@ export default function WebmailInboxPage() {
         initialBody: draft?.body ?? signatureSeed(mode) ?? undefined,
         // Files attached in the inline reply travel with it,
         attachments: draft?.attachments.length ? draft.attachments : undefined,
+        fileLinks: draft?.fileLinks?.length ? draft.fileLinks : undefined,
         // and so do its To, Cc and Bcc, edited there or not.
         resumed: draft
           ? { to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: replySubject(replyTo.subject) }
@@ -244,6 +247,7 @@ export default function WebmailInboxPage() {
           draftId: payload.draftId ?? context.draftId,
           resumed: { to: payload.to, cc: payload.cc, bcc: payload.bcc, subject: payload.subject },
           attachments: payload.attachments,
+          fileLinks: payload.fileLinks,
           from: payload.from,
           quoteIncluded: true,
           restored: true,
@@ -272,6 +276,7 @@ export default function WebmailInboxPage() {
         resumed: { to: snapshot.to, cc: snapshot.cc, bcc: snapshot.bcc, subject: snapshot.subject },
         from: snapshot.from,
         threading: snapshot.threading,
+        fileLinks: Array.isArray(snapshot.fileLinks) ? snapshot.fileLinks : undefined,
         quoteIncluded: true,
         restored: true,
       });

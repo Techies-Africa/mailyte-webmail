@@ -11,6 +11,7 @@ import { moveBetween } from '../recipients';
 import ConfirmModal from '../modals/ConfirmModal';
 import Button from '@/components/ui/Button';
 import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from '../compose/attachments';
+import { FileLinkChips, type FileLinkRef } from '../compose/fileLinks';
 import {
   ccWithMention,
   mentionCandidates,
@@ -26,6 +27,8 @@ import { useRevealInView } from './useRevealInView';
 export type QuickReplyDraft = {
   body: string;
   attachments: File[];
+  /** Download links already uploaded here (compose/fileLinks). */
+  fileLinks?: FileLinkRef[];
   to: string;
   cc: string;
   bcc: string;
@@ -122,7 +125,10 @@ export default function QuickReply({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // Same picker, drop, limits and chips as the full window; the card's own
   // error bar shows what it rejects.
-  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps } = useAttachments([], setError);
+  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps, links, linkTtlDays } = useAttachments(
+    [],
+    setError,
+  );
 
   const [rootRef, reveal] = useRevealInView<HTMLDivElement>();
   const editorRef = useRef<Editor | null>(null);
@@ -161,9 +167,13 @@ export default function QuickReply({
   const hasText = body.replace(/<[^>]*>/g, '').trim().length > 0 || /<img\b/i.test(body);
   // Worth a question before it is thrown away: words beyond the signature it
   // opened with, or a file.
-  const edited = body !== signatureSeed || attachments.length > 0;
+  const edited = body !== signatureSeed || attachments.length > 0 || links.items.length > 0;
 
   const send = async () => {
+    if (links.failed) {
+      setError("Some files didn't upload. Retry them or remove them, then send.");
+      return;
+    }
     setSending(true);
     setError(null);
     try {
@@ -177,6 +187,7 @@ export default function QuickReply({
           inReplyTo: message.messageIdHeader ?? undefined,
           references: message.references ?? undefined,
           attachments,
+          fileLinks: links.ready.length ? links.ready : undefined,
         },
         mode,
       );
@@ -310,18 +321,23 @@ export default function QuickReply({
       />
 
       <AttachmentChips files={attachments} totalBytes={attachedBytes} onRemove={removeAt} />
+      <FileLinkChips items={links.items} ttlDays={linkTtlDays} onRemove={links.remove} onRetry={links.retry} />
 
       <div className="flex items-center gap-2 rounded-b-xl border-t border-border bg-pane px-3 py-2">
         {/* A file on its own is a reply worth sending: forwarding a document
-            back with nothing to add is normal. */}
+            back with nothing to add is normal. Send waits for uploads. */}
         <Button
           variant="primary"
           icon={<Send size={13} />}
           busy={sending}
-          disabled={(!hasText && attachments.length === 0) || !recipients.to.trim()}
+          disabled={
+            (!hasText && attachments.length === 0 && links.items.length === 0) ||
+            !recipients.to.trim() ||
+            links.busy
+          }
           onClick={requestSend}
         >
-          Send
+          {links.busy ? 'Uploading…' : 'Send'}
         </Button>
         <Button variant="ghost" onClick={() => (edited ? setConfirmDiscard(true) : onCancel())} disabled={sending}>
           Discard
@@ -333,7 +349,14 @@ export default function QuickReply({
           variant="ghost"
           icon={<Maximize2 size={12} />}
           collapseLabel
-          onClick={() => onExpand({ body: bodyRef.current, attachments, ...recipients })}
+          onClick={() => {
+            // The card goes away on expanding, and an upload with it.
+            if (links.busy) {
+              setError('Files are still uploading. Wait for them to finish, then open the full editor.');
+              return;
+            }
+            onExpand({ body: bodyRef.current, attachments, fileLinks: links.stored, ...recipients });
+          }}
           title="Schedule, or keep writing in a full window"
         >
           Open in full editor
