@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Paperclip, X } from 'lucide-react';
 import IconButton from '@/components/ui/IconButton';
 import { isAcceptedImage } from '@/lib/webmail/images';
+import { useCapabilities } from '@/lib/webmail/query/accountQueries';
+import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { useFileLinks, type FileLinkRef } from './fileLinks';
 
 /** Matches SendMailboxMessageRequest's own limits. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -12,7 +15,8 @@ export const MAX_ATTACHMENTS = 20;
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 /** A drag that carries files from the desktop -- not text or a link moved inside the editor. */
@@ -59,14 +63,29 @@ function droppedFiles(data: DataTransfer): { files: File[]; folders: number } {
  * on screen, a file dropped beside it is refused rather than opened in the
  * tab, which would take the message being written with it.
  */
-export function useAttachments(initial: File[], onError: (message: string | null) => void) {
+export function useAttachments(
+  initial: File[],
+  onError: (message: string | null) => void,
+  initialLinks?: FileLinkRef[],
+) {
   const [attachments, setAttachments] = useState<File[]>(initial);
   const attachedBytes = attachments.reduce((sum, file) => sum + file.size, 0);
+
+  // Files too big to attach go as download links when the server offers
+  // them (compose/fileLinks). Off, or on an older server, every line below
+  // the `if (linking)` branch is exactly what it always was.
+  const linkCaps = useCapabilities().data?.file_links;
+  const linking = linkCaps?.enabled === true;
+  const links = useFileLinks(initialLinks, useUnauthorizedHandler());
 
   const addFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
     onError(null);
     const incoming = Array.from(files);
+    if (linking) {
+      addWithLinks(incoming);
+      return;
+    }
     const tooBig = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES);
     if (tooBig) {
       onError(`"${tooBig.name}" is ${formatBytes(tooBig.size)} — the limit is 25 MB per file.`);
@@ -81,6 +100,42 @@ export function useAttachments(initial: File[], onError: (message: string | null
       return;
     }
     setAttachments((prev) => [...prev, ...incoming]);
+  };
+
+  /**
+   * What fits stays an attachment, as before; a file that would take the
+   * attachments past their 25 MB (or their count) goes as a download link.
+   */
+  const addWithLinks = (incoming: File[]) => {
+    const maxFile = linkCaps?.max_file_bytes ?? MAX_ATTACHMENT_BYTES;
+    const maxLinks = linkCaps?.max_per_message ?? 10;
+    const tooBig = incoming.find((f) => f.size > maxFile);
+    if (tooBig) {
+      onError(`"${tooBig.name}" is ${formatBytes(tooBig.size)}. The limit is ${formatBytes(maxFile)} per file.`);
+      return;
+    }
+    const toAttach: File[] = [];
+    const toLink: File[] = [];
+    let room = MAX_ATTACHMENT_BYTES - attachedBytes;
+    for (const file of incoming) {
+      if (file.size <= room && attachments.length + toAttach.length < MAX_ATTACHMENTS) {
+        toAttach.push(file);
+        room -= file.size;
+      } else {
+        toLink.push(file);
+      }
+    }
+    const empty = toLink.find((f) => f.size === 0);
+    if (empty) {
+      onError(`"${empty.name}" is empty.`);
+      return;
+    }
+    if (links.items.length + toLink.length > maxLinks) {
+      onError(`You can send up to ${maxLinks} files as download links in one message.`);
+      return;
+    }
+    if (toAttach.length) setAttachments((prev) => [...prev, ...toAttach]);
+    links.add(toLink);
   };
 
   const removeAt = (index: number) => setAttachments((prev) => prev.filter((_, i) => i !== index));
@@ -138,7 +193,7 @@ export function useAttachments(initial: File[], onError: (message: string | null
     },
   };
 
-  return { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps };
+  return { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps, links, linkTtlDays: linkCaps?.ttl_days };
 }
 
 /**

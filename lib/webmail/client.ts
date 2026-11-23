@@ -225,6 +225,43 @@ export interface ApiCapabilities {
    * three permissions POST /messages/send accepts a `from` for.
    */
   shared_mailboxes?: SharedMailbox[];
+  /**
+   * Files too big to attach go as a download link. Absent (an older server)
+   * or `enabled: false` means attachments keep their 25 MB limit and nothing
+   * else changes.
+   */
+  file_links?: FileLinksCapability;
+}
+
+export interface FileLinksCapability {
+  enabled: boolean;
+  max_file_bytes?: number;
+  quota_bytes?: number;
+  used_bytes?: number;
+  ttl_days?: number;
+  max_per_message?: number;
+  part_bytes?: number;
+}
+
+export type FileLinkStatus = 'uploading' | 'scanning' | 'ready' | 'blocked' | 'removed' | 'expired' | 'failed';
+
+/** One file shared as a download link, as the mail server describes it. */
+export interface ApiFileLink {
+  id: string;
+  name: string;
+  size: number;
+  content_type: string;
+  status: FileLinkStatus;
+  /** clean | infected | too_big | unscanned | pending */
+  scan: string;
+  url: string | null;
+  part_bytes: number;
+  part_count: number;
+  created_at: string | null;
+  sent_at: string | null;
+  expires_at: string | null;
+  download_count: number;
+  removed_reason: string | null;
 }
 
 export interface SharedMailbox {
@@ -627,6 +664,12 @@ export interface SendPayload {
   from?: string;
   /** Addresses @mentioned in the body; the server writes X-Mailyte-Mentions. */
   mentions?: string[];
+  /**
+   * Files shared as download links, by id. The server adds the block with
+   * their links to the message, and refuses the send while one is still
+   * uploading or being checked.
+   */
+  file_links?: string[];
 }
 
 export interface SendResult {
@@ -675,6 +718,7 @@ export function sendMessage(
   if (payload.send_at) form.append("send_at", payload.send_at);
   if (payload.from) form.append("from", payload.from);
   for (const address of payload.mentions ?? []) form.append("mentions[]", address);
+  for (const id of payload.file_links ?? []) form.append("file_links[]", id);
   for (const file of attachments) form.append("attachments[]", file, file.name);
 
   return call<SendResult>(
@@ -729,6 +773,8 @@ export interface DraftPayload {
   references?: string;
   /** The revision this one supersedes, removed once the new one is stored. */
   replace_id?: string;
+  /** Files shared as download links; kept on the draft so resuming it brings them back. */
+  file_links?: string[];
 }
 
 /**
@@ -749,6 +795,54 @@ export function saveDraft(payload: DraftPayload, onUnauthorized: () => void) {
     },
     onUnauthorized,
   );
+}
+
+// --- Files shared as download links ---------------------------------------------
+//
+// The file itself never passes through here: these only start, sign, finish
+// and describe the upload, which goes from the browser straight to storage
+// (lib/webmail/fileLinkUpload.ts).
+
+const FILE_LINKS = "/api/webmail/file-links";
+
+function postJson(body: unknown): RequestInit {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export function createFileLink(
+  file: { name: string; size: number; content_type: string },
+  onUnauthorized: () => void,
+) {
+  return call<ApiFileLink>(FILE_LINKS, postJson(file), onUnauthorized);
+}
+
+export function signFileLinkParts(id: string, partNumbers: number[], onUnauthorized: () => void) {
+  return call<{ urls: Record<string, string>; expires_in: number }>(
+    `${FILE_LINKS}/${encodeURIComponent(id)}/parts`,
+    postJson({ part_numbers: partNumbers }),
+    onUnauthorized,
+  );
+}
+
+export function completeFileLink(
+  id: string,
+  parts: { part_number: number; etag: string }[],
+  onUnauthorized: () => void,
+) {
+  return call<ApiFileLink>(`${FILE_LINKS}/${encodeURIComponent(id)}/complete`, postJson({ parts }), onUnauthorized);
+}
+
+export function getFileLink(id: string, onUnauthorized: () => void) {
+  return call<ApiFileLink>(`${FILE_LINKS}/${encodeURIComponent(id)}`, undefined, onUnauthorized);
+}
+
+export function listFileLinks(onUnauthorized: () => void) {
+  return call<{ files: ApiFileLink[] }>(FILE_LINKS, undefined, onUnauthorized);
+}
+
+/** Stop sharing: the link stops working for everyone who has it. */
+export function removeFileLink(id: string, onUnauthorized: () => void) {
+  return call<ApiFileLink>(`${FILE_LINKS}/${encodeURIComponent(id)}`, { method: "DELETE" }, onUnauthorized);
 }
 
 export function discardDraft(id: string, onUnauthorized: () => void) {

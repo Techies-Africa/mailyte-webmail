@@ -124,6 +124,8 @@ export default function OutboxProvider({ children }: { children: React.ReactNode
             // surface can forget to pass them and a pill deleted before
             // sending is not announced.
             mentions: mentionedAddresses(payload.body),
+            // Files sent as download links: the server adds their block.
+            file_links: payload.fileLinks?.length ? payload.fileLinks.map((link) => link.id) : undefined,
           },
           payload.attachments ?? [],
           onUnauthorized,

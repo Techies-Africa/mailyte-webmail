@@ -1146,6 +1146,7 @@ export function useMailbox() {
           in_reply_to: payload.inReplyTo,
           references: payload.references,
           replace_id: replaceId,
+          file_links: payload.fileLinks?.length ? payload.fileLinks.map((link) => link.id) : undefined,
         },
         handleUnauthorized,
       );
