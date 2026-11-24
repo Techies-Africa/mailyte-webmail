@@ -87,7 +87,7 @@ const GROUPS: Group[] = [
     id: 'layout',
     who: 'you',
     title: 'Use a simpler layout',
-    match: /^(HAS_DATA_URI|EXT_CSS|URI_COUNT_ODD|MIME_HTML_ONLY\w*|R_PARTS_DIFFER)$/,
+    match: /^(HAS_DATA_URI|EXT_CSS)$/,
   },
   {
     id: 'urgent',
@@ -97,12 +97,22 @@ const GROUPS: Group[] = [
   },
 ];
 
+/**
+ * Rules about how the message is PACKAGED (no plain-text twin, the two versions
+ * listing different links, which the open-tracking picture itself causes). The
+ * person writing cannot change any of them, and blaming their "layout" for it
+ * was wrong: a one-line email got "Use a simpler layout". They still count in
+ * the score; they just are not advice.
+ */
+const NOT_ACTIONABLE = /^(URI_COUNT_ODD|MIME_HTML_ONLY\w*|R_PARTS_DIFFER)$/;
+
 /** Reasons grouped into things to do, in the order the server ranked them. */
 export function spamAdvice(reasons: SpamReason[]): SpamAdvice[] {
   const byId = new Map<string, SpamAdvice>();
   const order: string[] = [];
 
   for (const reason of reasons) {
+    if (NOT_ACTIONABLE.test(reason.rule)) continue;
     const known = GROUPS.find((g) => g.match.test(reason.rule));
     // A rule we do not know: the server's own wording, never dropped. Setup
     // problems are always for the admin, whatever they are called.
