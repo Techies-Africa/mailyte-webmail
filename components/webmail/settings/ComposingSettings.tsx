@@ -169,7 +169,8 @@ export default function ComposingSettings({ settings, onUnauthorized, onDirty, o
                 <dt className="font-semibold text-foreground">Opens are a good guide, not exact</dt>
                 <dd>
                   Some email apps hide images, so an open can be missed. Others load images automatically (Apple Mail
-                  does, even if nobody reads the email), so an open can be counted by mistake. &ldquo;None
+                  does, even if nobody reads the email), so an open can be counted by mistake. We ignore anything
+                  in the first 10 seconds after you send, which is almost always a mail service checking. &ldquo;None
                   recorded&rdquo; does not mean the email was ignored.
                 </dd>
               </div>

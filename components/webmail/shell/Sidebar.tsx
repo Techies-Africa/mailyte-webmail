@@ -31,6 +31,7 @@ import { qk } from '@/lib/webmail/query/keys';
 import { SIDEBAR_ID } from '@/lib/webmail/paneLayout';
 import { isTypingTarget } from '@/lib/webmail/useKeyboardShortcuts';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
+import AppLinks from './AppLinks';
 import PaneResizeHandle from './PaneResizeHandle';
 
 type SidebarProps = {
@@ -286,6 +287,7 @@ export default function Sidebar({
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5">{children}</nav>
 
         <div className="relative mx-2.5 mt-2 shrink-0">
+          {!rail && <AppLinks />}
           <button
             type="button"
             onClick={() => setTheme(isDark ? 'light' : 'dark')}

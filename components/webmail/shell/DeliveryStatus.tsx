@@ -165,7 +165,7 @@ function buildSteps(d: WebmailDelivery, showClicks: boolean): Step[] {
   } else if (status === 'bounced') {
     steps.push({ key: 'delivered', label: 'Not delivered', sub: 'Check the address', tone: 'danger', state: 'issue', icon: X });
   } else if (status === 'rejected') {
-    steps.push({ key: 'delivered', label: 'Refused', sub: 'Their server said no', tone: 'danger', state: 'issue', icon: Ban });
+    steps.push({ key: 'delivered', label: 'Refused', sub: 'It was not sent', tone: 'danger', state: 'issue', icon: Ban });
   } else {
     delivered = true;
     steps.push({ key: 'delivered', label: 'Delivered', tone: 'success', state: 'done', icon: Check });
@@ -175,9 +175,12 @@ function buildSteps(d: WebmailDelivery, showClicks: boolean): Step[] {
   // Where tracking was off they say so, and what happens next is simply
   // unknown after a failure (nothing can be opened that never arrived).
   const waiting = (tracked: boolean) => (!tracked ? 'Tracking off' : delivered ? 'None recorded' : undefined);
+  // A click proves the email was opened, even when the open itself was never recorded
+  // (images blocked): the rail must not show a click beside an unopened email.
+  const seen = d.trackedOpens && d.opens ? d.opens : d.trackedClicks && d.clicks ? d.clicks : null;
   steps.push(
-    d.trackedOpens && d.opens
-      ? { key: 'opened', label: 'Opened', sub: times(d.opens.count), when: stamp(d.opens.lastAt), hint: d.opens.lastAt ? `Last opened ${stamp(d.opens.lastAt)}` : undefined, tone: 'success', state: 'done', icon: Eye }
+    seen
+      ? { key: 'opened', label: 'Opened', sub: seen === d.opens ? times(seen.count) : 'Via a link', when: stamp(seen === d.opens ? seen.lastAt : seen.firstAt), hint: seen === d.opens && seen.lastAt ? `Last opened ${stamp(seen.lastAt)}` : undefined, tone: 'success', state: 'done', icon: Eye }
       : {
           key: 'opened',
           label: 'Opened',
@@ -330,6 +333,11 @@ function Engagement({ data, showClicks }: { data: WebmailDelivery; showClicks: b
             Opened {times(data.opens.count)}
             {data.opens.lastAt ? <span className="font-normal opacity-80">· {last(data.opens.lastAt)}</span> : null}
           </Chip>
+        ) : showClicks && data.trackedClicks && data.clicks ? (
+          // A click proves it was opened, even with no open on record (images blocked).
+          <Chip tone="success" icon={Eye}>
+            Opened
+          </Chip>
         ) : (
           <Chip tone="muted" icon={Eye}>
             No opens recorded
@@ -473,7 +481,8 @@ function Spam({ spam }: { spam: NonNullable<WebmailDelivery['spam']> }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const v = VERDICT[spam.verdict];
-  const advice = spamAdvice(spam.reasons);
+  // An email the filters accept has nothing to fix: homework on a 1.0 is noise.
+  const advice = spam.verdict === 'good' ? [] : spamAdvice(spam.reasons);
   const shown = all ? advice : advice.slice(0, ADVICE_SHOWN);
 
   return (
@@ -503,12 +512,12 @@ function Spam({ spam }: { spam: NonNullable<WebmailDelivery['spam']> }) {
           </div>
 
           {advice.length === 0 ? (
-            <p className="text-[12.5px] text-muted-foreground">Nothing to fix.</p>
+            <p className="text-[12.5px] text-muted-foreground">
+              {spam.verdict === 'good' ? 'Nothing to fix.' : 'Nothing here that you can change in the email itself.'}
+            </p>
           ) : (
             <div>
-              <p className="mb-2 text-[12px] font-semibold text-foreground">
-                {spam.verdict === 'good' ? 'Small things you could improve' : 'How to fix it'}
-              </p>
+              <p className="mb-2 text-[12px] font-semibold text-foreground">How to fix it</p>
               <ul>
                 {shown.map((item) => (
                   <AdviceItem key={item.id} item={item} />
