@@ -61,6 +61,7 @@ docker run -p 3000:3000 -e MAILBOX_API_BASE_URL="https://mail.example.com/api/v1
 |---|---|---|
 | `MAILBOX_API_BASE_URL` | yes | Your mail server's API base, e.g. `https://mail.example.com/api/v1` |
 | `NEXT_PUBLIC_BRAND_NAME` | no | What the app calls itself. Default `Webmail`. When it is `Mailyte` the real lockup artwork is drawn; any other name is set beside the mark as text. Replace `public/mailyte-mark-*.png` to change the mark |
+| `NEXT_PUBLIC_APP_STORE_URL`, `NEXT_PUBLIC_PLAY_STORE_URL` | no | Where your mobile app is listed (https links, set at build time). Each one that is set adds its store icon to a quiet "Get the app" row at the bottom of the sidebar; leave both blank and the row is not shown |
 | `GOOGLE_ANALYTICS_ID` | no | Optional Google Analytics measurement ID for this deployment. Leave blank for self-hosted/community installs |
 | `CLARITY_PROJECT_ID` | no | Optional Microsoft Clarity project ID for this deployment. Leave blank for self-hosted/community installs |
 | `TURNSTILE_SITE_KEY` | no | Cloudflare Turnstile site key. Set it **and** `TURNSTILE_SECRET_KEY` to put a bot check on sign-in; leave both blank to turn it off |

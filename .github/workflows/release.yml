@@ -76,12 +76,14 @@ jobs:
           # format error" that never mentions architecture.
           platforms: linux/amd64,linux/arm64
           push: true
-          # Only the BRANDING is baked in here. MAILBOX_API_BASE_URL is
+          # Only the BRANDING (and the public store links) are baked in here. MAILBOX_API_BASE_URL is
           # deliberately absent: it is read at request time so one published
           # image serves every deployment.
           build-args: |
             NEXT_PUBLIC_BRAND_NAME=Mailyte
             NEXT_PUBLIC_BRAND_MARK=M
+            NEXT_PUBLIC_APP_STORE_URL=https://apps.apple.com/app/id6812265223
+            NEXT_PUBLIC_PLAY_STORE_URL=https://play.google.com/store/apps/details?id=com.mailyte.app
           # Lowercase is mandatory -- ghcr rejects uppercase in an image
           # reference, and the org is spelled Techies-Africa on GitHub.
           tags: |
