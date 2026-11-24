@@ -1,9 +1,12 @@
 import type { ComposeDraft, ComposeMode, WebmailMessage } from '../types';
+import type { FileLinkRef } from './fileLinks';
 
 export type ComposePayload = ComposeDraft & {
   inReplyTo?: string;
   references?: string;
   attachments?: File[];
+  /** Files too big to attach, sent as download links (compose/fileLinks). */
+  fileLinks?: FileLinkRef[];
   /** ISO-8601 instant for a scheduled send. Absent means send now. */
   sendAt?: string;
   /** Send as a shared mailbox address the session may send from. */
@@ -40,6 +43,8 @@ export interface ComposeWindow {
   resumed?: { to: string; cc: string; bcc: string; subject: string };
   /** Files, From and flags for a message put back by Undo or Reopen; see OpenComposeOptions. */
   attachments?: File[];
+  /** Download links a resumed draft, restored message or Undo brings back. */
+  fileLinks?: FileLinkRef[];
   from?: string;
   quoteIncluded?: boolean;
   restored?: boolean;

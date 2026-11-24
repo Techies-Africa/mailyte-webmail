@@ -29,6 +29,7 @@ import { useVisualViewport } from '@/lib/webmail/useVisualViewport';
 import { addBeforeSessionChange } from '@/lib/webmail/query/session';
 import { forgetSnapshot, useSnapshotWriter } from '@/lib/webmail/composeRecovery';
 import { AttachButton, AttachmentChips, DropOverlay, useAttachments } from './attachments';
+import { FileLinkChips } from './fileLinks';
 
 
 /** PRD F6: autosave every 30s + on close. */
@@ -188,10 +189,18 @@ export default function ComposeWindow({
   const [scheduling, setScheduling] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Picker, limits and chips shared with the inline reply (compose/attachments).
-  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps } = useAttachments(
+  const { attachments, attachedBytes, addFiles, removeAt, dragging, dropProps, links, linkTtlDays } = useAttachments(
     model.attachments ?? [],
     setSendError,
+    model.fileLinks,
   );
+  // Read by the autosave, the snapshot and the unload guard, which must see
+  // the links as they are now without re-subscribing on every progress tick.
+  const linksRef = useRef(links);
+  useEffect(() => {
+    linksRef.current = links;
+  });
+  const storedLinkIds = links.stored.map((l) => l.id).join(',');
   const [showAi, setShowAi] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // D1: a mention names the person to everyone, so mentioning someone who is
@@ -356,7 +365,10 @@ export default function ComposeWindow({
     try {
       const sent = draftRef.current;
       const rev = editRev.current;
-      const saved = await onSaveDraft({ ...sent, ...threadingHeaders() }, draftIdRef.current);
+      const saved = await onSaveDraft(
+        { ...sent, ...threadingHeaders(), fileLinks: linksRef.current.stored },
+        draftIdRef.current,
+      );
       // null = refused. An empty id is a draft the server stored without naming it.
       if (saved === null) return 'failed';
       if (saved) {
@@ -392,10 +404,23 @@ export default function ComposeWindow({
   useEffect(() => {
     onAttachmentsChangeRef.current = onAttachmentsChange;
   }, [onAttachmentsChange]);
+  // A link still uploading is lost like an attachment if the page goes, so
+  // it counts as one for every "are you sure" (a finished link is kept).
+  const unsavedFiles = attachments.length + links.uploading;
   useEffect(() => {
-    attachmentCountRef.current = attachments.length;
-    onAttachmentsChangeRef.current?.(sentRef.current ? 0 : attachments.length);
-  }, [attachments.length]);
+    attachmentCountRef.current = unsavedFiles;
+    onAttachmentsChangeRef.current?.(sentRef.current ? 0 : unsavedFiles);
+  }, [unsavedFiles]);
+
+  // A link that is added, finishes or is removed changes what the draft
+  // should name: count it as an edit, so the next autosave carries it.
+  const linksSeenRef = useRef(storedLinkIds);
+  useEffect(() => {
+    if (linksSeenRef.current === storedLinkIds) return;
+    linksSeenRef.current = storedLinkIds;
+    markDirty();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedLinkIds]);
   // Gone from the screen, the files are gone too; nothing left to warn about.
   useEffect(() => () => onAttachmentsChangeRef.current?.(0), []);
 
@@ -460,9 +485,16 @@ export default function ComposeWindow({
       draftId: draftIdRef.current,
       from: from !== selfAddress ? from : undefined,
       threading: threadingHeaders(),
+      fileLinks: linksRef.current.stored.length ? linksRef.current.stored : undefined,
     };
   };
-  const flushSnapshot = useSnapshotWriter(model.id, buildSnapshot, [draft, from, draftId, accountEmail]);
+  const flushSnapshot = useSnapshotWriter(model.id, buildSnapshot, [
+    draft,
+    from,
+    draftId,
+    accountEmail,
+    storedLinkIds,
+  ]);
 
   // Leaving the page (F6). Nothing is lost when there is no text worth keeping,
   // when the server has it, or when it is kept in this browser under a mailbox
@@ -488,6 +520,12 @@ export default function ComposeWindow({
   const closingRef = useRef(false);
   const closeWithSave = async () => {
     if (closingRef.current) return;
+    // Closing would cut the uploads off; the draft could not keep them.
+    if (linksRef.current.busy) {
+      setSendError('Files are still uploading. Wait for them to finish, or remove them, then close.');
+      if (hidden) onRestore();
+      return;
+    }
     closingRef.current = true;
     setSendError(null);
     try {
@@ -528,7 +566,9 @@ export default function ComposeWindow({
   };
 
 
-  const sendDisabled = isSending || !draft.to.trim();
+  // Send waits for the links: the server refuses a message whose file is
+  // still uploading or being checked, so the button does not offer it.
+  const sendDisabled = isSending || !draft.to.trim() || links.busy;
 
   const requestSend = (sendAt?: Date) => {
     const exposed = mentionedOnBcc(draft.body, draft.bcc);
@@ -540,6 +580,11 @@ export default function ComposeWindow({
   };
 
   const handleSend = async (sendAt?: Date) => {
+    // A link that failed would silently not be in the email: say so instead.
+    if (links.failed) {
+      setSendError("Some files didn't upload. Retry them or remove them, then send.");
+      return;
+    }
     setSendError(null);
     setScheduling(!!sendAt);
     setIsSending(true);
@@ -551,6 +596,7 @@ export default function ComposeWindow({
         inReplyTo: isReply ? (replyTo?.messageIdHeader ?? undefined) : model.threading?.inReplyTo,
         references: isReply ? (replyTo?.references ?? undefined) : model.threading?.references,
         attachments,
+        fileLinks: links.ready.length ? links.ready : undefined,
         sendAt: sendAt?.toISOString(),
         from: from !== selfAddress ? from : undefined,
         draftId: draftIdRef.current,
@@ -810,6 +856,7 @@ export default function ComposeWindow({
       />
 
       <AttachmentChips files={attachments} totalBytes={attachedBytes} onRemove={removeAt} />
+      <FileLinkChips items={links.items} ttlDays={linkTtlDays} onRemove={links.remove} onRetry={links.retry} />
 
       <div className="flex shrink-0 items-center gap-2 border-t border-border bg-pane px-3 py-2.5">
         {/* One surface, two halves: the colour and rounding live on the
@@ -832,7 +879,7 @@ export default function ComposeWindow({
             ) : (
               <Send size={13} strokeWidth={2.4} />
             )}
-            {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : 'Send'}
+            {isSending ? (scheduling ? 'Scheduling…' : 'Sending…') : links.busy ? 'Uploading…' : 'Send'}
           </button>
           {canSchedule && <ScheduleSendMenu disabled={sendDisabled} onSchedule={(at) => requestSend(at)} />}
         </div>

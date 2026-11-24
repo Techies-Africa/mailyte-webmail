@@ -1,3 +1,5 @@
+import type { FileLinkRef } from './compose/fileLinks';
+
 // Shared view-model types for the webmail client.
 //
 // These are the shapes `lib/webmail/adapters.ts` produces from the real API
@@ -67,6 +69,8 @@ export interface WebmailMessage extends WebmailListItem {
   inReplyTo: string | null;
   references: string | null;
   attachments: WebmailAttachment[];
+  /** A draft's files sent as download links, brought back when it is resumed. */
+  fileLinks?: FileLinkRef[];
   /** What the headers say about where the message came from and how. */
   provenance: WebmailProvenance;
 }

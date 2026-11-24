@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { FileLinkStatus } from './client';
 
 /**
  * Unsent compose windows, kept in this browser so that a tab or a browser
@@ -52,6 +53,11 @@ export type ComposeSnapshot = {
   from?: string;
   /** The conversation it answers; the quotation is already in `body`. */
   threading?: { inReplyTo?: string; references?: string };
+  /**
+   * Files sent as download links. Unlike attachments these are kept: the
+   * file is on the server, and this is only its id, name and size.
+   */
+  fileLinks?: { id: string; name: string; size: number; status: FileLinkStatus }[];
 };
 
 function isSnapshot(value: unknown): value is ComposeSnapshot {

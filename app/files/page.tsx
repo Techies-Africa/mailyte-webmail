@@ -41,6 +41,7 @@ import Menu from '@/components/ui/Menu';
 import { FilterPill } from '@/components/ui/Pill';
 import { formatBytes } from '@/components/webmail/compose/attachments';
 import FilesOverview from '@/components/webmail/files/FilesOverview';
+import SharedLinks from '@/components/webmail/files/SharedLinks';
 import FileViewer from '@/components/webmail/files/FileViewer';
 import {
   counterpartOf,
@@ -274,6 +275,7 @@ function FilesScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto">
+        <SharedLinks />
         {overviewShown && (
           <section aria-label="Overview" className="border-b border-border bg-pane px-3 py-3 sm:px-5 sm:py-4">
             {summary.data ? (

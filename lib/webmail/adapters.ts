@@ -20,6 +20,8 @@ import type {
   WebmailMessage,
   WebmailParticipant,
 } from '@/components/webmail/types';
+import type { FileLinkRef } from '@/components/webmail/compose/fileLinks';
+import type { ApiFileLink } from './client';
 
 export interface ApiParticipant {
   name: string | null;
@@ -78,6 +80,8 @@ export interface ApiMessageDetail extends ApiMessageSummary {
   security?: string | null;
   list_unsubscribe?: { mailto: string | null; url: string | null; one_click: boolean } | null;
   authentication?: { spf: string | null; dkim: string | null; dmarc: string | null } | null;
+  /** On a draft that names files sent as download links: those files, as they are now. */
+  file_links?: ApiFileLink[];
 }
 
 export interface ApiContact {
@@ -171,6 +175,19 @@ export function toListItem(m: ApiMessageSummary): WebmailListItem {
   };
 }
 
+/** A file sent as a download link, as a compose window carries it. */
+export function toFileLinkRef(link: ApiFileLink): FileLinkRef {
+  return {
+    id: link.id,
+    name: link.name,
+    size: link.size,
+    status: link.status,
+    url: link.url,
+    sentAt: link.sent_at,
+    expiresAt: link.expires_at,
+  };
+}
+
 export function toMessage(m: ApiMessageDetail): WebmailMessage {
   const body =
     m.body_html || (m.body_text ? textToSafeHtml(m.body_text) : '<p><em>(no content)</em></p>');
@@ -185,6 +202,7 @@ export function toMessage(m: ApiMessageDetail): WebmailMessage {
     inReplyTo: m.in_reply_to ?? null,
     references: m.references ?? null,
     attachments: (m.attachments ?? []).map(toAttachment),
+    fileLinks: Array.isArray(m.file_links) ? m.file_links.map(toFileLinkRef) : undefined,
     provenance: {
       mailedBy: m.mailed_by ?? null,
       signedBy: m.signed_by ?? null,
