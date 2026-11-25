@@ -38,6 +38,11 @@ type QuickReplyProps = {
   message: WebmailMessage;
   mode: 'reply' | 'replyAll';
   selfAddress: string;
+  /**
+   * The shared mailbox this message is in, when the person may send as it: the reply goes out
+   * as that address, and it is the one left off Reply all's recipients.
+   */
+  from?: string;
   /** Signature HTML to start with, already wrapped by the caller. */
   signatureSeed: string;
   onSend: (payload: ComposePayload, mode: ComposeMode) => Promise<SendResult>;
@@ -77,6 +82,7 @@ export default function QuickReply({
   message,
   mode,
   selfAddress,
+  from,
   signatureSeed,
   onSend,
   onCancel,
@@ -86,10 +92,11 @@ export default function QuickReply({
 }: QuickReplyProps) {
   // Worked out once: the card remounts for another message or mode.
   const [recipients, setRecipients] = useState(() => {
+    const us = from ?? selfAddress;
     const start =
       mode === 'replyAll'
-        ? replyAllRecipients(message, selfAddress)
-        : { to: replyRecipients(message, selfAddress), cc: '' };
+        ? replyAllRecipients(message, us)
+        : { to: replyRecipients(message, us), cc: '' };
     return { ...start, bcc: '' };
   });
   const [showCc, setShowCc] = useState(() => recipients.cc !== '');
@@ -188,6 +195,7 @@ export default function QuickReply({
           references: message.references ?? undefined,
           attachments,
           fileLinks: links.ready.length ? links.ready : undefined,
+          from,
         },
         mode,
       );
