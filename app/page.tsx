@@ -31,6 +31,7 @@ import { toListItem } from '@/lib/webmail/adapters';
 import { replySubject, withConversationSubject } from '@/components/webmail/composeQuoting';
 import { useIsMobile } from '@/lib/webmail/useIsMobile';
 import { LIST_PANE_ID } from '@/lib/webmail/paneLayout';
+import { sendAsFor } from '@/lib/webmail/sharedMailbox';
 
 /** Archive, delete or spam, waiting for a yes (feedback 2026-10-07). */
 type PendingAsk = { kind: 'archive' | 'trash' | 'spam'; ids: string[] };
@@ -134,9 +135,11 @@ export default function WebmailInboxPage() {
         mode: 'compose',
         initialBody: (body ?? '') + signatureSeed('compose'),
         resumed: to ? { to, cc: '', bcc: '', subject: '' } : undefined,
+        // Looking at a shared mailbox, a new message is written as it.
+        from: sendAsFor(activeFolder, sharedMailboxes) ?? undefined,
       });
     },
-    [compose, signatureSeed],
+    [compose, signatureSeed, activeFolder, sharedMailboxes],
   );
 
   /**
@@ -198,10 +201,12 @@ export default function WebmailInboxPage() {
         resumed: draft
           ? { to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: replySubject(replyTo.subject) }
           : undefined,
+        // Answering something in a shared mailbox, as that mailbox.
+        from: sendAsFor(openMessage.id, sharedMailboxes) ?? undefined,
       });
       setQuickReply(null);
     },
-    [openMessage, thread, compose, signatureSeed],
+    [openMessage, thread, compose, signatureSeed, sharedMailboxes],
   );
 
   const [replySignal, setReplySignal] = useState(0);

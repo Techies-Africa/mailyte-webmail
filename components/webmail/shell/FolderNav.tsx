@@ -24,6 +24,7 @@ import {
 import type { WebmailFolder } from '../types';
 import { LABEL_VIEW_PREFIX, STARRED_VIEW } from '@/lib/webmail/useMailbox';
 import { labelTitle } from '@/lib/webmail/tags';
+import { SHARED_PREFIX } from '@/lib/webmail/sharedMailbox';
 import SidebarItem, { SidebarDivider, SidebarEyebrow } from './SidebarItem';
 import Menu from '@/components/ui/Menu';
 import ConfirmModal from '../modals/ConfirmModal';
@@ -76,8 +77,6 @@ const CATEGORY_ORDER = ['Social', 'Promotions', 'Updates', 'Notifications', 'Col
  * `Shared/<address>/<path>`. They get their own section headed by address so
  * they are never mistaken for the reader's own folders.
  */
-const SHARED_PREFIX = 'Shared/';
-
 export interface SharedMailboxGroup {
   address: string;
   folders: { folder: WebmailFolder; label: string }[];

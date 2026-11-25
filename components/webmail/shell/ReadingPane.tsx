@@ -49,6 +49,7 @@ import QuickReply, { type QuickReplyDraft } from './QuickReply';
 import DeliveryStatus from './DeliveryStatus';
 import ReaderSkeleton from './ReaderSkeleton';
 import { hasTrackableLinks } from '@/lib/webmail/links';
+import { sendAsFor } from '@/lib/webmail/sharedMailbox';
 import { withConversationSubject } from '../composeQuoting';
 import { Tag } from '@/components/ui/Pill';
 import { labelTag } from '@/lib/webmail/tags';
@@ -667,6 +668,7 @@ function MessageReader({
                 message={replyTarget}
                 mode={quickReply}
                 selfAddress={displayEmail}
+                from={sendAsFor(replyTarget.id, mailbox.sharedMailboxes) ?? undefined}
                 signatureSeed={signatureSeed(quickReply)}
                 onSend={onQuickReplySend}
                 onCancel={() => onQuickReplyChange(null)}

@@ -181,7 +181,9 @@ export default function ComposeWindow({
 
   const { toast } = useToast();
 
-  const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, selfAddress, resumed));
+  // Whoever the message is written as is "us" when a reply drops our own address from the
+  // recipients: a reply from a shared mailbox must not put that mailbox on its own Cc.
+  const [draft, setDraft] = useState<ComposeDraft>(() => initialDraft(mode, replyTo, restoredFrom, resumed));
   const [showCc, setShowCc] = useState(!!resumed?.cc);
   const [showBcc, setShowBcc] = useState(!!resumed?.bcc);
   const [from, setFrom] = useState(restoredFrom);
