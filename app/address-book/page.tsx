@@ -21,7 +21,7 @@ import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import Dialog from '@/components/ui/Dialog';
 import IconButton from '@/components/ui/IconButton';
-import { Input, Label, Select, Textarea } from '@/components/ui/Field';
+import { Checkbox, Input, Label, Select, Textarea } from '@/components/ui/Field';
 import SelectMenu, { type SelectMenuOption } from '@/components/ui/SelectMenu';
 import ConfirmModal from '@/components/webmail/modals/ConfirmModal';
 import {
@@ -36,7 +36,7 @@ import {
 } from '@/lib/webmail/contacts';
 import { contactKeys, useAddressBooks, useBookContacts } from '@/lib/webmail/query/contactQueries';
 import { qk } from '@/lib/webmail/query/keys';
-import { useUnauthorizedHandler } from '@/lib/webmail/query/session';
+import { trackSessionWork, useUnauthorizedHandler } from '@/lib/webmail/query/session';
 import { ADDRESS_BOOK_CHOICE_KEY, useRememberedChoice } from '@/lib/webmail/useRememberedChoice';
 
 const NO_BOOKS: AddressBook[] = [];
@@ -56,6 +56,14 @@ function bookToOpen(remembered: string | null | undefined, books: AddressBook[] 
   if (!remembered || remembered === PERSONAL_BOOK) return PERSONAL_BOOK;
   if (!books) return failed ? PERSONAL_BOOK : null;
   return books.some((b) => b.uri === remembered) ? remembered : PERSONAL_BOOK;
+}
+
+const countOf = (n: number) => (n === 1 ? '1 contact' : `${n} contacts`);
+
+/** The first few names, so the confirm says who as well as how many. */
+function namesOf(contacts: Contact[]): string {
+  const names = contacts.slice(0, 3).map(displayName).join(', ');
+  return contacts.length > 3 ? `${names} and ${contacts.length - 3} more` : names;
 }
 
 const EMPTY_DRAFT: ContactDraft = {
@@ -107,7 +115,12 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
   const activeBook = resolved ?? PERSONAL_BOOK;
   // Held until the book is known, so only that book's contacts are asked for.
   const contactsResult = useBookContacts(activeBook, supported === true && resolved !== null);
-  const contacts = contactsResult.data ?? NO_CONTACTS;
+  /** Cards a bulk delete has not finished with, as `book/id`: off the list however often it reloads. */
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
+  const contacts = useMemo(
+    () => (contactsResult.data ?? NO_CONTACTS).filter((c) => !leaving.has(`${activeBook}/${c.id}`)),
+    [contactsResult.data, leaving, activeBook],
+  );
   // Only a book never opened before shows "Loading".
   const loading = contactsResult.isPending;
   /** What went wrong with the last thing the person did. */
@@ -120,6 +133,9 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Contact | null>(null);
+  /** The cards ticked, by id; and the ones the confirm is asking about. */
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  const [confirmMany, setConfirmMany] = useState<Contact[] | null>(null);
 
   const currentBook = books.find((b) => b.uri === activeBook);
   const readOnly = currentBook?.read_only ?? false;
@@ -145,6 +161,20 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
       return haystack.includes(needle);
     });
   }, [contacts, query]);
+
+  // Only what is on the screen counts: a search must never delete a card it is hiding.
+  const picked = readOnly ? NO_CONTACTS : shown.filter((c) => ticked.has(c.id));
+  const allPicked = shown.length > 0 && picked.length === shown.length;
+  /** Only the cards named change: what a search is hiding stays as it was ticked. */
+  const tick = (cards: Contact[], on: boolean) =>
+    setTicked((current) => {
+      const next = new Set(current);
+      for (const card of cards) {
+        if (on) next.add(card.id);
+        else next.delete(card.id);
+      }
+      return next;
+    });
 
   /** This book changed: reload it behind the list, and compose's suggestions with it. */
   const refreshBook = (book: string) => {
@@ -200,6 +230,48 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
     })();
   }
 
+  /**
+   * Several after one confirm. The cards leave the list at once and any not
+   * deleted come back. One request each: a card is deleted by its own id and etag.
+   */
+  function removeMany(chosen: Contact[]) {
+    const book = activeBook;
+    const held = new Set(chosen.map((c) => `${book}/${c.id}`));
+    setTicked(new Set());
+    setBanner(null);
+    setLeaving((now) => new Set([...now, ...held]));
+    // Closing or reloading the tab would leave the rest undeleted: ask first.
+    const ask = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', ask);
+    const batch = async () => {
+      const gone = new Set<string>();
+      let reason = '';
+      // ponytail: one at a time; give the mail server a bulk delete if large ones feel slow.
+      for (const contact of chosen) {
+        const res = await deleteContact(contact.id, contact.etag, onUnauthorized, book);
+        if (res.success) {
+          gone.add(contact.id);
+          continue;
+        }
+        reason = res.message;
+        // Signed out or offline: every one after this would fail the same way.
+        if (res.status === 401 || res.status === 0) break;
+      }
+      window.removeEventListener('beforeunload', ask);
+      queryClient.setQueryData<Contact[]>(contactKeys.book(book), (list) => list?.filter((c) => !gone.has(c.id)));
+      setLeaving((now) => new Set([...now].filter((key) => !held.has(key))));
+      if (gone.size < chosen.length) {
+        setBanner(`Couldn't delete ${chosen.length - gone.size} of ${countOf(chosen.length)}: ${reason}`);
+      }
+      refreshBook(book);
+    };
+    // Tracked: switching mailbox or signing out waits for the batch to finish.
+    void trackSessionWork(batch());
+  }
+
   if (supported === null) {
     return <div className="p-8 text-sm text-muted-foreground">Loading&hellip;</div>;
   }
@@ -241,6 +313,7 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
               onChange={(uri) => {
                 remember(uri);
                 setBanner(null);
+                setTicked(new Set());
               }}
             />
           </>
@@ -289,6 +362,30 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
         </p>
       )}
 
+      {!readOnly && !loading && shown.length > 0 && (
+        <div className="flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-4 py-1.5 sm:px-5">
+          <label className="flex cursor-pointer items-center gap-3 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={allPicked}
+              ref={(el) => {
+                if (el) el.indeterminate = picked.length > 0 && !allPicked;
+              }}
+              onChange={(e) => tick(shown, e.target.checked)}
+              // The count is on screen beside the box, so the box's name carries it too.
+              aria-label={`Select all contacts shown${picked.length > 0 ? `, ${picked.length} selected` : ''}`}
+              className="h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+            />
+            {picked.length > 0 ? `${picked.length} selected` : 'Select all'}
+          </label>
+          {picked.length > 0 && (
+            <Button variant="danger" size="sm" icon={<Trash2 size={13} />} onClick={() => setConfirmMany(picked)} className="ml-auto">
+              Delete selected
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <p className="p-6 text-sm text-muted-foreground">Loading&hellip;</p>
@@ -308,6 +405,14 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
           <ul className="divide-y divide-border">
             {shown.map((contact) => (
               <li key={contact.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50 sm:px-5">
+                {!readOnly && (
+                  <Checkbox
+                    checked={ticked.has(contact.id)}
+                    onChange={(e) => tick([contact], e.target.checked)}
+                    aria-label={`Select ${displayName(contact)}`}
+                    className="mt-3"
+                  />
+                )}
                 <Avatar name={displayName(contact)} email={primaryEmail(contact) ?? displayName(contact)} size={34} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-semibold">{displayName(contact)}</p>
@@ -399,6 +504,24 @@ function AddressBookScreen({ supported, email }: { supported: boolean | null; em
           </>
         }
         confirmLabel="Delete"
+      />
+
+      <ConfirmModal
+        isOpen={confirmMany !== null}
+        onClose={() => setConfirmMany(null)}
+        onConfirm={() => {
+          if (confirmMany) removeMany(confirmMany);
+        }}
+        icon={<Trash2 size={18} />}
+        tone="danger"
+        title={`Delete ${countOf(confirmMany?.length ?? 0)}?`}
+        body={
+          <>
+            <span className="font-semibold text-foreground">{namesOf(confirmMany ?? [])}</span> will be removed from this
+            address book and from every device that syncs it.
+          </>
+        }
+        confirmLabel={`Delete ${countOf(confirmMany?.length ?? 0)}`}
       />
     </div>
   );
